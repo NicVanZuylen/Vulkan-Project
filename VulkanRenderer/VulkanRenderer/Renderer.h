@@ -33,6 +33,19 @@ private:
 	// Check if the necessary validation layers are supported for debug.
 	void CheckValidationLayerSupport();
 
+	// Check if the device supports all the necessary extensions for this renderer.
+	bool CheckDeviceExtensionSupport(VkPhysicalDevice device);
+
+	struct SwapChainDetails
+	{
+		VkSurfaceCapabilitiesKHR m_capabilities;
+		DynamicArray<VkSurfaceFormatKHR> m_formats;
+		DynamicArray<VkPresentModeKHR> m_presentModes;
+	};
+
+	// Get information about the swap chain.
+	SwapChainDetails* GetSwapChainSupportDetails(VkPhysicalDevice device);
+
 	// Rate how suitable a device is for this renderer.
 	int DeviceSuitable(VkPhysicalDevice device);
 
@@ -54,6 +67,9 @@ private:
 	// Create logical device to interface with the physical device.
 	void CreateLogicalDevice();
 
+	// Creates the window surface displayed on the OS window.
+	void CreateWindowSurface();
+
 	GLFWwindow* m_window;
 
 	// Validation layers
@@ -62,14 +78,21 @@ private:
 
 	VkDebugUtilsMessengerEXT m_messenger;
 
+	// Device extensions
+	static const DynamicArray<const char*> m_deviceExtensions;
+
 	// Vulkan API
 	VkInstance m_instance;
 	VkPhysicalDevice m_physDevice;
 	VkDevice m_logicDevice;
 
 	VkQueue m_graphicsQueue;
+	VkQueue m_presentQueue;
+	VkQueue m_computeQueue;
+	VkSurfaceKHR m_windowSurface;
 
 	int m_graphicsQueueFamilyIndex;
+	int m_presentQueueFamilyIndex;
 	int m_computeQueueFamilyIndex;
 
 	VkExtensionProperties* m_extensions;

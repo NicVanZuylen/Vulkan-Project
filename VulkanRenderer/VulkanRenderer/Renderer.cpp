@@ -1,6 +1,7 @@
 #include "Renderer.h"
 #include <stdexcept>
 #include <iostream>
+#include <set>
 
 #define GLFW_FORCE_RADIANS
 #define GLFW_FORCE_DEPTH_ZERO_TO_ONE
@@ -9,10 +10,15 @@
 
 const DynamicArray<const char*> Renderer::m_validationLayers = 
 {
-	"VK_LAYER_KHRONOS_validation",
+	"VK_LAYER_KHRONOS_validation"
 };
 
 VkResult Renderer::safeCallResult = VK_SUCCESS;
+
+const DynamicArray<const char*> Renderer::m_deviceExtensions =
+{
+	VK_KHR_SWAPCHAIN_EXTENSION_NAME
+};
 
 #ifndef RENDERER_DEBUG
 
@@ -34,16 +40,20 @@ Renderer::Renderer(GLFWwindow* window)
 	m_physDevice = VK_NULL_HANDLE;
 
 	m_graphicsQueueFamilyIndex = -1;
+	m_presentQueueFamilyIndex = -1;
 	m_computeQueueFamilyIndex = -1;
 
 	CheckValidationLayerSupport();
 	CreateVKInstance();
 	SetupDebugMessenger();
+	CreateWindowSurface();
 	GetPhysicalDevice();
 	CreateLogicalDevice();
 
 	// Get queue handles...
+	vkGetDeviceQueue(m_logicDevice, m_presentQueueFamilyIndex, 0, &m_presentQueue);
 	vkGetDeviceQueue(m_logicDevice, m_graphicsQueueFamilyIndex, 0, &m_graphicsQueue);
+	vkGetDeviceQueue(m_logicDevice, m_computeQueueFamilyIndex, 0, &m_computeQueue);
 }
 
 Renderer::~Renderer()
@@ -55,6 +65,9 @@ Renderer::~Renderer()
 
 	// Destroy logical device.
 	vkDestroyDevice(m_logicDevice, nullptr);
+
+	// Destroy window surface.
+	vkDestroySurfaceKHR(m_instance, m_windowSurface, nullptr);
 
 	// Destroy Vulkan instance.
 	vkDestroyInstance(m_instance, nullptr);
@@ -193,6 +206,69 @@ void Renderer::CheckValidationLayerSupport()
 		std::cout << "Renderer Warning: Not all necessary validation layers were found!" << std::endl;
 }
 
+bool Renderer::CheckDeviceExtensionSupport(VkPhysicalDevice device) 
+{
+	unsigned int extensionCount = 0;
+	RENDERER_SAFECALL(vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr), "Renderer Error: Failed to obtain Vulkan extension count");
+
+	DynamicArray<VkExtensionProperties> extensions(extensionCount, 1);
+	for (unsigned int i = 0; i < extensionCount; ++i)
+		extensions.Push(VkExtensionProperties());
+
+	RENDERER_SAFECALL(vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, extensions.Data()), "Renderer Error: Failed to obtain Vulkan extension properties");
+
+	int requiredExtensionCount = 0;
+	for(int i = 0; i < m_deviceExtensions.Count(); ++i) 
+	{
+		for(int j = 0; j < extensions.Count(); ++j) 
+		{
+			if (strcmp(m_deviceExtensions[i], extensions[j].extensionName) == 0) 
+			{
+				++requiredExtensionCount;
+				break;
+			}
+		}
+	}
+
+	return requiredExtensionCount == m_deviceExtensions.Count();
+}
+
+Renderer::SwapChainDetails* Renderer::GetSwapChainSupportDetails(VkPhysicalDevice device) 
+{
+	SwapChainDetails* details = new SwapChainDetails;
+
+	// Get capabilities.
+	RENDERER_SAFECALL(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, m_windowSurface, &details->m_capabilities), "Renderer Error: Failed to obtain window surface capabilities.");
+
+	// Get formats...
+	unsigned int formatCount = 0;
+	RENDERER_SAFECALL(vkGetPhysicalDeviceSurfaceFormatsKHR(device, m_windowSurface, &formatCount, nullptr), "Renderer Error: Failed to obtain window surface format count.");
+
+	if(formatCount > 0) 
+	{
+		details->m_formats.SetSize(formatCount);
+		for (unsigned int i = 0; i < formatCount; ++i)
+			details->m_formats.Push(VkSurfaceFormatKHR());
+
+		RENDERER_SAFECALL(vkGetPhysicalDeviceSurfaceFormatsKHR(device, m_windowSurface, &formatCount, details->m_formats.Data()), "Renderer Error: Failed to obtain window surface formats.");
+	}
+
+	// Get present modes...
+	unsigned int presentModeCount = 0;
+	RENDERER_SAFECALL(vkGetPhysicalDeviceSurfacePresentModesKHR(device, m_windowSurface, &presentModeCount, nullptr), "Renderer Error: Failed to obtain window surface present mode count.");
+
+	if (presentModeCount > 0)
+	{
+		details->m_presentModes.SetSize(presentModeCount);
+		for (unsigned int i = 0; i < presentModeCount; ++i)
+			details->m_presentModes.Push(VkPresentModeKHR());
+
+		RENDERER_SAFECALL(vkGetPhysicalDeviceSurfacePresentModesKHR(device, m_windowSurface, &presentModeCount, details->m_presentModes.Data()), "Renderer Error: Failed to obtain window surface present modes.");
+	}
+
+	return details;
+}
+
 VkResult Renderer::CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* createInfo, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger) 
 {
 	if (!m_enableValidationLayers)
@@ -251,8 +327,21 @@ int Renderer::DeviceSuitable(VkPhysicalDevice device)
 	VkPhysicalDeviceFeatures features = {};
 	vkGetPhysicalDeviceFeatures(device, &features);
 
-	// A device is suitable if it is a GPU with geometry shader and tesselation shader support.
-	int score = properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && FindQueueFamilies(device) && features.geometryShader && features.tessellationShader;
+	bool extensionsSupported = CheckDeviceExtensionSupport(device);
+
+	if (!extensionsSupported)
+		return 0;
+
+	SwapChainDetails* swapChainDetails = GetSwapChainSupportDetails(device);
+	bool suitableSwapChain = swapChainDetails->m_formats.Count() > 0 && swapChainDetails->m_presentModes.Count() > 0;
+
+	delete swapChainDetails;
+
+	if (!suitableSwapChain)
+		return 0;
+
+	// A device is suitable if it is a GPU with geometry shader support.
+	int score = properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && FindQueueFamilies(device) && features.geometryShader;
 
 	if (score == 0)
 		return score;
@@ -303,45 +392,60 @@ bool Renderer::FindQueueFamilies(VkPhysicalDevice device)
 
 	vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.Data());
 
-	// Ensure a graphics queue family exists.
+	// Get queue indices.
 	for(unsigned int i = 0; i < queueFamilyCount; ++i) 
 	{
+		VkBool32 hasPresentSupport = VK_FALSE;
+		vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_windowSurface, &hasPresentSupport);
+
+		if (queueFamilies[i].queueCount > 0 && hasPresentSupport)
+		{
+			m_presentQueueFamilyIndex = i;
+		}
+
 		if (queueFamilies[i].queueCount > 0 && queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
 		{
 			m_graphicsQueueFamilyIndex = i;
 		}
-	}
 
-	// Ensure a compute family exists.
-	for (unsigned int i = 0; i < queueFamilyCount; ++i)
-	{
 		if (queueFamilies[i].queueCount > 0 && queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
 		{
 			m_computeQueueFamilyIndex = i;
 		}
 	}
 
-	return m_graphicsQueueFamilyIndex > -1 && m_computeQueueFamilyIndex > -1;
+	return m_presentQueueFamilyIndex > -1 && m_graphicsQueueFamilyIndex > -1 && m_computeQueueFamilyIndex > -1;
 }
 
 void Renderer::CreateLogicalDevice()
 {
-	VkDeviceQueueCreateInfo queueCreateInfo = {};
-	queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-	queueCreateInfo.queueFamilyIndex = m_graphicsQueueFamilyIndex;
-	queueCreateInfo.queueCount = 1;
+	DynamicArray<VkDeviceQueueCreateInfo> queueCreateInfos;
+	std::set<int> uniqueQueueFamilies = { m_presentQueueFamilyIndex, m_graphicsQueueFamilyIndex, m_computeQueueFamilyIndex };
 
 	float queuePriority = QUEUE_PRIORITY;
-	queueCreateInfo.pQueuePriorities = &queuePriority;
+
+	// Create queue infos for each unique queue.
+	for(int familyIndex : uniqueQueueFamilies) 
+	{
+		VkDeviceQueueCreateInfo queueCreateInfo = {};
+		queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		queueCreateInfo.queueFamilyIndex = familyIndex;
+		queueCreateInfo.queueCount = 1;
+		queueCreateInfo.pQueuePriorities = &queuePriority;
+
+		queueCreateInfos.Push(queueCreateInfo);
+	}
 
 	VkPhysicalDeviceFeatures features = {};
 	vkGetPhysicalDeviceFeatures(m_physDevice, &features);
 
 	VkDeviceCreateInfo logicDeviceCreateInfo = {};
 	logicDeviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-	logicDeviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
-	logicDeviceCreateInfo.queueCreateInfoCount = 1;
+	logicDeviceCreateInfo.pQueueCreateInfos = queueCreateInfos.Data();
+	logicDeviceCreateInfo.queueCreateInfoCount = queueCreateInfos.Count();
 	logicDeviceCreateInfo.pEnabledFeatures = &features;
+	logicDeviceCreateInfo.enabledExtensionCount = m_deviceExtensions.Count();
+	logicDeviceCreateInfo.ppEnabledExtensionNames = m_deviceExtensions.Data();
 
 	// Logical device validation layers
 	if (m_enableValidationLayers)
@@ -353,4 +457,9 @@ void Renderer::CreateLogicalDevice()
 		logicDeviceCreateInfo.enabledLayerCount = 0;
 
 	RENDERER_SAFECALL(vkCreateDevice(m_physDevice, &logicDeviceCreateInfo, nullptr, &m_logicDevice), "Renderer Error: Failed to create logical device!");
+}
+
+void Renderer::CreateWindowSurface() 
+{
+	RENDERER_SAFECALL(glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_windowSurface), "Renderer Error: Failed to obtain window surface.");
 }
