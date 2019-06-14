@@ -1,6 +1,7 @@
 #include "Renderer.h"
 #include <stdexcept>
 #include <iostream>
+#include <algorithm>
 #include <set>
 
 #define GLFW_FORCE_RADIANS
@@ -36,6 +37,9 @@ Renderer::Renderer(GLFWwindow* window)
 	m_extensions = nullptr;
 	m_extensionCount = 0;
 
+	m_windowWidth = WINDOW_WIDTH;
+	m_windowHeight = WINDOW_HEIGHT;
+
 	m_instance = VK_NULL_HANDLE;
 	m_physDevice = VK_NULL_HANDLE;
 
@@ -49,6 +53,7 @@ Renderer::Renderer(GLFWwindow* window)
 	CreateWindowSurface();
 	GetPhysicalDevice();
 	CreateLogicalDevice();
+	CreateSwapChain();
 
 	// Get queue handles...
 	vkGetDeviceQueue(m_logicDevice, m_presentQueueFamilyIndex, 0, &m_presentQueue);
@@ -62,6 +67,13 @@ Renderer::~Renderer()
 
 	// Destroy debug messenger.
 	DestroyDebugUtilsMessengerEXT(m_instance, nullptr, &m_messenger);
+
+	// Destroy image views.
+	for (int i = 0; i < m_swapChainImageViews.Count(); ++i)
+		vkDestroyImageView(m_logicDevice, m_swapChainImageViews[i], nullptr);
+
+	// Destroy swap chain.
+	vkDestroySwapchainKHR(m_logicDevice, m_swapChain, nullptr);
 
 	// Destroy logical device.
 	vkDestroyDevice(m_logicDevice, nullptr);
@@ -126,6 +138,9 @@ void Renderer::CreateVKInstance()
 	// Include validation layers.
 	createInfo.ppEnabledLayerNames = m_validationLayers.Data();
 	createInfo.enabledLayerCount = m_validationLayers.Count();
+#else
+	createInfo.enabledLayerCount = 0;
+
 #endif
 
 	unsigned int glfwExtensionCount = 0;
@@ -148,8 +163,6 @@ void Renderer::CreateVKInstance()
 
 	createInfo.enabledExtensionCount = glfwExtensionCount;
 	createInfo.ppEnabledExtensionNames = glfwExtensions;
-
-	createInfo.enabledLayerCount = 0;
 
 	// ----------------------------------------------------------------------------------------------------------
 	// Create instance.
@@ -462,4 +475,150 @@ void Renderer::CreateLogicalDevice()
 void Renderer::CreateWindowSurface() 
 {
 	RENDERER_SAFECALL(glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_windowSurface), "Renderer Error: Failed to obtain window surface.");
+}
+
+void Renderer::CreateSwapChain() 
+{
+	SwapChainDetails* details = GetSwapChainSupportDetails(m_physDevice);
+
+	VkSurfaceFormatKHR format = ChooseSwapSurfaceFormat(details->m_formats);
+	VkPresentModeKHR presentMode = ChooseSwapPresentMode(details->m_presentModes);
+	m_swapChainImageExtents = ChooseSwapExtent(details->m_capabilities);
+	m_swapChainImageFormat = format.format;
+
+	// Find appropriate image count.
+	unsigned int imageCount = details->m_capabilities.minImageCount + 1;
+
+	if (details->m_capabilities.maxImageCount > 0 && imageCount > details->m_capabilities.maxImageCount)
+		imageCount = details->m_capabilities.maxImageCount;
+
+	VkSwapchainCreateInfoKHR createInfo = {};
+	createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+	createInfo.surface = m_windowSurface;
+	createInfo.imageFormat = format.format;
+	createInfo.imageColorSpace = format.colorSpace;
+	createInfo.presentMode = presentMode;
+	createInfo.imageExtent = m_swapChainImageExtents;
+	createInfo.minImageCount = imageCount;
+	createInfo.imageArrayLayers = 1;
+	createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+	createInfo.preTransform = details->m_capabilities.currentTransform;
+	createInfo.clipped = VK_TRUE;
+	createInfo.oldSwapchain = VK_NULL_HANDLE;
+
+	unsigned int queueFamilyIndices[2] = 
+	{ 
+		static_cast<unsigned int>(m_presentQueueFamilyIndex), 
+		static_cast<unsigned int>(m_graphicsQueueFamilyIndex) 
+	};
+
+	if(m_graphicsQueueFamilyIndex != m_presentQueueFamilyIndex) 
+	{
+		createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+		createInfo.queueFamilyIndexCount = 2;
+		createInfo.pQueueFamilyIndices = queueFamilyIndices;
+	}
+	else 
+	{
+		createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		createInfo.queueFamilyIndexCount = 0;
+		createInfo.pQueueFamilyIndices = nullptr;
+	}
+
+	vkCreateSwapchainKHR(m_logicDevice, &createInfo, nullptr, &m_swapChain);
+
+	// Retrieve swap chain images.
+	unsigned int swapChainImageCount = 0;
+	RENDERER_SAFECALL(vkGetSwapchainImagesKHR(m_logicDevice, m_swapChain, &swapChainImageCount, nullptr), "Renderer Error: Failed to retrieve swap chain image count.");
+
+	m_swapChainImages.SetSize(swapChainImageCount);
+	for (unsigned int i = 0; i < swapChainImageCount; ++i)
+		m_swapChainImages.Push(VkImage());
+
+	RENDERER_SAFECALL(vkGetSwapchainImagesKHR(m_logicDevice, m_swapChain, &swapChainImageCount, m_swapChainImages.Data()), "Renderer Error: Failed to retieve swap chain images.");
+
+	delete details;
+}
+
+void Renderer::CreateSwapChainImageViews() 
+{
+	m_swapChainImageViews.SetSize(m_swapChainImages.Count());
+	for (int i = 0; i < m_swapChainImages.Count(); ++i) 
+	{
+		VkImageView view;
+		VkImageViewCreateInfo viewCreateInfo = {};
+
+		viewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		viewCreateInfo.image = m_swapChainImages[i];
+		viewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		viewCreateInfo.format = m_swapChainImageFormat;
+		viewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+		viewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+		viewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+		viewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+		viewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		viewCreateInfo.subresourceRange.baseMipLevel = 0;
+		viewCreateInfo.subresourceRange.levelCount = 1;
+		viewCreateInfo.subresourceRange.baseArrayLayer = 0;
+		viewCreateInfo.subresourceRange.layerCount = 0;
+
+		RENDERER_SAFECALL(vkCreateImageView(m_logicDevice, &viewCreateInfo, nullptr, &view), "Renderer Error: Failed to create swap chain image views.");
+
+		m_swapChainImageViews.Push(view);
+	}
+}
+
+void Renderer::CreateGraphicsPipeline() 
+{
+
+}
+
+VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(DynamicArray<VkSurfaceFormatKHR>& availableFormats) 
+{
+	VkSurfaceFormatKHR desiredFormat = { VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
+
+	if (availableFormats.Count() == 1 && availableFormats[0].format == VK_FORMAT_UNDEFINED) // Can use any format.
+	{
+		return desiredFormat; // So use the desired format.
+	}
+
+	for (int i = 0; i < availableFormats.Count(); ++i) 
+	{
+		if (availableFormats[i].format == desiredFormat.format && availableFormats[i].colorSpace == desiredFormat.colorSpace) // Found the desired format.
+			return desiredFormat;
+	}
+
+	// Otherwise the desired format was not found, just use the first one.
+	return availableFormats[0];
+}
+
+VkPresentModeKHR Renderer::ChooseSwapPresentMode(DynamicArray<VkPresentModeKHR>& availablePresentModes) 
+{
+	VkPresentModeKHR bestMode = VK_PRESENT_MODE_FIFO_KHR; // FIFO_KHR is guaranteed to be available.
+
+	for (int i = 0; i < availablePresentModes.Count(); ++i) 
+	{
+		if (availablePresentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR)
+			return availablePresentModes[i]; // Use mailbox if it is available.
+		else if (availablePresentModes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR)
+			bestMode = VK_PRESENT_MODE_IMMEDIATE_KHR; // Otherwise immediate is the next best mode.
+	}
+
+	return bestMode;
+}
+
+VkExtent2D Renderer::ChooseSwapExtent(VkSurfaceCapabilitiesKHR capabilities) 
+{
+	if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
+		return capabilities.currentExtent; // Use provided extent since it is the only available one.
+
+	VkExtent2D desiredExtent = { m_windowWidth, m_windowHeight };
+
+	// Clamp to usable range.
+	desiredExtent.width = glm::clamp(desiredExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+	desiredExtent.height = glm::clamp(desiredExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+
+	return desiredExtent;
 }

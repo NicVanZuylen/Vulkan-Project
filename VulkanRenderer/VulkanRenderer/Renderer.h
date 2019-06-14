@@ -7,6 +7,9 @@
 
 #define RENDERER_SAFECALL(func, message) Renderer::safeCallResult = func; if(Renderer::safeCallResult) { throw std::runtime_error(message); }
 
+#define WINDOW_WIDTH 1280
+#define WINDOW_HEIGHT 720
+
 class Renderer
 {
 public:
@@ -70,7 +73,30 @@ private:
 	// Creates the window surface displayed on the OS window.
 	void CreateWindowSurface();
 
+	// Create the swap chain used to present images to the window.
+	void CreateSwapChain();
+
+	// Create swapchain image views.
+	void CreateSwapChainImageViews();
+
+	// Create rendering pipeline
+	void CreateGraphicsPipeline();
+
+	// -----------------------------------------------------------------------------------------------------
+	// Swap chain queries
+
+	VkSurfaceFormatKHR ChooseSwapSurfaceFormat(DynamicArray<VkSurfaceFormatKHR>& availableFormats);
+
+	VkPresentModeKHR ChooseSwapPresentMode(DynamicArray<VkPresentModeKHR>& availablePresentModes);
+
+	VkExtent2D ChooseSwapExtent(VkSurfaceCapabilitiesKHR capabilities);
+
+	// -----------------------------------------------------------------------------------------------------
+
 	GLFWwindow* m_window;
+
+	unsigned int m_windowWidth;
+	unsigned int m_windowHeight;
 
 	// Validation layers
 	static const DynamicArray<const char*> m_validationLayers;
@@ -90,6 +116,12 @@ private:
 	VkQueue m_presentQueue;
 	VkQueue m_computeQueue;
 	VkSurfaceKHR m_windowSurface;
+
+	VkFormat m_swapChainImageFormat;
+	VkExtent2D m_swapChainImageExtents;
+	VkSwapchainKHR m_swapChain;
+	DynamicArray<VkImage> m_swapChainImages;
+	DynamicArray<VkImageView> m_swapChainImageViews;
 
 	int m_graphicsQueueFamilyIndex;
 	int m_presentQueueFamilyIndex;
