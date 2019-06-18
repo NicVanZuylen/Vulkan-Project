@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <set>
 
+#include "Shader.h"
+
 #define GLFW_FORCE_RADIANS
 #define GLFW_FORCE_DEPTH_ZERO_TO_ONE
 
@@ -59,10 +61,16 @@ Renderer::Renderer(GLFWwindow* window)
 	vkGetDeviceQueue(m_logicDevice, m_presentQueueFamilyIndex, 0, &m_presentQueue);
 	vkGetDeviceQueue(m_logicDevice, m_graphicsQueueFamilyIndex, 0, &m_graphicsQueue);
 	vkGetDeviceQueue(m_logicDevice, m_computeQueueFamilyIndex, 0, &m_computeQueue);
+
+	m_triangleShader = new Shader("Shaders/SPIR-V/vert.spv", "Shaders/SPIR-V/frag.spv");
+	RegisterShader(m_triangleShader);
 }
 
 Renderer::~Renderer()
 {
+	UnregisterShader(m_triangleShader);
+	delete m_triangleShader;
+
 	delete[] m_extensions;
 
 	// Destroy debug messenger.
@@ -83,6 +91,47 @@ Renderer::~Renderer()
 
 	// Destroy Vulkan instance.
 	vkDestroyInstance(m_instance, nullptr);
+}
+
+void Renderer::RegisterShader(Shader* shader) 
+{
+	const DynamicArray<char>& vertContents = shader->VertContents();
+	const DynamicArray<char>& fragContents = shader->FragContents();
+
+	ShaderRegister reg;
+
+	// Create infos.
+	VkShaderModuleCreateInfo vertCreateInfo = {};
+	vertCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	vertCreateInfo.codeSize = vertContents.GetSize();
+	vertCreateInfo.pCode = reinterpret_cast<const uint32_t*>(vertContents.Data());
+
+	VkShaderModuleCreateInfo fragCreateInfo = {};
+	fragCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	fragCreateInfo.codeSize = fragContents.GetSize();
+	fragCreateInfo.pCode = reinterpret_cast<const uint32_t*>(fragContents.Data());
+
+	// Create modules.
+	RENDERER_SAFECALL(vkCreateShaderModule(m_logicDevice, &vertCreateInfo, nullptr, &reg.m_vertModule), "Renderer Error: Failed to create vertex shader module.");
+	RENDERER_SAFECALL(vkCreateShaderModule(m_logicDevice, &fragCreateInfo, nullptr, &reg.m_fragModule), "Renderer Error: Failed to create fragment shader module.");
+
+	reg.m_registered = true;
+
+	m_shaderRegisters[shader] = reg;
+}
+
+void Renderer::UnregisterShader(Shader* shader) 
+{
+	ShaderRegister& reg = m_shaderRegisters[shader];
+
+	if(reg.m_registered) 
+	{
+		// Destroy modules...
+		vkDestroyShaderModule(m_logicDevice, reg.m_vertModule, nullptr);
+		vkDestroyShaderModule(m_logicDevice, reg.m_fragModule, nullptr);
+
+		reg.m_registered = false;
+	}
 }
 
 VKAPI_ATTR VkBool32 VKAPI_CALL Renderer::ErrorCallback
@@ -182,6 +231,8 @@ void Renderer::CreateVKInstance()
 
 	for (unsigned int i = 0; i < m_extensionCount; ++i)
 		std::cout << m_extensions[i].extensionName << std::endl;
+
+	std::cout << "\n";
 }
 
 void Renderer::CheckValidationLayerSupport() 
@@ -572,6 +623,9 @@ void Renderer::CreateSwapChainImageViews()
 
 void Renderer::CreateGraphicsPipeline() 
 {
+	VkPipelineShaderStageCreateInfo vertStageInfo = {};
+	vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
 
 }
 

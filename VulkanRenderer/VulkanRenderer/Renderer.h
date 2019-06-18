@@ -2,6 +2,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include "glfw3.h"
 #include "DynamicArray.h"
+#include "PairTable.h"
 
 #define QUEUE_PRIORITY 1.0f
 
@@ -10,6 +11,8 @@
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 
+class Shader;
+
 class Renderer
 {
 public:
@@ -17,6 +20,10 @@ public:
 	Renderer(GLFWwindow* window);
 
     ~Renderer();
+
+	void RegisterShader(Shader* shader);
+
+	void UnregisterShader(Shader* shader);
 
 	static VkResult safeCallResult;
 
@@ -98,15 +105,18 @@ private:
 	unsigned int m_windowWidth;
 	unsigned int m_windowHeight;
 
+	// -----------------------------------------------------------------------------------------------------
 	// Validation layers
 	static const DynamicArray<const char*> m_validationLayers;
 	static const bool m_enableValidationLayers;
 
 	VkDebugUtilsMessengerEXT m_messenger;
 
+	// -----------------------------------------------------------------------------------------------------
 	// Device extensions
 	static const DynamicArray<const char*> m_deviceExtensions;
 
+	// -----------------------------------------------------------------------------------------------------
 	// Vulkan API
 	VkInstance m_instance;
 	VkPhysicalDevice m_physDevice;
@@ -129,5 +139,25 @@ private:
 
 	VkExtensionProperties* m_extensions;
 	unsigned int m_extensionCount;
+
+	// -----------------------------------------------------------------------------------------------------
+	// Shaders
+
+	struct ShaderRegister 
+	{
+		ShaderRegister() 
+		{
+			m_registered = false;
+		}
+
+		VkShaderModule m_vertModule;
+		VkShaderModule m_fragModule;
+		bool m_registered;
+	};
+
+	// Temp
+	Shader* m_triangleShader;
+
+	PairTable<ShaderRegister, Shader*> m_shaderRegisters;
 };
 

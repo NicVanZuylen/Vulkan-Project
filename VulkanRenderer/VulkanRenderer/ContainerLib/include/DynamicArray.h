@@ -161,6 +161,12 @@ public:
 			m_nCount = m_nSize;
 	}
 
+	// Set the count of the dynamic array. (UNSAFE)
+	inline void SetCount(const int& count) 
+	{
+		m_nCount = count;
+	}
+
 	// Pop (remove)
 
 	// Removes the value in the array at the specified index. The location of the removed value is replaced by its successor the junk value is moved to the end of the array.

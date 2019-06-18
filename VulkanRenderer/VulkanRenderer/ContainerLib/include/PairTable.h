@@ -31,6 +31,9 @@ public:
 		for (int i = 0; i < m_contents->Count(); ++i)
 			delete (*m_contents)[i];
 
+		for (int i = 0; i < m_pairs.Count(); ++i)
+			delete m_pairs[i];
+
 		delete[] m_contents;
 	}
 
