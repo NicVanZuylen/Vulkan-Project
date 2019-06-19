@@ -86,6 +86,9 @@ void Application::Run()
 		// Poll events.
 		glfwPollEvents();
 
+		// Draw...
+		m_renderer->DrawFrame();
+
 		// End time...
 		auto endTime = std::chrono::high_resolution_clock::now();
 

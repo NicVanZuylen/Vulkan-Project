@@ -1,8 +1,9 @@
 #pragma once
 #define GLFW_INCLUDE_VULKAN
 #include "glfw3.h"
+
 #include "DynamicArray.h"
-#include "PairTable.h"
+#include "Table.h"
 
 #define QUEUE_PRIORITY 1.0f
 
@@ -11,7 +12,9 @@
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 
-class Shader;
+#define MAX_FRAMES_IN_FLIGHT 2
+
+struct Shader;
 
 class Renderer
 {
@@ -24,6 +27,8 @@ public:
 	void RegisterShader(Shader* shader);
 
 	void UnregisterShader(Shader* shader);
+
+	void DrawFrame();
 
 	static VkResult safeCallResult;
 
@@ -86,8 +91,20 @@ private:
 	// Create swapchain image views.
 	void CreateSwapChainImageViews();
 
+	// Create render pass.
+	void CreateRenderPass();
+
 	// Create rendering pipeline
 	void CreateGraphicsPipeline();
+
+	// Create framebuffer.
+	void CreateFramebuffers();
+
+	// Create command pool.
+	void CreateCommandPool();
+
+	// Create semaphores.
+	void CreateSyncObjects();
 
 	// -----------------------------------------------------------------------------------------------------
 	// Swap chain queries
@@ -122,21 +139,41 @@ private:
 	VkPhysicalDevice m_physDevice;
 	VkDevice m_logicDevice;
 
+	// Queue families.
 	VkQueue m_graphicsQueue;
 	VkQueue m_presentQueue;
 	VkQueue m_computeQueue;
-	VkSurfaceKHR m_windowSurface;
-
-	VkFormat m_swapChainImageFormat;
-	VkExtent2D m_swapChainImageExtents;
-	VkSwapchainKHR m_swapChain;
-	DynamicArray<VkImage> m_swapChainImages;
-	DynamicArray<VkImageView> m_swapChainImageViews;
 
 	int m_graphicsQueueFamilyIndex;
 	int m_presentQueueFamilyIndex;
 	int m_computeQueueFamilyIndex;
 
+	// Window surface.
+	VkSurfaceKHR m_windowSurface;
+
+	// Swap chain and swap chain images & framebuffers.
+	VkFormat m_swapChainImageFormat;
+	VkExtent2D m_swapChainImageExtents;
+	VkSwapchainKHR m_swapChain;
+	DynamicArray<VkImage> m_swapChainImages;
+	DynamicArray<VkImageView> m_swapChainImageViews;
+	DynamicArray<VkFramebuffer> m_swapChainFramebuffers;
+
+	// Commands
+	VkCommandPool m_commandPool;
+	DynamicArray<VkCommandBuffer> m_commandBuffers;
+
+	// Rendering.
+	VkRenderPass m_renderPass;
+	VkPipelineLayout m_pipelineLayout;
+	VkPipeline m_graphicsPipeline;
+
+	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
+	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;
+	DynamicArray<VkFence> m_inFlightFences;
+	unsigned long long m_currentFrame;
+
+	// Extensions.
 	VkExtensionProperties* m_extensions;
 	unsigned int m_extensionCount;
 
@@ -145,10 +182,7 @@ private:
 
 	struct ShaderRegister 
 	{
-		ShaderRegister() 
-		{
-			m_registered = false;
-		}
+		ShaderRegister();
 
 		VkShaderModule m_vertModule;
 		VkShaderModule m_fragModule;
@@ -158,6 +192,6 @@ private:
 	// Temp
 	Shader* m_triangleShader;
 
-	PairTable<ShaderRegister, Shader*> m_shaderRegisters;
+	Table<ShaderRegister> m_shaderRegisters;
 };
 
