@@ -1,10 +1,9 @@
 #include "Renderer.h"
-#include <stdexcept>
-#include <iostream>
 #include <algorithm>
 #include <set>
 
 #include "Shader.h"
+#include "MeshRenderer.h"
 
 #define GLFW_FORCE_RADIANS
 #define GLFW_FORCE_DEPTH_ZERO_TO_ONE
@@ -15,8 +14,6 @@ const DynamicArray<const char*> Renderer::m_validationLayers =
 {
 	"VK_LAYER_KHRONOS_validation"
 };
-
-VkResult Renderer::safeCallResult = VK_SUCCESS;
 
 const DynamicArray<const char*> Renderer::m_deviceExtensions =
 {
@@ -32,6 +29,8 @@ const bool Renderer::m_enableValidationLayers = false;
 const bool Renderer::m_enableValidationLayers = true;
 
 #endif
+
+VkResult Renderer::m_safeCallResult = VK_SUCCESS;
 
 Renderer::ShaderRegister::ShaderRegister() 
 {
@@ -68,11 +67,15 @@ Renderer::Renderer(GLFWwindow* window)
 	vkGetDeviceQueue(m_logicDevice, m_graphicsQueueFamilyIndex, 0, &m_graphicsQueue);
 	vkGetDeviceQueue(m_logicDevice, m_computeQueueFamilyIndex, 0, &m_computeQueue);
 
-	m_triangleShader = new Shader("Shaders/SPIR-V/vert.spv", "Shaders/SPIR-V/frag.spv");
-	RegisterShader(m_triangleShader);
+	//m_triangleShader = new Shader("Shaders/SPIR-V/vert.spv", "Shaders/SPIR-V/frag.spv");
+	//RegisterShader(m_triangleShader);
 
-	CreateRenderPass();
-	CreateGraphicsPipeline();
+	//m_altTriangleShader = new Shader("Shaders/SPIR-V/vertAlt.spv", "Shaders/SPIR-V/fragAlt.spv");
+	//RegisterShader(m_altTriangleShader);
+
+	CreateRenderPasses();
+	//m_trianglePipeline = CreateGraphicsPipeline(m_triangleShader);
+	//m_altTrianglePipeline = CreateGraphicsPipeline(m_altTriangleShader);
 	CreateFramebuffers();
 	CreateCommandPool();
 	CreateSyncObjects();
@@ -82,8 +85,11 @@ Renderer::~Renderer()
 {
 	vkDeviceWaitIdle(m_logicDevice);
 
-	UnregisterShader(m_triangleShader);
-	delete m_triangleShader;
+	//UnregisterShader(m_triangleShader);
+	//delete m_triangleShader;
+
+	//UnregisterShader(m_altTriangleShader);
+	//delete m_altTriangleShader;
 
 	// Destroy semaphores.
 	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
@@ -102,13 +108,15 @@ Renderer::~Renderer()
 		vkDestroyFramebuffer(m_logicDevice, m_swapChainFramebuffers[i], nullptr);
 
 	// Destroy pipeline.
-	vkDestroyPipeline(m_logicDevice, m_graphicsPipeline, nullptr);
+	//vkDestroyPipeline(m_logicDevice, m_trianglePipeline.m_handle, nullptr);
+	//vkDestroyPipeline(m_logicDevice, m_altTrianglePipeline.m_handle, nullptr);
 
 	// Destroy render pass.
-	vkDestroyRenderPass(m_logicDevice, m_renderPass, nullptr);
+	vkDestroyRenderPass(m_logicDevice, m_mainRenderPass, nullptr);
 
 	// Destroy pipeline layout.
-	vkDestroyPipelineLayout(m_logicDevice, m_pipelineLayout, nullptr);
+	//vkDestroyPipelineLayout(m_logicDevice, m_trianglePipeline.m_layout, nullptr);
+	//vkDestroyPipelineLayout(m_logicDevice, m_altTrianglePipeline.m_layout, nullptr);
 
 	delete[] m_extensions;
 
@@ -134,9 +142,7 @@ Renderer::~Renderer()
 
 void Renderer::RegisterShader(Shader* shader) 
 {
-	ShaderRegister& reg = m_shaderRegisters[shader->m_name.c_str()];
-
-	if (reg.m_registered) 
+	if (shader->m_registered) 
 	{
 		std::cout << "Renderer Warning: Attempting to register a shader that is already registered!\n";
 		return;
@@ -157,26 +163,36 @@ void Renderer::RegisterShader(Shader* shader)
 	fragCreateInfo.pCode = reinterpret_cast<const uint32_t*>(fragContents.Data());
 
 	// Create modules.
-	RENDERER_SAFECALL(vkCreateShaderModule(m_logicDevice, &vertCreateInfo, nullptr, &reg.m_vertModule), "Renderer Error: Failed to create vertex shader module.");
-	RENDERER_SAFECALL(vkCreateShaderModule(m_logicDevice, &fragCreateInfo, nullptr, &reg.m_fragModule), "Renderer Error: Failed to create fragment shader module.");
+	RENDERER_SAFECALL(vkCreateShaderModule(m_logicDevice, &vertCreateInfo, nullptr, &shader->m_vertModule), "Renderer Error: Failed to create vertex shader module.");
+	RENDERER_SAFECALL(vkCreateShaderModule(m_logicDevice, &fragCreateInfo, nullptr, &shader->m_fragModule), "Renderer Error: Failed to create fragment shader module.");
 
-	shader->m_vertModule = &reg.m_vertModule;
-	shader->m_fragModule = &reg.m_fragModule;
+	// Allocate pipeline info structure.
+	shader->m_pipeline = new PipelineInfo;
 
-	reg.m_registered = true;
+	// Create pipeline for rendering with this shader.
+	CreateGraphicsPipeline(shader);
+
+	// Shader is now registered.
+	shader->m_registered = true;
 }
 
 void Renderer::UnregisterShader(Shader* shader) 
 {
-	ShaderRegister& reg = m_shaderRegisters[shader->m_name.c_str()];
-
-	if(reg.m_registered) 
+	if(shader->m_registered) 
 	{
 		// Destroy modules...
-		vkDestroyShaderModule(m_logicDevice, reg.m_vertModule, nullptr);
-		vkDestroyShaderModule(m_logicDevice, reg.m_fragModule, nullptr);
+		vkDestroyShaderModule(m_logicDevice, shader->m_vertModule, nullptr);
+		vkDestroyShaderModule(m_logicDevice, shader->m_fragModule, nullptr);
 
-		reg.m_registered = false;
+		// Delete pipeline.
+		vkDestroyPipeline(m_logicDevice, shader->m_pipeline->m_handle, nullptr);
+		vkDestroyPipelineLayout(m_logicDevice, shader->m_pipeline->m_layout, nullptr);
+
+		// Delete pipeline structure.
+		delete shader->m_pipeline;
+
+		// Shader is no longer registered.
+		shader->m_registered = false;
 	}
 }
 
@@ -669,12 +685,16 @@ void Renderer::CreateSwapChainImageViews()
 	}
 }
 
-void Renderer::CreateRenderPass() 
+void Renderer::CreateRenderPasses() 
 {
+	// ------------------------------------------------------------------------------------------------------------
+	// Clear pass.
+
 	VkAttachmentDescription colorAttachment = {};
 	colorAttachment.format = m_swapChainImageFormat;
 	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	//colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -708,21 +728,23 @@ void Renderer::CreateRenderPass()
 	renderPassInfo.dependencyCount = 1;
 	renderPassInfo.pDependencies = &dependency;
 
-	RENDERER_SAFECALL(vkCreateRenderPass(m_logicDevice, &renderPassInfo, nullptr, &m_renderPass), "Renderer Error: Failed to create render pass.");
+	RENDERER_SAFECALL(vkCreateRenderPass(m_logicDevice, &renderPassInfo, nullptr, &m_mainRenderPass), "Renderer Error: Failed to create render pass.");
+
+	// ------------------------------------------------------------------------------------------------------------
 }
 
-void Renderer::CreateGraphicsPipeline() 
+void Renderer::CreateGraphicsPipeline(Shader* shader) 
 {
 	VkPipelineShaderStageCreateInfo vertStageInfo = {};
 	vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-	vertStageInfo.module = *m_triangleShader->m_vertModule;
+	vertStageInfo.module = shader->m_vertModule;
 	vertStageInfo.pName = "main";
 
 	VkPipelineShaderStageCreateInfo fragStageInfo = {};
 	fragStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	fragStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-	fragStageInfo.module = *m_triangleShader->m_fragModule;
+	fragStageInfo.module = shader->m_fragModule;
 	fragStageInfo.pName = "main";
 
 	VkPipelineShaderStageCreateInfo shaderStageInfos[] = { vertStageInfo, fragStageInfo };
@@ -819,6 +841,8 @@ void Renderer::CreateGraphicsPipeline()
 	dynamicState.pDynamicStates = &dynState;
 	*/
 
+	PipelineInfo* info = shader->m_pipeline;
+
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutInfo.setLayoutCount = 0;
@@ -826,7 +850,7 @@ void Renderer::CreateGraphicsPipeline()
 	pipelineLayoutInfo.pushConstantRangeCount = 0;
 	pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
-	RENDERER_SAFECALL(vkCreatePipelineLayout(m_logicDevice, &pipelineLayoutInfo, nullptr, &m_pipelineLayout), "Renderer Error: Failed to create graphics pipeline layout.");
+	RENDERER_SAFECALL(vkCreatePipelineLayout(m_logicDevice, &pipelineLayoutInfo, nullptr, &info->m_layout), "Renderer Error: Failed to create graphics pipeline layout.");
 
 	// Create pipeline.
 	VkGraphicsPipelineCreateInfo pipelineInfo = {};
@@ -841,13 +865,13 @@ void Renderer::CreateGraphicsPipeline()
 	pipelineInfo.pDepthStencilState = nullptr;
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = nullptr;
-	pipelineInfo.layout = m_pipelineLayout;
-	pipelineInfo.renderPass = m_renderPass;
+	pipelineInfo.layout = info->m_layout;
+	pipelineInfo.renderPass = m_mainRenderPass;
 	pipelineInfo.subpass = 0;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 	pipelineInfo.basePipelineIndex = -1;
 
-	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_logicDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_graphicsPipeline), "Renderer Error: Failed to create graphics pipeline.");
+	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_logicDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &info->m_handle), "Renderer Error: Failed to create graphics pipeline.");
 }
 
 void Renderer::CreateFramebuffers() 
@@ -861,7 +885,7 @@ void Renderer::CreateFramebuffers()
 
 		VkFramebufferCreateInfo framebufferInfo = {};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebufferInfo.renderPass = m_renderPass;
+		framebufferInfo.renderPass = m_mainRenderPass;
 		framebufferInfo.attachmentCount = 1;
 		framebufferInfo.pAttachments = &attachment;
 		framebufferInfo.width = m_swapChainImageExtents.width;
@@ -877,23 +901,26 @@ void Renderer::CreateCommandPool()
 	VkCommandPoolCreateInfo poolCreateInfo = {};
 	poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolCreateInfo.queueFamilyIndex = m_graphicsQueueFamilyIndex;
-	poolCreateInfo.flags = 0;
+	poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_commandPool), "Renderer Error: Failed to create command pool.");
 
-	m_commandBuffers.SetSize(m_swapChainFramebuffers.GetSize());
-	m_commandBuffers.SetCount(m_swapChainFramebuffers.Count());
+	/*
+	m_commandBufQueue.SetSize(m_swapChainFramebuffers.GetSize());
+	m_commandBufQueue.SetCount(m_swapChainFramebuffers.Count());
 
 	VkCommandBufferAllocateInfo cmdBufAllocateInfo = {};
 	cmdBufAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	cmdBufAllocateInfo.commandPool = m_commandPool;
-	cmdBufAllocateInfo.commandBufferCount = m_commandBuffers.GetSize();
+	cmdBufAllocateInfo.commandBufferCount = m_commandBufQueue.GetSize();
 	cmdBufAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_commandBuffers.Data()), "Renderer Error: Failed to allocate command buffers.");
+	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_commandBufQueue.Data()), "Renderer Error: Failed to allocate command buffers.");
 
 	for(int i = 0; i < m_commandBuffers.Count(); ++i) 
 	{
+		RecordCommandBuffer(m_commandBuffers[i], m_trianglePipeline, m_swapChainFramebuffers[i]);
+
 		// Command buffer beginning.
 		VkCommandBufferBeginInfo cmdBeginInfo = {};
 		cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -925,6 +952,47 @@ void Renderer::CreateCommandPool()
 
 		RENDERER_SAFECALL(vkEndCommandBuffer(m_commandBuffers[i]), "Renderer Error: Failed to end command buffer recording.");
 	}
+	*/
+}
+
+void Renderer::RecordCommandBuffer(VkCommandBuffer& cmdBuffer, const PipelineInfo& pipeline, const VkFramebuffer& framebuffer) 
+{
+	// Reset command buffer.
+	vkResetCommandBuffer(cmdBuffer, 0);
+
+	// Command buffer recording.
+	VkCommandBufferBeginInfo cmdBeginInfo = {};
+	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+	cmdBeginInfo.pInheritanceInfo = nullptr;
+
+	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of command buffer.");
+
+	// Render pass beginning.
+	VkRenderPassBeginInfo passBeginInfo = {};
+	passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	passBeginInfo.renderPass = m_mainRenderPass;
+	passBeginInfo.framebuffer = framebuffer;
+	passBeginInfo.renderArea.offset = { 0, 0 };
+	passBeginInfo.renderArea.extent = m_swapChainImageExtents;
+
+	VkClearValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
+	passBeginInfo.clearValueCount = 1;
+	passBeginInfo.pClearValues = &clearColor;
+
+	vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	// Bind pipeline.
+	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.m_handle);
+
+	// Draw.
+	vkCmdDraw(cmdBuffer, 3, 1, 0, 0);
+
+	// End render pass.
+	vkCmdEndRenderPass(cmdBuffer);
+
+	// End recording.
+	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end command buffer recording.");
 }
 
 void Renderer::CreateSyncObjects() 
@@ -954,41 +1022,81 @@ void Renderer::CreateSyncObjects()
 	}
 }
 
-void Renderer::DrawFrame() 
+void Renderer::Begin() 
 {
-	unsigned int frameIndex = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
+	m_currentFrameIndex = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
 
-	vkWaitForFences(m_logicDevice, 1, &m_inFlightFences[frameIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
-	vkResetFences(m_logicDevice, 1, &m_inFlightFences[frameIndex]);
+	vkWaitForFences(m_logicDevice, 1, &m_inFlightFences[m_currentFrameIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
+	vkResetFences(m_logicDevice, 1, &m_inFlightFences[m_currentFrameIndex]);
 
-	unsigned int imageIndex = 0;
-	RENDERER_SAFECALL(vkAcquireNextImageKHR(m_logicDevice, m_swapChain, std::numeric_limits<unsigned long long>::max(), m_imageAvailableSemaphores[frameIndex], VK_NULL_HANDLE, &imageIndex),
+	RENDERER_SAFECALL(vkAcquireNextImageKHR(m_logicDevice, m_swapChain, std::numeric_limits<unsigned long long>::max(), m_imageAvailableSemaphores[m_currentFrameIndex], VK_NULL_HANDLE, &m_presentImageIndex),
 		"Renderer Error: Failed to aquire next swap chain image.");
+}
 
+void Renderer::DrawObject(MeshRenderer* object) 
+{
+	m_commandBufQueue.Push(object->GetDrawCommands(m_presentImageIndex));
+}
+
+void Renderer::End() 
+{
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 	submitInfo.waitSemaphoreCount = 1;
-	submitInfo.pWaitSemaphores = &m_imageAvailableSemaphores[frameIndex];
+	submitInfo.pWaitSemaphores = &m_imageAvailableSemaphores[m_currentFrameIndex];
 	submitInfo.pWaitDstStageMask = waitStages;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &m_commandBuffers[imageIndex];
+	submitInfo.commandBufferCount = m_commandBufQueue.Count();
+	submitInfo.pCommandBuffers = m_commandBufQueue.Data();
 	submitInfo.signalSemaphoreCount = 1;
-	submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[frameIndex];
+	submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[m_currentFrameIndex];
 
-	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[frameIndex]), "Renderer Error: Failed to submit command buffer.");
+	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrameIndex]), "Renderer Error: Failed to submit command buffer.");
 
 	VkPresentInfoKHR presentInfo = {};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pWaitSemaphores = &m_renderFinishedSemaphores[frameIndex];
+	presentInfo.pWaitSemaphores = &m_renderFinishedSemaphores[m_currentFrameIndex];
 	presentInfo.swapchainCount = 1;
 	presentInfo.pSwapchains = &m_swapChain;
-	presentInfo.pImageIndices = &imageIndex;
+	presentInfo.pImageIndices = &m_presentImageIndex;
 	presentInfo.pResults = nullptr;
 
 	RENDERER_SAFECALL(vkQueuePresentKHR(m_graphicsQueue, &presentInfo), "Renderer Error: Failed to present swap chain image.");
+
+	// Clear command buffer queue.
+	m_commandBufQueue.Clear();
+}
+
+VkDevice Renderer::GetDevice() 
+{
+	return m_logicDevice;
+}
+
+VkCommandPool Renderer::GetCommandPool() 
+{
+	return m_commandPool;
+}
+
+VkRenderPass Renderer::MainRenderPass() 
+{
+	return m_mainRenderPass;
+}
+
+const DynamicArray<VkFramebuffer>& Renderer::GetFramebuffers() 
+{
+	return m_swapChainFramebuffers;
+}
+
+unsigned int Renderer::FrameWidth() 
+{
+	return m_swapChainImageExtents.width;
+}
+
+unsigned int Renderer::FrameHeight() 
+{
+	return m_swapChainImageExtents.height;
 }
 
 VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(DynamicArray<VkSurfaceFormatKHR>& availableFormats) 

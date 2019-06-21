@@ -4,31 +4,7 @@
 #include "DynamicArray.h"
 
 class Renderer;
-
-/*
-class Shader 
-{
-public:
-
-	Shader(const char* vertPath, const char* fragPath);
-
-	~Shader();
-
-	const DynamicArray<char>& VertContents();
-
-	const DynamicArray<char>& FragContents();
-
-private:
-
-	void ReadFile(DynamicArray<char>& buffer, const char* path);
-
-	DynamicArray<char> m_vertContents;
-	DynamicArray<char> m_fragContents;
-
-	// The renderer instance this shader is registered with.
-	Renderer* m_renderer;
-};
-*/
+struct PipelineInfo;
 
 struct Shader 
 {
@@ -66,6 +42,10 @@ struct Shader
 	DynamicArray<char> m_vertContents;
 	DynamicArray<char> m_fragContents;
 
-	VkShaderModule* m_vertModule;
-	VkShaderModule* m_fragModule;
+	VkShaderModule m_vertModule;
+	VkShaderModule m_fragModule;
+
+    PipelineInfo* m_pipeline;
+
+	bool m_registered;
 };

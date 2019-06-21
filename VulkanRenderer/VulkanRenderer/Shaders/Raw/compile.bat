@@ -1,3 +1,3 @@
-glslangValidator.exe -V triangle.vert
-glslangValidator.exe -V triangle.frag
+glslangValidator.exe -V triangleAlt.vert
+glslangValidator.exe -V triangleAlt.frag
 pause

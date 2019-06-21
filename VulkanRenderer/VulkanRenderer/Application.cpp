@@ -11,6 +11,9 @@
 #include "glm\include\gtc\quaternion.hpp"
 #include "glm/include/ext.hpp"
 
+#include "Shader.h"
+#include "MeshRenderer.h"
+
 Input* Application::m_input = nullptr;
 
 Application::Application()
@@ -70,6 +73,15 @@ int Application::Init()
 
 void Application::Run() 
 {
+	Shader* triangleShader = new Shader("Shaders/SPIR-V/vert.spv", "Shaders/SPIR-V/frag.spv");
+	m_renderer->RegisterShader(triangleShader);
+
+	Shader* altTriangleShader = new Shader("Shaders/SPIR-V/vertAlt.spv", "Shaders/SPIR-V/fragAlt.spv");
+	m_renderer->RegisterShader(altTriangleShader);
+
+	MeshRenderer* triangle = new MeshRenderer(triangleShader, m_renderer);
+	MeshRenderer* altTriangle = new MeshRenderer(altTriangleShader, m_renderer);
+
 	float fDeltaTime = 0.0f;	
 
 	while(!glfwWindowShouldClose(m_window)) 
@@ -87,7 +99,12 @@ void Application::Run()
 		glfwPollEvents();
 
 		// Draw...
-		m_renderer->DrawFrame();
+		m_renderer->Begin();
+
+		m_renderer->DrawObject(altTriangle);
+		m_renderer->DrawObject(triangle);
+
+		m_renderer->End();
 
 		// End time...
 		auto endTime = std::chrono::high_resolution_clock::now();
@@ -96,6 +113,15 @@ void Application::Run()
 
 		fDeltaTime = static_cast<float>(timeDuration) / 1000000.0f;
 	}
+
+	delete triangle;
+	delete altTriangle;
+
+	m_renderer->UnregisterShader(triangleShader);
+	delete triangleShader;
+
+	m_renderer->UnregisterShader(altTriangleShader);
+	delete altTriangleShader;
 }
 
 void Application::ErrorCallBack(int error, const char* desc)

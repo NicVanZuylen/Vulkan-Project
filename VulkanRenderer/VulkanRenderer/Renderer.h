@@ -1,20 +1,38 @@
 #pragma once
 #define GLFW_INCLUDE_VULKAN
 #include "glfw3.h"
+#include <stdexcept>
+#include <iostream>
 
 #include "DynamicArray.h"
 #include "Table.h"
 
 #define QUEUE_PRIORITY 1.0f
 
-#define RENDERER_SAFECALL(func, message) Renderer::safeCallResult = func; if(Renderer::safeCallResult) { throw std::runtime_error(message); }
+#ifdef RENDERER_DEBUG
+
+#define RENDERER_SAFECALL(func, message) Renderer::m_safeCallResult = func; if(Renderer::m_safeCallResult) { throw std::runtime_error(message); }
+
+#else
+
+#define RENDERER_SAFECALL(func, message) VkResult safeCallResult = func; //message
+
+#endif
 
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
+class MeshRenderer;
+
 struct Shader;
+
+struct PipelineInfo
+{
+	VkPipeline m_handle;
+	VkPipelineLayout m_layout;
+};
 
 class Renderer
 {
@@ -24,13 +42,34 @@ public:
 
     ~Renderer();
 
+	// Functionality
 	void RegisterShader(Shader* shader);
 
 	void UnregisterShader(Shader* shader);
 
-	void DrawFrame();
+	// Begin the main render pass.
+	void Begin();
 
-	static VkResult safeCallResult;
+	// Schedule a render object to be drawn.
+	void DrawObject(MeshRenderer* object);
+
+	// End the main render pass.
+	void End();
+
+	// Getters and setters
+	VkDevice GetDevice();
+
+	VkCommandPool GetCommandPool();
+
+	VkRenderPass MainRenderPass();
+
+	const DynamicArray<VkFramebuffer>& GetFramebuffers();
+
+	unsigned int FrameWidth();
+
+	unsigned int FrameHeight();
+
+	static VkResult m_safeCallResult;
 
 private:
 
@@ -92,16 +131,19 @@ private:
 	void CreateSwapChainImageViews();
 
 	// Create render pass.
-	void CreateRenderPass();
+	void CreateRenderPasses();
 
 	// Create rendering pipeline
-	void CreateGraphicsPipeline();
+	void CreateGraphicsPipeline(Shader* shader);
 
 	// Create framebuffer.
 	void CreateFramebuffers();
 
 	// Create command pool.
 	void CreateCommandPool();
+
+	// Record command buffer.
+	void RecordCommandBuffer(VkCommandBuffer& cmdBuffer, const PipelineInfo& pipeline, const VkFramebuffer& framebuffer);
 
 	// Create semaphores.
 	void CreateSyncObjects();
@@ -161,17 +203,21 @@ private:
 
 	// Commands
 	VkCommandPool m_commandPool;
-	DynamicArray<VkCommandBuffer> m_commandBuffers;
+	DynamicArray<VkCommandBuffer> m_commandBufQueue; // Contains all command buffers to be submitted for the current frame.
 
 	// Rendering.
-	VkRenderPass m_renderPass;
-	VkPipelineLayout m_pipelineLayout;
-	VkPipeline m_graphicsPipeline;
+	VkRenderPass m_clearRenderPass;
+	VkRenderPass m_mainRenderPass;
+
+	//PipelineInfo m_trianglePipeline;
+	//PipelineInfo m_altTrianglePipeline;
 
 	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
 	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;
 	DynamicArray<VkFence> m_inFlightFences;
 	unsigned long long m_currentFrame;
+	unsigned int m_currentFrameIndex;
+	unsigned int m_presentImageIndex;
 
 	// Extensions.
 	VkExtensionProperties* m_extensions;
@@ -190,8 +236,7 @@ private:
 	};
 
 	// Temp
-	Shader* m_triangleShader;
-
-	Table<ShaderRegister> m_shaderRegisters;
+	//Shader* m_triangleShader;
+	//Shader* m_altTriangleShader;
 };
 
