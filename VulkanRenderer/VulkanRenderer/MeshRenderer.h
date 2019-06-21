@@ -15,6 +15,15 @@ public:
 
 	~MeshRenderer();
 
+	/*
+	Description: Add the draw commands of this object to the externally recorded command buffer.
+	Param:
+	    VkCommandBuffer& cmdBuffer: The command buffer to record to.
+	*/
+	void CommandDraw(VkCommandBuffer_T* cmdBuffer);
+
+	const Shader* GetShader();
+
 	VkCommandBuffer_T* GetDrawCommands(const unsigned int& frameBufferIndex);
 
 private:

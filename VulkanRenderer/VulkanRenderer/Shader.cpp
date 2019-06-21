@@ -1,5 +1,6 @@
 #include "Shader.h"
 #include "Renderer.h"
+#include "MeshRenderer.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>

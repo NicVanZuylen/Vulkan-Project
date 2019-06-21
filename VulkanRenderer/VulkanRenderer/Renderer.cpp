@@ -111,8 +111,9 @@ Renderer::~Renderer()
 	//vkDestroyPipeline(m_logicDevice, m_trianglePipeline.m_handle, nullptr);
 	//vkDestroyPipeline(m_logicDevice, m_altTrianglePipeline.m_handle, nullptr);
 
-	// Destroy render pass.
-	vkDestroyRenderPass(m_logicDevice, m_mainRenderPass, nullptr);
+	// Destroy render passes.
+	vkDestroyRenderPass(m_logicDevice, m_staticRenderPass, nullptr);
+	vkDestroyRenderPass(m_logicDevice, m_dynamicRenderPass, nullptr);
 
 	// Destroy pipeline layout.
 	//vkDestroyPipelineLayout(m_logicDevice, m_trianglePipeline.m_layout, nullptr);
@@ -180,6 +181,13 @@ void Renderer::UnregisterShader(Shader* shader)
 {
 	if(shader->m_registered) 
 	{
+		// Wait for all command buffer fences to complete before deleting the pipeline.
+		for (int i = 0; i < m_dynamicCmdBufFences.GetSize(); ++i) 
+		{
+			if(m_dynamicCmdBufFences[i])
+				vkWaitForFences(m_logicDevice, 1, &m_dynamicCmdBufFences[i], VK_TRUE, std::numeric_limits<unsigned long long>::max());
+		}
+
 		// Destroy modules...
 		vkDestroyShaderModule(m_logicDevice, shader->m_vertModule, nullptr);
 		vkDestroyShaderModule(m_logicDevice, shader->m_fragModule, nullptr);
@@ -688,47 +696,92 @@ void Renderer::CreateSwapChainImageViews()
 void Renderer::CreateRenderPasses() 
 {
 	// ------------------------------------------------------------------------------------------------------------
-	// Clear pass.
+	// Static object pass
 
-	VkAttachmentDescription colorAttachment = {};
-	colorAttachment.format = m_swapChainImageFormat;
-	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	//colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	{
+		VkAttachmentDescription colorAttachment = {};
+		colorAttachment.format = m_swapChainImageFormat;
+		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // No multisampling.
+		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear buffer initially.
+		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store for use in a future render pass.
+		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // Don't care.
+		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't care.
+		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Initial layout is unknown.
+		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Output optimal layout for the next render pass.
 
-	VkAttachmentReference colorAttachmentRef = {};
-	colorAttachmentRef.attachment = 0;
-	colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		VkAttachmentReference colorAttachmentRef = {};
+		colorAttachmentRef.attachment = 0;
+		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Expected optimal layout.
 
-	VkSubpassDescription subpass = {};
-	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	subpass.colorAttachmentCount = 1;
-	subpass.pColorAttachments = &colorAttachmentRef;
+		VkSubpassDescription subpass = {};
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass.colorAttachmentCount = 1; // One attachment.
+		subpass.pColorAttachments = &colorAttachmentRef;
 
-	VkRenderPassCreateInfo renderPassInfo = {};
-	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	renderPassInfo.attachmentCount = 1;
-	renderPassInfo.pAttachments = &colorAttachment;
-	renderPassInfo.subpassCount = 1;
-	renderPassInfo.pSubpasses = &subpass;
+		VkRenderPassCreateInfo renderPassInfo = {};
+		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		renderPassInfo.attachmentCount = 1;
+		renderPassInfo.pAttachments = &colorAttachment;
+		renderPassInfo.subpassCount = 1;
+		renderPassInfo.pSubpasses = &subpass;
 
-	VkSubpassDependency dependency = {};
-	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-	dependency.dstSubpass = 0;
-	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependency.srcAccessMask = 0;
-	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		VkSubpassDependency dependency = {};
+		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependency.dstSubpass = 0;
+		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT; // Ensures the source color is outputted from the pipeline, meaning processing has finished.
+		dependency.srcAccessMask = 0;
+		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-	renderPassInfo.dependencyCount = 1;
-	renderPassInfo.pDependencies = &dependency;
+		renderPassInfo.dependencyCount = 1;
+		renderPassInfo.pDependencies = &dependency;
 
-	RENDERER_SAFECALL(vkCreateRenderPass(m_logicDevice, &renderPassInfo, nullptr, &m_mainRenderPass), "Renderer Error: Failed to create render pass.");
+		RENDERER_SAFECALL(vkCreateRenderPass(m_logicDevice, &renderPassInfo, nullptr, &m_staticRenderPass), "Renderer Error: Failed to create render pass.");
+	}
+
+	// ------------------------------------------------------------------------------------------------------------
+	// Dynamic object pass
+
+	{
+		VkAttachmentDescription colorAttachment = {};
+		colorAttachment.format = m_swapChainImageFormat;
+		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // Not multisampling right now.
+		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; // Load attachment from store.
+		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store color attachment for presentation.
+		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // Don't care.
+		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't care.
+		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Expecting optimal color attachment layout.
+		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // Output layout should be presentable to the screen.
+
+		VkAttachmentReference colorAttachmentRef = {};
+		colorAttachmentRef.attachment = 0;
+		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Expected optimal layout.
+
+		VkSubpassDescription subpass = {};
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass.colorAttachmentCount = 1;
+		subpass.pColorAttachments = &colorAttachmentRef;
+
+		VkRenderPassCreateInfo renderPassInfo = {};
+		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		renderPassInfo.attachmentCount = 1; // One attachment.
+		renderPassInfo.pAttachments = &colorAttachment;
+		renderPassInfo.subpassCount = 1;
+		renderPassInfo.pSubpasses = &subpass;
+
+		VkSubpassDependency dependency = {};
+		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependency.dstSubpass = 0;
+		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT; // Ensures the source color is outputted from the pipeline, meaning processing has finished.
+		dependency.srcAccessMask = 0;
+		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+		renderPassInfo.dependencyCount = 1;
+		renderPassInfo.pDependencies = &dependency;
+
+		RENDERER_SAFECALL(vkCreateRenderPass(m_logicDevice, &renderPassInfo, nullptr, &m_dynamicRenderPass), "Renderer Error: Failed to create render pass.");
+	}
 
 	// ------------------------------------------------------------------------------------------------------------
 }
@@ -866,7 +919,7 @@ void Renderer::CreateGraphicsPipeline(Shader* shader)
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = nullptr;
 	pipelineInfo.layout = info->m_layout;
-	pipelineInfo.renderPass = m_mainRenderPass;
+	pipelineInfo.renderPass = m_dynamicRenderPass;
 	pipelineInfo.subpass = 0;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 	pipelineInfo.basePipelineIndex = -1;
@@ -885,7 +938,7 @@ void Renderer::CreateFramebuffers()
 
 		VkFramebufferCreateInfo framebufferInfo = {};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebufferInfo.renderPass = m_mainRenderPass;
+		framebufferInfo.renderPass = m_dynamicRenderPass;
 		framebufferInfo.attachmentCount = 1;
 		framebufferInfo.pAttachments = &attachment;
 		framebufferInfo.width = m_swapChainImageExtents.width;
@@ -904,6 +957,94 @@ void Renderer::CreateCommandPool()
 	poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_commandPool), "Renderer Error: Failed to create command pool.");
+
+	// Allocate memory for static pass command buffers...
+	m_staticPassBufs.SetSize(m_swapChainFramebuffers.GetSize());
+	m_staticPassBufs.SetCount(m_staticPassBufs.GetSize());
+
+	// Allocation info.
+	VkCommandBufferAllocateInfo cmdBufAllocateInfo = {};
+	cmdBufAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	cmdBufAllocateInfo.commandPool = m_commandPool;
+	cmdBufAllocateInfo.commandBufferCount = m_staticPassBufs.GetSize();
+	cmdBufAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+	// Allocate static command buffers.
+	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_staticPassBufs.Data()), "Renderer Error: Failed to allocate static command buffers.");
+
+	VkCommandBufferBeginInfo cmdBeginInfo = {};
+	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+	cmdBeginInfo.pInheritanceInfo = nullptr;
+
+	VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+	// Record static command buffers...
+	for(int i = 0; i < m_staticPassBufs.Count(); ++i) 
+	{
+		VkCommandBuffer& cmdBuffer = m_staticPassBufs[i];
+
+		RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of static pass command buffer.");
+
+		// Begin render pass.
+		VkRenderPassBeginInfo passBeginInfo = {};
+		passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		passBeginInfo.renderPass = m_staticRenderPass;
+		passBeginInfo.framebuffer = m_swapChainFramebuffers[i];
+		passBeginInfo.renderArea.offset = { 0, 0 };
+		passBeginInfo.renderArea.extent = m_swapChainImageExtents;
+
+		passBeginInfo.clearValueCount = 1;
+		passBeginInfo.pClearValues = &clearVal;
+
+		vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+		// Static objects in the scene will be drawn here...
+
+		vkCmdEndRenderPass(cmdBuffer);
+
+		RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of static pass command buffer.");
+	}
+
+	// Allocate memory for dynamic command buffers...
+	m_dynamicPassBufs.SetSize(m_swapChainFramebuffers.GetSize());
+	m_dynamicPassBufs.SetCount(m_dynamicPassBufs.GetSize());
+
+	// Allocate dynamic command buffers...
+	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_dynamicPassBufs.Data()), "Renderer Error: Failed to allocate dynamic command buffers.");
+
+	// Initial recording of dynamic command buffers...
+	for (int i = 0; i < m_dynamicPassBufs.Count(); ++i)
+	{
+		VkCommandBuffer& cmdBuffer = m_dynamicPassBufs[i];
+
+		RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of static pass command buffer.");
+
+		// Begin render pass.
+		VkRenderPassBeginInfo passBeginInfo = {};
+		passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		passBeginInfo.renderPass = m_dynamicRenderPass;
+		passBeginInfo.framebuffer = m_swapChainFramebuffers[i];
+		passBeginInfo.renderArea.offset = { 0, 0 };
+		passBeginInfo.renderArea.extent = m_swapChainImageExtents;
+		passBeginInfo.clearValueCount = 0;
+		passBeginInfo.pClearValues = nullptr;
+
+		vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+		// Dynamic objects in the scene will be drawn here...
+		for (int j = 0; j < m_dynamicObjects.Count(); ++j)
+			m_dynamicObjects[j]->CommandDraw(cmdBuffer);
+
+		vkCmdEndRenderPass(cmdBuffer);
+
+		RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of static pass command buffer.");
+	}
+
+	// Flag that there is no need to re-record the dynamic command buffers.
+	m_dynamicStateChange[0] = false;
+	m_dynamicStateChange[1] = false;
+	m_dynamicStateChange[2] = false;
 
 	/*
 	m_commandBufQueue.SetSize(m_swapChainFramebuffers.GetSize());
@@ -955,44 +1096,48 @@ void Renderer::CreateCommandPool()
 	*/
 }
 
-void Renderer::RecordCommandBuffer(VkCommandBuffer& cmdBuffer, const PipelineInfo& pipeline, const VkFramebuffer& framebuffer) 
+void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 {
-	// Reset command buffer.
-	vkResetCommandBuffer(cmdBuffer, 0);
+	// If there was no dynamic state change, no re-recording is necessary.
+	if (!m_dynamicStateChange[bufferIndex])
+		return;
 
-	// Command buffer recording.
+	// Wait for fence, since the command buffer cannot be re-recorded until it has finished execution.
+	if(m_dynamicCmdBufFences[bufferIndex])
+	    vkWaitForFences(m_logicDevice, 1, &m_dynamicCmdBufFences[bufferIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
+
 	VkCommandBufferBeginInfo cmdBeginInfo = {};
 	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 	cmdBeginInfo.pInheritanceInfo = nullptr;
 
-	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of command buffer.");
+	// Initial recording of dynamic command buffers...
+	VkCommandBuffer& cmdBuffer = m_dynamicPassBufs[bufferIndex];
 
-	// Render pass beginning.
+	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of static pass command buffer.");
+
+	// Begin render pass.
 	VkRenderPassBeginInfo passBeginInfo = {};
 	passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	passBeginInfo.renderPass = m_mainRenderPass;
-	passBeginInfo.framebuffer = framebuffer;
+	passBeginInfo.renderPass = m_dynamicRenderPass;
+	passBeginInfo.framebuffer = m_swapChainFramebuffers[bufferIndex];
 	passBeginInfo.renderArea.offset = { 0, 0 };
 	passBeginInfo.renderArea.extent = m_swapChainImageExtents;
-
-	VkClearValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
-	passBeginInfo.clearValueCount = 1;
-	passBeginInfo.pClearValues = &clearColor;
+	passBeginInfo.clearValueCount = 0;
+	passBeginInfo.pClearValues = nullptr;
 
 	vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	// Bind pipeline.
-	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.m_handle);
+	// Dynamic objects in the scene will be drawn here...
+	for (int j = 0; j < m_dynamicObjects.Count(); ++j)
+		m_dynamicObjects[j]->CommandDraw(cmdBuffer);
 
-	// Draw.
-	vkCmdDraw(cmdBuffer, 3, 1, 0, 0);
-
-	// End render pass.
 	vkCmdEndRenderPass(cmdBuffer);
 
-	// End recording.
-	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end command buffer recording.");
+	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of static pass command buffer.");
+
+	// Flag that there is no further dynamic state changes yet.
+	m_dynamicStateChange[bufferIndex] = false;
 }
 
 void Renderer::CreateSyncObjects() 
@@ -1006,13 +1151,18 @@ void Renderer::CreateSyncObjects()
 	m_inFlightFences.SetSize(MAX_FRAMES_IN_FLIGHT);
 	m_inFlightFences.SetCount(MAX_FRAMES_IN_FLIGHT);
 
+	m_dynamicCmdBufFences.SetSize(m_dynamicPassBufs.GetSize());
+	m_dynamicCmdBufFences.SetCount(m_dynamicPassBufs.GetSize());
+
+	for (int i = 0; i < m_dynamicCmdBufFences.Count(); ++i)
+		m_dynamicCmdBufFences[i] = nullptr;
+
 	VkSemaphoreCreateInfo semaphoreInfo = {};
 	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
 	VkFenceCreateInfo fenceInfo = {};
 	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
 	{
 		RENDERER_SAFECALL(vkCreateSemaphore(m_logicDevice, &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]), "Renderer Error: Failed to create semaphore.");
@@ -1026,31 +1176,48 @@ void Renderer::Begin()
 {
 	m_currentFrameIndex = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
 
+	// Wait of frames-in-flight.
 	vkWaitForFences(m_logicDevice, 1, &m_inFlightFences[m_currentFrameIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
 	vkResetFences(m_logicDevice, 1, &m_inFlightFences[m_currentFrameIndex]);
 
+	// Aquire next image from the swap chain.
 	RENDERER_SAFECALL(vkAcquireNextImageKHR(m_logicDevice, m_swapChain, std::numeric_limits<unsigned long long>::max(), m_imageAvailableSemaphores[m_currentFrameIndex], VK_NULL_HANDLE, &m_presentImageIndex),
 		"Renderer Error: Failed to aquire next swap chain image.");
 }
 
-void Renderer::DrawObject(MeshRenderer* object) 
+void Renderer::AddDynamicObject(MeshRenderer* object) 
 {
-	m_commandBufQueue.Push(object->GetDrawCommands(m_presentImageIndex));
+	m_dynamicObjects.Push(object);
+
+	m_dynamicStateChange[0] = true;
+	m_dynamicStateChange[1] = true;
+	m_dynamicStateChange[2] = true;
 }
 
 void Renderer::End() 
 {
+	// Re-record the dynamic command buffer for this swap chain image if it has changed. It will need to wait on the command buffer's fence signal before re-recording.
+    RecordDynamicCommandBuffer(m_presentImageIndex);
+
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+	VkCommandBuffer cmdBuffers[] = { m_staticPassBufs[m_presentImageIndex], m_dynamicPassBufs[m_presentImageIndex] };
+
 	submitInfo.waitSemaphoreCount = 1;
 	submitInfo.pWaitSemaphores = &m_imageAvailableSemaphores[m_currentFrameIndex];
 	submitInfo.pWaitDstStageMask = waitStages;
-	submitInfo.commandBufferCount = m_commandBufQueue.Count();
-	submitInfo.pCommandBuffers = m_commandBufQueue.Data();
+	submitInfo.commandBufferCount = 2;
+	submitInfo.pCommandBuffers = cmdBuffers;
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[m_currentFrameIndex];
+
+	/* 
+	When a dynamic state change occurs it will need the associated submission fence to wait for before the
+	command buffer is re-recorded.
+	*/
+	m_dynamicCmdBufFences[m_presentImageIndex] = m_inFlightFences[m_currentFrameIndex];
 
 	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrameIndex]), "Renderer Error: Failed to submit command buffer.");
 
@@ -1064,9 +1231,6 @@ void Renderer::End()
 	presentInfo.pResults = nullptr;
 
 	RENDERER_SAFECALL(vkQueuePresentKHR(m_graphicsQueue, &presentInfo), "Renderer Error: Failed to present swap chain image.");
-
-	// Clear command buffer queue.
-	m_commandBufQueue.Clear();
 }
 
 VkDevice Renderer::GetDevice() 
@@ -1081,7 +1245,7 @@ VkCommandPool Renderer::GetCommandPool()
 
 VkRenderPass Renderer::MainRenderPass() 
 {
-	return m_mainRenderPass;
+	return m_dynamicRenderPass;
 }
 
 const DynamicArray<VkFramebuffer>& Renderer::GetFramebuffers() 

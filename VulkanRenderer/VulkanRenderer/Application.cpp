@@ -82,6 +82,8 @@ void Application::Run()
 	MeshRenderer* triangle = new MeshRenderer(triangleShader, m_renderer);
 	MeshRenderer* altTriangle = new MeshRenderer(altTriangleShader, m_renderer);
 
+	m_renderer->AddDynamicObject(altTriangle);
+
 	float fDeltaTime = 0.0f;	
 
 	while(!glfwWindowShouldClose(m_window)) 
@@ -101,8 +103,8 @@ void Application::Run()
 		// Draw...
 		m_renderer->Begin();
 
-		m_renderer->DrawObject(altTriangle);
-		m_renderer->DrawObject(triangle);
+		if (m_input->GetKey(GLFW_KEY_G))
+			m_renderer->AddDynamicObject(triangle);
 
 		m_renderer->End();
 

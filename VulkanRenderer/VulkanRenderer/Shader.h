@@ -4,6 +4,7 @@
 #include "DynamicArray.h"
 
 class Renderer;
+class MeshRenderer;
 struct PipelineInfo;
 
 struct Shader 
@@ -46,6 +47,9 @@ struct Shader
 	VkShaderModule m_fragModule;
 
     PipelineInfo* m_pipeline;
+
+	// All objects that use this shader/pipeline.
+	DynamicArray<MeshRenderer*> m_dependentObjects;
 
 	bool m_registered;
 };

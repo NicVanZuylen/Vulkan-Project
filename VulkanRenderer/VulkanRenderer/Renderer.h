@@ -51,7 +51,7 @@ public:
 	void Begin();
 
 	// Schedule a render object to be drawn.
-	void DrawObject(MeshRenderer* object);
+	void AddDynamicObject(MeshRenderer* object);
 
 	// End the main render pass.
 	void End();
@@ -143,7 +143,7 @@ private:
 	void CreateCommandPool();
 
 	// Record command buffer.
-	void RecordCommandBuffer(VkCommandBuffer& cmdBuffer, const PipelineInfo& pipeline, const VkFramebuffer& framebuffer);
+	void RecordDynamicCommandBuffer(const unsigned int& bufferIndex);
 
 	// Create semaphores.
 	void CreateSyncObjects();
@@ -203,11 +203,15 @@ private:
 
 	// Commands
 	VkCommandPool m_commandPool;
-	DynamicArray<VkCommandBuffer> m_commandBufQueue; // Contains all command buffers to be submitted for the current frame.
+	DynamicArray<VkCommandBuffer> m_staticPassBufs; // Command buffers for the static render pass.
+	DynamicArray<VkCommandBuffer> m_dynamicPassBufs; // Command buffers for the dynamic render pass.
 
 	// Rendering.
-	VkRenderPass m_clearRenderPass;
-	VkRenderPass m_mainRenderPass;
+	VkRenderPass m_staticRenderPass;
+	VkRenderPass m_dynamicRenderPass;
+
+	DynamicArray<MeshRenderer*> m_dynamicObjects;
+	bool m_dynamicStateChange[3];
 
 	//PipelineInfo m_trianglePipeline;
 	//PipelineInfo m_altTrianglePipeline;
@@ -215,6 +219,7 @@ private:
 	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
 	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;
 	DynamicArray<VkFence> m_inFlightFences;
+	DynamicArray<VkFence> m_dynamicCmdBufFences;
 	unsigned long long m_currentFrame;
 	unsigned int m_currentFrameIndex;
 	unsigned int m_presentImageIndex;

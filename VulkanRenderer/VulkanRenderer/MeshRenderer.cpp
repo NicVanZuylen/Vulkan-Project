@@ -20,6 +20,20 @@ MeshRenderer::~MeshRenderer()
 		delete[] m_commandBuffers;
 }
 
+void MeshRenderer::CommandDraw(VkCommandBuffer_T* cmdBuffer) 
+{
+	// Bind pipeline...
+	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shader->m_pipeline->m_handle);
+
+	// Draw...
+	vkCmdDraw(cmdBuffer, 3, 1, 0, 0);
+}
+
+const Shader* MeshRenderer::GetShader() 
+{
+	return m_shader;
+}
+
 VkCommandBuffer MeshRenderer::GetDrawCommands(const unsigned int& frameBufferIndex) 
 {
 	return m_commandBuffers[frameBufferIndex];
