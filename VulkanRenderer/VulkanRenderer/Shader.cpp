@@ -25,7 +25,8 @@ Shader::Shader(const char* vertPath, const char* fragPath)
 	std::string vertStr = vertPath;
 	std::string fragStr = fragPath;
 
-	m_name = vertStr.substr(vertStr.find_last_of('/')) + fragStr.substr(fragStr.find_last_of('/'));
+	// Name is the name of the fragment shader file appended to the name of the vertex shader file.
+	m_name = vertStr.substr(vertStr.find_last_of('/') + 1) + "|" + fragStr.substr(fragStr.find_last_of('/') + 1);
 
 	Load(vertPath, fragPath);
 }

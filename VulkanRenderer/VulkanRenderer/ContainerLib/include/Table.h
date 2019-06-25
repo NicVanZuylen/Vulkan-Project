@@ -49,11 +49,10 @@ public:
 
 		if (arr.Count() == 0) 
 		{
-			int index = arr.Count();
 			arr.Push(CreatePair());
-			arr[index]->m_key = data;
+			arr[0]->m_key = data;
 
-			return arr[index]->m_value;
+			return arr[0]->m_value;
 		}
 
 #ifdef CONTAINER_DEBUG_IMPLEMENTATION

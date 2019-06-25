@@ -1,29 +1,90 @@
 #include "MeshRenderer.h"
+#include "VertexInfo.h"
+#include "Mesh.h"
 #include "Shader.h"
 #include "Renderer.h"
 
-MeshRenderer::MeshRenderer(const Shader* shader, Renderer* renderer)
+PipelineData::PipelineData() 
 {
-	m_shader = shader;
+	m_handle = nullptr;
+	m_layout = nullptr;
+}
+
+PipelineDataPtr::PipelineDataPtr() 
+{
+	m_ptr = nullptr;
+}
+
+VkVertexInputBindingDescription VertexType::BindingDescription() 
+{
+	VkVertexInputBindingDescription bindDesc = {};
+	bindDesc.binding = 0;
+	bindDesc.stride = sizeof(glm::vec4);
+	bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // Data is per-vertex rather than per-instance.
+
+	return bindDesc;
+}
+
+void VertexType::AttributeDescriptions(DynamicArray<VkVertexInputAttributeDescription>& outDescriptions)
+{
+	VkVertexInputAttributeDescription defaultDesc = {};
+	defaultDesc.binding = 0;
+	defaultDesc.location = 0;
+	defaultDesc.offset = 0;
+	defaultDesc.format = VK_FORMAT_R32G32B32A32_SFLOAT; // vec4 format.
+
+	outDescriptions = { defaultDesc };
+}
+
+Table<PipelineDataPtr> MeshRenderer::m_pipelineTable;
+DynamicArray<PipelineData*> MeshRenderer::m_allPipelines;
+
+MeshRenderer::MeshRenderer(Renderer* renderer, Mesh* mesh, Shader* shader)
+{
 	m_renderer = renderer;
+	m_mesh = mesh;
+	m_shader = shader;
+	m_pipelineData = nullptr;
 
-	m_commandBuffers = nullptr;
+	m_nameID = "|" + shader->m_name + mesh->VertexFormat()->NameID();
 
-
-	CreateCommandBuffers();
-	RecordCommandBuffers();
+	CreateGraphicsPipeline();
 }
 
 MeshRenderer::~MeshRenderer()
 {
-	if (m_commandBuffers)
-		delete[] m_commandBuffers;
+	if (m_pipelineData) 
+	{
+		// The lasto object using the pipeline is responsible for it's deletion.
+		if (m_pipelineData->m_renderObjects.Count() == 1) 
+		{
+			// This is the only object remaining that is using the pipeline. Destroy it.
+			vkDestroyPipeline(m_renderer->GetDevice(), m_pipelineData->m_handle, nullptr);
+			vkDestroyPipelineLayout(m_renderer->GetDevice(), m_pipelineData->m_layout, nullptr);
+
+			// Remove from containers.
+			m_pipelineTable[{ m_nameID.c_str() }].m_ptr = nullptr;
+			m_allPipelines.Pop(m_pipelineData);
+
+			delete m_pipelineData;
+		}
+		else 
+		{
+			// Other objects are using the pipeline. They are now responsible for deleting it.
+			// Remove this object from the pipeline's list of objects using it.
+			m_pipelineData->m_renderObjects.Pop(this);
+		}
+	}
+}
+
+DynamicArray<PipelineData*>& MeshRenderer::Pipelines() 
+{
+	return m_allPipelines;
 }
 
 void MeshRenderer::CommandDraw(VkCommandBuffer_T* cmdBuffer) 
 {
-	// Bind pipeline...
-	vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shader->m_pipeline->m_handle);
+	m_mesh->Bind(cmdBuffer);
 
 	// Draw...
 	vkCmdDraw(cmdBuffer, 3, 1, 0, 0);
@@ -34,71 +95,174 @@ const Shader* MeshRenderer::GetShader()
 	return m_shader;
 }
 
-VkCommandBuffer MeshRenderer::GetDrawCommands(const unsigned int& frameBufferIndex) 
+void MeshRenderer::CreateGraphicsPipeline() 
 {
-	return m_commandBuffers[frameBufferIndex];
-}
+	PipelineData*& pipelineData = m_pipelineTable[{ m_nameID.c_str() }].m_ptr;
 
-void MeshRenderer::CreateCommandBuffers() 
-{
-	m_commandBufferCount = m_renderer->GetFramebuffers().Count();
-
-	VkCommandBufferAllocateInfo allocateInfo = {};
-	allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocateInfo.commandPool = m_renderer->GetCommandPool();
-	allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocateInfo.pNext = nullptr;
-	allocateInfo.commandBufferCount = m_commandBufferCount;
-
-	// Allocate command buffer array.
-	if (!m_commandBuffers)
-	    m_commandBuffers = new VkCommandBuffer[m_commandBufferCount];
-
-	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_renderer->GetDevice(), &allocateInfo, m_commandBuffers), "MeshRenderer Error: Failed to allocate command buffers.");
-}
-
-void MeshRenderer::RecordCommandBuffers() 
-{
-	VkCommandBufferBeginInfo beginInfo = {};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-	beginInfo.pInheritanceInfo = nullptr;
-	beginInfo.pNext = nullptr;
-
-	Renderer& renderRef = *m_renderer;
-
-	VkClearValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
-
-	for(int i = 0; i < m_commandBufferCount; ++i) 
+	if (pipelineData)
 	{
-		VkCommandBuffer& cmdBuffer = m_commandBuffers[i];
+		// Pipeline already exists. This class does not own it but can use it.
+		m_pipelineData = pipelineData;
+		m_pipelineData->m_renderObjects.Push(this);
 
-		RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &beginInfo), "MeshRenderer Error: Failed to begin command buffer recording.");
-
-		// Render pass beginning.
-		VkRenderPassBeginInfo passBeginInfo = {};
-		passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		passBeginInfo.renderPass = renderRef.MainRenderPass();
-		passBeginInfo.framebuffer = renderRef.GetFramebuffers()[i];
-		passBeginInfo.renderArea.offset = { 0, 0 };
-		passBeginInfo.renderArea.extent = { m_renderer->FrameWidth(), m_renderer->FrameHeight() };
-
-		passBeginInfo.clearValueCount = 0;
-		//passBeginInfo.pClearValues = &clearColor;
-
-		vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-		// Bind vertex & index buffers.
-
-		// For now the pipeline is bound for each draw call using it. TODO: Only bind the pipeline once and subsequently draw all objects using it before binding the next pipeline.
-		// Pipeline & Descriptor sets.
-		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shader->m_pipeline->m_handle);
-
-		// Draw...
-		vkCmdDraw(cmdBuffer, 3, 1, 0, 0);
-
-		vkCmdEndRenderPass(cmdBuffer);
-
-		RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "MeshRenderer Error: Failed to end command buffer recording.");
+		return;
 	}
+
+	// Vertex shader stage information.
+	VkPipelineShaderStageCreateInfo vertStageInfo = {};
+	vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	vertStageInfo.module = m_shader->m_vertModule;
+	vertStageInfo.pName = "main";
+
+	// Fragment shader stage information.
+	VkPipelineShaderStageCreateInfo fragStageInfo = {};
+	fragStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	fragStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	fragStageInfo.module = m_shader->m_fragModule;
+	fragStageInfo.pName = "main";
+
+	// Array of shader stage information.
+	VkPipelineShaderStageCreateInfo shaderStageInfos[] = { vertStageInfo, fragStageInfo };
+
+	const VertexInfo& vertFormat = *m_mesh->VertexFormat();
+
+	// Vertex attribute information.
+	auto bindingDesc = vertFormat.BindingDescription();
+	const DynamicArray<VkVertexInputAttributeDescription>& attrDescriptions = vertFormat.AttributeDescriptions();
+
+	VkPipelineVertexInputStateCreateInfo vertInputInfo = {};
+	vertInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	vertInputInfo.vertexBindingDescriptionCount = 1;
+	vertInputInfo.pVertexBindingDescriptions = &bindingDesc;
+	vertInputInfo.vertexAttributeDescriptionCount = attrDescriptions.Count();
+	vertInputInfo.pVertexAttributeDescriptions = attrDescriptions.Data();
+
+	// Input assembly stage configuration.
+	VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
+	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+	// Viewport configuration.
+	VkViewport viewPort = {};
+	viewPort.x = 0.0f;
+	viewPort.y = 0.0f;
+	viewPort.width = (float)m_renderer->FrameWidth();
+	viewPort.height = (float)m_renderer->FrameHeight();
+	viewPort.minDepth = 0.0f;
+	viewPort.maxDepth = 1.0f;
+
+	// Scissor configuration.
+	VkRect2D scissor = {};
+	scissor.offset = { 0, 0 };
+	scissor.extent = { m_renderer->FrameWidth(), m_renderer->FrameHeight() };
+
+	// Viewport state configuration.
+	VkPipelineViewportStateCreateInfo viewportState = {};
+	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewportState.viewportCount = 1;
+	viewportState.pViewports = &viewPort;
+	viewportState.scissorCount = 1;
+	viewportState.pScissors = &scissor;
+
+	// Primitive rasterization stage configuration.
+	VkPipelineRasterizationStateCreateInfo rasterizer = {};
+	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	rasterizer.depthClampEnable = VK_FALSE;
+	rasterizer.rasterizerDiscardEnable = VK_FALSE;
+	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+	rasterizer.lineWidth = 1.0f;
+	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+
+	// Used for shadow mapping...
+	rasterizer.depthBiasEnable = VK_FALSE;
+	rasterizer.depthBiasConstantFactor = 0.0f;
+	rasterizer.depthBiasClamp = 0.0f;
+	rasterizer.depthBiasSlopeFactor = 0.0f;
+
+	// Multisampling stage configuration.
+	VkPipelineMultisampleStateCreateInfo multisampler = {};
+	multisampler.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisampler.sampleShadingEnable = VK_FALSE;
+	multisampler.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	multisampler.minSampleShading = 1.0f;
+	multisampler.pSampleMask = nullptr;
+	multisampler.alphaToCoverageEnable = VK_FALSE;
+	multisampler.alphaToOneEnable = VK_FALSE;
+
+	// Depth/Stencil state
+	// ---
+
+	// Color blending
+	VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
+	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	colorBlendAttachment.blendEnable = VK_FALSE;
+	colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+	colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+	colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+	colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+	colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+	VkPipelineColorBlendStateCreateInfo colorBlending = {};
+	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	colorBlending.logicOpEnable = VK_FALSE;
+	colorBlending.logicOp = VK_LOGIC_OP_COPY;
+	colorBlending.attachmentCount = 1;
+	colorBlending.pAttachments = &colorBlendAttachment;
+	colorBlending.blendConstants[0] = 0.0f;
+	colorBlending.blendConstants[1] = 0.0f;
+	colorBlending.blendConstants[2] = 0.0f;
+	colorBlending.blendConstants[3] = 0.0f;
+
+	// Dynamic states
+	/*
+	VkDynamicState dynState = VK_DYNAMIC_STATE_VIEWPORT;
+
+	VkPipelineDynamicStateCreateInfo dynamicState = {};
+	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+	dynamicState.dynamicStateCount = 1;
+	dynamicState.pDynamicStates = &dynState;
+	*/
+
+	m_pipelineData = new PipelineData;
+	m_pipelineData->m_renderObjects.Push(this);
+
+	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipelineLayoutInfo.setLayoutCount = 0;
+	pipelineLayoutInfo.pSetLayouts = nullptr;
+	pipelineLayoutInfo.pushConstantRangeCount = 0;
+	pipelineLayoutInfo.pPushConstantRanges = nullptr;
+
+	RENDERER_SAFECALL(vkCreatePipelineLayout(m_renderer->GetDevice(), &pipelineLayoutInfo, nullptr, &m_pipelineData->m_layout), "Renderer Error: Failed to create graphics pipeline layout.");
+
+	// Create pipeline.
+	VkGraphicsPipelineCreateInfo pipelineInfo = {};
+	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipelineInfo.stageCount = 2;
+	pipelineInfo.pStages = shaderStageInfos;
+	pipelineInfo.pVertexInputState = &vertInputInfo;
+	pipelineInfo.pInputAssemblyState = &inputAssembly;
+	pipelineInfo.pViewportState = &viewportState;
+	pipelineInfo.pRasterizationState = &rasterizer;
+	pipelineInfo.pMultisampleState = &multisampler;
+	pipelineInfo.pDepthStencilState = nullptr;
+	pipelineInfo.pColorBlendState = &colorBlending;
+	pipelineInfo.pDynamicState = nullptr;
+	pipelineInfo.layout = m_pipelineData->m_layout;
+	pipelineInfo.renderPass = m_renderer->DynamicRenderPass();
+	pipelineInfo.subpass = 0;
+	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+	pipelineInfo.basePipelineIndex = -1;
+
+	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_renderer->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipelineData->m_handle), "Renderer Error: Failed to create graphics pipeline.");
+
+	// Set table pointer.
+	pipelineData = m_pipelineData;
+
+	// Add pipeline data to array of all pipelines.
+	m_allPipelines.Push(m_pipelineData);
 }

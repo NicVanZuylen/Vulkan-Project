@@ -28,12 +28,6 @@ class MeshRenderer;
 
 struct Shader;
 
-struct PipelineInfo
-{
-	VkPipeline m_handle;
-	VkPipelineLayout m_layout;
-};
-
 class Renderer
 {
 public:
@@ -50,6 +44,9 @@ public:
 	// Begin the main render pass.
 	void Begin();
 
+	// Submit a copy operation to the GPU.
+	void SubmitCopyOperation(VkCommandBuffer commandBuffer);
+
 	// Schedule a render object to be drawn.
 	void AddDynamicObject(MeshRenderer* object);
 
@@ -59,9 +56,11 @@ public:
 	// Getters and setters
 	VkDevice GetDevice();
 
+	VkPhysicalDevice GetPhysDevice();
+
 	VkCommandPool GetCommandPool();
 
-	VkRenderPass MainRenderPass();
+	VkRenderPass DynamicRenderPass();
 
 	const DynamicArray<VkFramebuffer>& GetFramebuffers();
 
@@ -219,7 +218,6 @@ private:
 	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
 	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;
 	DynamicArray<VkFence> m_inFlightFences;
-	DynamicArray<VkFence> m_dynamicCmdBufFences;
 	unsigned long long m_currentFrame;
 	unsigned int m_currentFrameIndex;
 	unsigned int m_presentImageIndex;

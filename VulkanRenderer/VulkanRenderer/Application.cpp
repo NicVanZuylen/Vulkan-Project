@@ -12,6 +12,8 @@
 #include "glm/include/ext.hpp"
 
 #include "Shader.h"
+#include "VertexInfo.h"
+#include "Mesh.h"
 #include "MeshRenderer.h"
 
 Input* Application::m_input = nullptr;
@@ -76,15 +78,17 @@ void Application::Run()
 	Shader* triangleShader = new Shader("Shaders/SPIR-V/vert.spv", "Shaders/SPIR-V/frag.spv");
 	m_renderer->RegisterShader(triangleShader);
 
-	Shader* altTriangleShader = new Shader("Shaders/SPIR-V/vertAlt.spv", "Shaders/SPIR-V/fragAlt.spv");
-	m_renderer->RegisterShader(altTriangleShader);
+	Shader* rectShader = new Shader("Shaders/SPIR-V/vertRect.spv", "Shaders/SPIR-V/fragRect.spv");
+	m_renderer->RegisterShader(rectShader);
 
-	MeshRenderer* triangle = new MeshRenderer(triangleShader, m_renderer);
-	MeshRenderer* altTriangle = new MeshRenderer(altTriangleShader, m_renderer);
+	VertexInfo vertFormat({ VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4 });
 
-	m_renderer->AddDynamicObject(altTriangle);
+	Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj", &vertFormat);
+
+	MeshRenderer* rect = new MeshRenderer(m_renderer, testMesh, rectShader);
 
 	float fDeltaTime = 0.0f;	
+	float fDebugDisplayTime = DEBUG_DISPLAY_TIME;
 
 	while(!glfwWindowShouldClose(m_window)) 
 	{
@@ -97,16 +101,24 @@ void Application::Run()
 
 		// ------------------------------------------------------------------------------------
 
+		fDebugDisplayTime -= fDeltaTime;
+
 		// Poll events.
 		glfwPollEvents();
 
 		// Draw...
 		m_renderer->Begin();
 
-		if (m_input->GetKey(GLFW_KEY_G))
-			m_renderer->AddDynamicObject(triangle);
+		if (m_input->GetKey(GLFW_KEY_G) && !m_input->GetKey(GLFW_KEY_G, INPUTSTATE_PREVIOUS)) 
+		{
+			std::cout << "Adding Rectangle!" << std::endl;
+			m_renderer->AddDynamicObject(rect);
+		}
+		
 
 		m_renderer->End();
+
+		m_input->EndFrame();
 
 		// End time...
 		auto endTime = std::chrono::high_resolution_clock::now();
@@ -114,16 +126,25 @@ void Application::Run()
 		auto timeDuration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
 
 		fDeltaTime = static_cast<float>(timeDuration) / 1000000.0f;
+
+		if(fDebugDisplayTime <= 0.0f) 
+		{
+			std::cout << "Frametime: " << fDeltaTime * 1000.0f << "ms\n";
+			std::cout << "FPS: " << (int)ceilf((1.0f / fDeltaTime)) << std::endl;
+
+			fDebugDisplayTime = DEBUG_DISPLAY_TIME;
+		}
 	}
 
-	delete triangle;
-	delete altTriangle;
+	delete rect;
+
+	delete testMesh;
 
 	m_renderer->UnregisterShader(triangleShader);
 	delete triangleShader;
 
-	m_renderer->UnregisterShader(altTriangleShader);
-	delete altTriangleShader;
+	m_renderer->UnregisterShader(rectShader);
+	delete rectShader;
 }
 
 void Application::ErrorCallBack(int error, const char* desc)

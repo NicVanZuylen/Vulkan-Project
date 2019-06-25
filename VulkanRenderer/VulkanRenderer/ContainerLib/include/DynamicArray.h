@@ -99,6 +99,20 @@ public:
 		}
 	}
 
+	// Copy assignment operator
+	void operator = (const DynamicArray<T>& other)
+	{
+		if (m_contents)
+			delete[] m_contents;
+
+		m_nSize = other.m_nSize;
+		m_nCount = other.m_nCount;
+		m_nExpandRate = other.m_nExpandRate;
+
+		m_contents = new T[other.m_nSize];
+		memcpy_s(m_contents, m_nSize * sizeof(T), other.m_contents, other.m_nSize * sizeof(T));
+	}
+
 	// Push (add)
 
 	// Adds a value to the end of the array, and expands the array if there is no room for the new value.
@@ -168,6 +182,19 @@ public:
 	}
 
 	// Pop (remove)
+
+	// Index through all objects in the array and remove the first element matching the input value (Slow).
+	inline void Pop(const T value) 
+	{
+		for (int i = 0; i < m_nCount; ++i) 
+		{
+			if (memcmp(&m_contents[i], &value, sizeof(T)) == 0) 
+			{
+				PopAt(i);
+				return;
+			}
+		}
+	}
 
 	// Removes the value in the array at the specified index. The location of the removed value is replaced by its successor the junk value is moved to the end of the array.
 	inline void PopAt(const int& index)

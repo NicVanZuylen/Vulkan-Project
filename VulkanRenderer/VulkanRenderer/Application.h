@@ -5,6 +5,8 @@ struct GLFWwindow;
 class Renderer;
 class Input;
 
+#define DEBUG_DISPLAY_TIME 2.0f
+
 class Application
 {
 public:

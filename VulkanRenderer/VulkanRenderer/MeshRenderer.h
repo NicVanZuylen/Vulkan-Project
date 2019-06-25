@@ -1,19 +1,61 @@
 #pragma once
+#include <vulkan/vulkan.h>
+#include "glm.hpp"
+#include "Table.h"
 
 class Renderer;
+class Mesh;
+class MeshRenderer;
 
-struct PipelineInfo;
+struct PipelineData;
 struct Shader;
 
 struct VkCommandBuffer_T;
+
+struct PipelineData
+{
+	PipelineData();
+
+	DynamicArray<MeshRenderer*> m_renderObjects; // All objects using this pipeline.
+	VkPipeline m_handle;
+	VkPipelineLayout m_layout;
+};
+
+struct PipelineDataPtr 
+{
+	PipelineDataPtr();
+
+	PipelineData* m_ptr;
+};
+
+struct VertexType 
+{
+	/*
+	Description: Get the binding description for this vertex structure.
+	*/
+	virtual VkVertexInputBindingDescription BindingDescription();
+
+	/*
+	Description: Get the vertex attribues for this vertex structure.
+	*/
+    virtual void AttributeDescriptions(DynamicArray<VkVertexInputAttributeDescription>& outDescriptions);
+};
+
+//struct Vertex : public VertexType
 
 class MeshRenderer
 {
 public:
 
-	MeshRenderer(const Shader* shader, Renderer* renderer);
+	MeshRenderer(Renderer* renderer, Mesh* mesh, Shader* shader);
 
 	~MeshRenderer();
+
+	/*
+	Description: Get all existing RenderObject pipelines.
+	Return Type: DynArr<PipelineData*>& 
+	*/
+	static DynamicArray<PipelineData*>& Pipelines();
 
 	/*
 	Description: Add the draw commands of this object to the externally recorded command buffer.
@@ -24,21 +66,21 @@ public:
 
 	const Shader* GetShader();
 
-	VkCommandBuffer_T* GetDrawCommands(const unsigned int& frameBufferIndex);
-
 private:
 
-	// Creates the graphics pipeline for this mesh.
-	void CreateCommandBuffers();
+	// Create the graphics pipeline for this render object.
+	void CreateGraphicsPipeline();
 
-	// Defines the actions executed when this object is drawn.
-	void RecordCommandBuffers();
+	std::string m_nameID;
 
 	Renderer* m_renderer;
-	const Shader* m_shader;
-	// Mesh pointer would go here.
+	Shader* m_shader;
+	Mesh* m_mesh;
 
-	VkCommandBuffer_T** m_commandBuffers;
-	int m_commandBufferCount;
+	// Pipeline information.
+	PipelineData* m_pipelineData;
+
+	static Table<PipelineDataPtr> m_pipelineTable;
+	static DynamicArray<PipelineData*> m_allPipelines;
 };
 

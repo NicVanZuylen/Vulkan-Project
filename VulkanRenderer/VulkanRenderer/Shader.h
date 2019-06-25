@@ -1,11 +1,11 @@
 #pragma once
-#include <vulkan/vulkan.h>
 #include <string>
 #include "DynamicArray.h"
 
 class Renderer;
 class MeshRenderer;
-struct PipelineInfo;
+struct PipelineData;
+struct VkShaderModule_T;
 
 struct Shader 
 {
@@ -43,13 +43,8 @@ struct Shader
 	DynamicArray<char> m_vertContents;
 	DynamicArray<char> m_fragContents;
 
-	VkShaderModule m_vertModule;
-	VkShaderModule m_fragModule;
-
-    PipelineInfo* m_pipeline;
-
-	// All objects that use this shader/pipeline.
-	DynamicArray<MeshRenderer*> m_dependentObjects;
+	VkShaderModule_T*  m_vertModule;
+	VkShaderModule_T*  m_fragModule;
 
 	bool m_registered;
 };

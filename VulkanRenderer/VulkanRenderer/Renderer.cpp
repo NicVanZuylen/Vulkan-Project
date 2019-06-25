@@ -168,10 +168,10 @@ void Renderer::RegisterShader(Shader* shader)
 	RENDERER_SAFECALL(vkCreateShaderModule(m_logicDevice, &fragCreateInfo, nullptr, &shader->m_fragModule), "Renderer Error: Failed to create fragment shader module.");
 
 	// Allocate pipeline info structure.
-	shader->m_pipeline = new PipelineInfo;
+	//shader->m_pipeline = new PipelineData;
 
 	// Create pipeline for rendering with this shader.
-	CreateGraphicsPipeline(shader);
+	//CreateGraphicsPipeline(shader);
 
 	// Shader is now registered.
 	shader->m_registered = true;
@@ -181,23 +181,19 @@ void Renderer::UnregisterShader(Shader* shader)
 {
 	if(shader->m_registered) 
 	{
-		// Wait for all command buffer fences to complete before deleting the pipeline.
-		for (int i = 0; i < m_dynamicCmdBufFences.GetSize(); ++i) 
-		{
-			if(m_dynamicCmdBufFences[i])
-				vkWaitForFences(m_logicDevice, 1, &m_dynamicCmdBufFences[i], VK_TRUE, std::numeric_limits<unsigned long long>::max());
-		}
+		// Wait for frames in flight to finish execution.
+		vkWaitForFences(m_logicDevice, m_inFlightFences.GetSize(), m_inFlightFences.Data(), VK_TRUE, std::numeric_limits<unsigned long long>::max());
 
 		// Destroy modules...
 		vkDestroyShaderModule(m_logicDevice, shader->m_vertModule, nullptr);
 		vkDestroyShaderModule(m_logicDevice, shader->m_fragModule, nullptr);
 
 		// Delete pipeline.
-		vkDestroyPipeline(m_logicDevice, shader->m_pipeline->m_handle, nullptr);
-		vkDestroyPipelineLayout(m_logicDevice, shader->m_pipeline->m_layout, nullptr);
+		//vkDestroyPipeline(m_logicDevice, shader->m_pipeline->m_handle, nullptr);
+		//vkDestroyPipelineLayout(m_logicDevice, shader->m_pipeline->m_layout, nullptr);
 
 		// Delete pipeline structure.
-		delete shader->m_pipeline;
+		//delete shader->m_pipeline;
 
 		// Shader is no longer registered.
 		shader->m_registered = false;
@@ -788,6 +784,7 @@ void Renderer::CreateRenderPasses()
 
 void Renderer::CreateGraphicsPipeline(Shader* shader) 
 {
+	/*
 	VkPipelineShaderStageCreateInfo vertStageInfo = {};
 	vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -885,16 +882,16 @@ void Renderer::CreateGraphicsPipeline(Shader* shader)
 	colorBlending.blendConstants[3] = 0.0f;
 
 	// Dynamic states
-	/*
+	
 	VkDynamicState dynState = VK_DYNAMIC_STATE_VIEWPORT;
 
 	VkPipelineDynamicStateCreateInfo dynamicState = {};
 	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
 	dynamicState.dynamicStateCount = 1;
 	dynamicState.pDynamicStates = &dynState;
-	*/
+	
 
-	PipelineInfo* info = shader->m_pipeline;
+	PipelineData* info = shader->m_pipeline;
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -925,6 +922,7 @@ void Renderer::CreateGraphicsPipeline(Shader* shader)
 	pipelineInfo.basePipelineIndex = -1;
 
 	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_logicDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &info->m_handle), "Renderer Error: Failed to create graphics pipeline.");
+	*/
 }
 
 void Renderer::CreateFramebuffers() 
@@ -954,7 +952,7 @@ void Renderer::CreateCommandPool()
 	VkCommandPoolCreateInfo poolCreateInfo = {};
 	poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolCreateInfo.queueFamilyIndex = m_graphicsQueueFamilyIndex;
-	poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+	poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
 
 	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_commandPool), "Renderer Error: Failed to create command pool.");
 
@@ -1032,9 +1030,21 @@ void Renderer::CreateCommandPool()
 
 		vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-		// Dynamic objects in the scene will be drawn here...
-		for (int j = 0; j < m_dynamicObjects.Count(); ++j)
-			m_dynamicObjects[j]->CommandDraw(cmdBuffer);
+		DynamicArray<PipelineData*>& allPipelines = MeshRenderer::Pipelines();
+
+		// Iterate through all pipelines and draw their objects.
+		for(int i = 0; i < allPipelines.Count(); ++i) 
+		{
+			// Bind pipelines...
+			vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, allPipelines[i]->m_handle);
+
+			// Draw objects using the pipeline.
+			DynamicArray<MeshRenderer*>& renderObjects = allPipelines[i]->m_renderObjects;
+			for(int j = 0; j < renderObjects.Count(); ++j) 
+			{
+				renderObjects[j]->CommandDraw(cmdBuffer);
+			}
+		}
 
 		vkCmdEndRenderPass(cmdBuffer);
 
@@ -1103,8 +1113,8 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 		return;
 
 	// Wait for fence, since the command buffer cannot be re-recorded until it has finished execution.
-	if(m_dynamicCmdBufFences[bufferIndex])
-	    vkWaitForFences(m_logicDevice, 1, &m_dynamicCmdBufFences[bufferIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
+	//if(m_dynamicCmdBufFences[bufferIndex])
+	    //vkWaitForFences(m_logicDevice, 1, &m_dynamicCmdBufFences[bufferIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
 
 	VkCommandBufferBeginInfo cmdBeginInfo = {};
 	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1128,9 +1138,21 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 
 	vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	// Dynamic objects in the scene will be drawn here...
-	for (int j = 0; j < m_dynamicObjects.Count(); ++j)
-		m_dynamicObjects[j]->CommandDraw(cmdBuffer);
+	DynamicArray<PipelineData*>& allPipelines = MeshRenderer::Pipelines();
+
+	// Iterate through all pipelines and draw their objects.
+	for (int i = 0; i < allPipelines.Count(); ++i)
+	{
+		// Bind pipelines...
+		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, allPipelines[i]->m_handle);
+
+		// Draw objects using the pipeline.
+		DynamicArray<MeshRenderer*>& renderObjects = allPipelines[i]->m_renderObjects;
+		for (int j = 0; j < renderObjects.Count(); ++j)
+		{
+			renderObjects[j]->CommandDraw(cmdBuffer);
+		}
+	}
 
 	vkCmdEndRenderPass(cmdBuffer);
 
@@ -1150,12 +1172,6 @@ void Renderer::CreateSyncObjects()
 
 	m_inFlightFences.SetSize(MAX_FRAMES_IN_FLIGHT);
 	m_inFlightFences.SetCount(MAX_FRAMES_IN_FLIGHT);
-
-	m_dynamicCmdBufFences.SetSize(m_dynamicPassBufs.GetSize());
-	m_dynamicCmdBufFences.SetCount(m_dynamicPassBufs.GetSize());
-
-	for (int i = 0; i < m_dynamicCmdBufFences.Count(); ++i)
-		m_dynamicCmdBufFences[i] = nullptr;
 
 	VkSemaphoreCreateInfo semaphoreInfo = {};
 	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -1185,6 +1201,23 @@ void Renderer::Begin()
 		"Renderer Error: Failed to aquire next swap chain image.");
 }
 
+void Renderer::SubmitCopyOperation(VkCommandBuffer commandBuffer) 
+{
+	VkSubmitInfo submitInfo = {};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.waitSemaphoreCount = 0;
+	submitInfo.pWaitSemaphores = nullptr;
+	submitInfo.signalSemaphoreCount = 0;
+	submitInfo.pSignalSemaphores = nullptr;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+
+	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE), "Renderer Error: Failed to submit copy operation to the GPU.");
+
+	// Ensures the copy operation is complete before returning.
+	vkQueueWaitIdle(m_graphicsQueue);
+}
+
 void Renderer::AddDynamicObject(MeshRenderer* object) 
 {
 	m_dynamicObjects.Push(object);
@@ -1196,7 +1229,7 @@ void Renderer::AddDynamicObject(MeshRenderer* object)
 
 void Renderer::End() 
 {
-	// Re-record the dynamic command buffer for this swap chain image if it has changed. It will need to wait on the command buffer's fence signal before re-recording.
+	// Re-record the dynamic command buffer for this swap chain image if it has changed.
     RecordDynamicCommandBuffer(m_presentImageIndex);
 
 	VkSubmitInfo submitInfo = {};
@@ -1212,12 +1245,6 @@ void Renderer::End()
 	submitInfo.pCommandBuffers = cmdBuffers;
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[m_currentFrameIndex];
-
-	/* 
-	When a dynamic state change occurs it will need the associated submission fence to wait for before the
-	command buffer is re-recorded.
-	*/
-	m_dynamicCmdBufFences[m_presentImageIndex] = m_inFlightFences[m_currentFrameIndex];
 
 	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrameIndex]), "Renderer Error: Failed to submit command buffer.");
 
@@ -1238,12 +1265,17 @@ VkDevice Renderer::GetDevice()
 	return m_logicDevice;
 }
 
+VkPhysicalDevice Renderer::GetPhysDevice() 
+{
+	return m_physDevice;
+}
+
 VkCommandPool Renderer::GetCommandPool() 
 {
 	return m_commandPool;
 }
 
-VkRenderPass Renderer::MainRenderPass() 
+VkRenderPass Renderer::DynamicRenderPass() 
 {
 	return m_dynamicRenderPass;
 }
