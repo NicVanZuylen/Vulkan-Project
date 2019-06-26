@@ -58,6 +58,8 @@ MeshRenderer::~MeshRenderer()
 		// The lasto object using the pipeline is responsible for it's deletion.
 		if (m_pipelineData->m_renderObjects.Count() == 1) 
 		{
+			m_renderer->WaitGraphicsIdle();
+
 			// This is the only object remaining that is using the pipeline. Destroy it.
 			vkDestroyPipeline(m_renderer->GetDevice(), m_pipelineData->m_handle, nullptr);
 			vkDestroyPipelineLayout(m_renderer->GetDevice(), m_pipelineData->m_layout, nullptr);
@@ -84,10 +86,12 @@ DynamicArray<PipelineData*>& MeshRenderer::Pipelines()
 
 void MeshRenderer::CommandDraw(VkCommandBuffer_T* cmdBuffer) 
 {
-	m_mesh->Bind(cmdBuffer);
+	Mesh& meshRef = *m_mesh;
+
+	meshRef.Bind(cmdBuffer);
 
 	// Draw...
-	vkCmdDraw(cmdBuffer, 3, 1, 0, 0);
+	vkCmdDrawIndexed(cmdBuffer, meshRef.IndexCount(), 1, 0, 0, 0);
 }
 
 const Shader* MeshRenderer::GetShader() 

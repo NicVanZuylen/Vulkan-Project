@@ -56,11 +56,13 @@ Mesh::~Mesh()
 {
 	if(!m_empty) 
 	{
+		m_renderer->WaitGraphicsIdle();
+
 		vkFreeMemory(m_renderer->GetDevice(), m_vertexMemory, nullptr);
-		//vkFreeMemory(m_renderer->GetDevice(), m_indexMemory, nullptr);
+		vkFreeMemory(m_renderer->GetDevice(), m_indexMemory, nullptr);
 
 		vkDestroyBuffer(m_renderer->GetDevice(), m_vertexBuffer, nullptr);
-		//vkDestroyBuffer(m_renderer->GetDevice(), m_indexBuffer, nullptr);
+		vkDestroyBuffer(m_renderer->GetDevice(), m_indexBuffer, nullptr);
 	}
 }
 
@@ -69,11 +71,13 @@ void Mesh::Load(const char* filePath)
 	// Delete old mesh if there is one.
 	if(!m_empty) 
 	{
+		m_renderer->WaitGraphicsIdle();
+
 		vkFreeMemory(m_renderer->GetDevice(), m_vertexMemory, nullptr);
-		//vkFreeMemory(m_renderer->GetDevice(), m_indexMemory, nullptr);
+		vkFreeMemory(m_renderer->GetDevice(), m_indexMemory, nullptr);
 
 		vkDestroyBuffer(m_renderer->GetDevice(), m_vertexBuffer, nullptr);
-		//vkDestroyBuffer(m_renderer->GetDevice(), m_indexBuffer, nullptr);
+		vkDestroyBuffer(m_renderer->GetDevice(), m_indexBuffer, nullptr);
 	}
 
 	m_filePath = filePath;
@@ -113,12 +117,15 @@ void Mesh::Load(const char* filePath)
 		chunkIndices.SetCount(chunkIndices.GetSize());
 		memcpy_s(chunkIndices.Data(), sizeof(unsigned int) * chunkIndices.GetSize(), shape.mesh.indices.data(), sizeof(unsigned int) * shape.mesh.indices.size());
 
-		// Append chunk indices to the whole mesh index array.
-		for(int j = 0; j < shape.mesh.indices.size(); ++j) 
-		{
-			wholeMeshIndices.Push(shape.mesh.indices[j]);
-		}
+		// Append chunk indices to whole mesh indices...
+		wholeMeshIndices.SetSize(wholeMeshIndices.Count() + shape.mesh.indices.size());
+		
+		int chunkIndicesSize = sizeof(unsigned int) * shape.mesh.indices.size();
+		memcpy_s(&wholeMeshIndices.Data()[wholeMeshIndices.Count()], chunkIndicesSize, shape.mesh.indices.data(), chunkIndicesSize);
+		
+		wholeMeshIndices.SetCount(wholeMeshIndices.GetSize());
 
+		// Set up chunk vertices and add to whole mesh vertices.
 		DynamicArray<ComplexVertex> chunkVertices;
 		chunkVertices.SetSize(static_cast<int>(shape.mesh.positions.size() / 3)); // Divide size by 3 to account for the fact that the array is of floats rather than vector structs.
 		chunkVertices.SetCount(chunkVertices.GetSize());
@@ -153,50 +160,51 @@ void Mesh::Load(const char* filePath)
 	// Calculate tangents for whole mesh...
 	CalculateTangents(wholeMeshVertices, wholeMeshIndices);
 
-	DynamicArray<Vertex> rectVerts(4, 1);
-	Vertex vert;
-	vert.m_color = glm::vec4(1.0f);
-
-	for (int i = 0; i < 64; ++i) 
-	{
-		vert.m_position = glm::vec4(-1.0f, -1.0f, 0.0f, 1.0f);
-		rectVerts.Push(vert);
-
-		vert.m_position = glm::vec4(1.0f, -1.0f, 0.0f, 1.0f);
-		rectVerts.Push(vert);
-
-		vert.m_position = glm::vec4(-1.0f, 1.0f, 0.0f, 1.0f);
-		rectVerts.Push(vert);
-
-		vert.m_position = glm::vec4(1.0f, 1.0f, 0.0f, 1.0f);
-		rectVerts.Push(vert);
-	}
-
-	unsigned long long bufSize = sizeof(Vertex) * rectVerts.Count();
+	unsigned long long vertBufSize = sizeof(ComplexVertex) * wholeMeshVertices.Count();
+	unsigned long long indexBufSize = sizeof(unsigned int) * wholeMeshIndices.Count();
 
 	// Create new vertex staging buffer.
-	VkBuffer stagingBuffer;
-	VkDeviceMemory stagingBufferMemory;
-	CreateBuffer(bufSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+	VkBuffer vertexStagingBuffer;
+	VkDeviceMemory vertStagingBufferMemory;
+	CreateBuffer(vertBufSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, vertexStagingBuffer, vertStagingBufferMemory);
+
+	VkBuffer indexStagingBuffer;
+	VkDeviceMemory indexStagingBufMemory;
+	CreateBuffer(indexBufSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, indexStagingBuffer, indexStagingBufMemory);
 
 	// Create vertex buffer.
-	CreateBuffer(bufSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_vertexBuffer, m_vertexMemory);
+	CreateBuffer(vertBufSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_vertexBuffer, m_vertexMemory);
 
-	// Copy mesh to the staging buffer.
+	// Create index buffer.
+	CreateBuffer(indexBufSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_indexBuffer, m_indexMemory);
+
+	// Copy vertices to the vertex staging buffer.
 	void* bufMemory = nullptr;
-	RENDERER_SAFECALL(vkMapMemory(m_renderer->GetDevice(), stagingBufferMemory, 0, bufSize, 0, &bufMemory), "Renderer Error: Failed to map staging buffer memory.");
+	RENDERER_SAFECALL(vkMapMemory(m_renderer->GetDevice(), vertStagingBufferMemory, 0, vertBufSize, 0, &bufMemory), "Renderer Error: Failed to map staging buffer memory.");
 
-	memcpy_s(bufMemory, bufSize, rectVerts.Data(), bufSize);
+	memcpy_s(bufMemory, vertBufSize, wholeMeshVertices.Data(), vertBufSize);
 
-	vkUnmapMemory(m_renderer->GetDevice(), stagingBufferMemory);
+	vkUnmapMemory(m_renderer->GetDevice(), vertStagingBufferMemory);
+
+	bufMemory = nullptr;
+
+	// Copy indices to the index staging buffer.
+	RENDERER_SAFECALL(vkMapMemory(m_renderer->GetDevice(), indexStagingBufMemory, 0, indexBufSize, 0, &bufMemory), "Renderer Error: Failed to map staging buffer memory.");
+
+	memcpy_s(bufMemory, indexBufSize, wholeMeshIndices.Data(), indexBufSize);
+
+	vkUnmapMemory(m_renderer->GetDevice(), indexStagingBufMemory);
 
 	// Copy staging buffer contents to vertex buffer contents.
-	RecordCopyCommandBuffer(m_renderer, stagingBuffer, m_vertexBuffer, bufSize);
+	RecordCopyCommandBuffer(m_renderer, vertexStagingBuffer, m_vertexBuffer, indexStagingBuffer, m_indexBuffer, vertBufSize, indexBufSize);
 	m_renderer->SubmitCopyOperation(m_copyCmdBuffer);
 
-	// Destroy staging buffer.
-	vkFreeMemory(m_renderer->GetDevice(), stagingBufferMemory, nullptr);
-	vkDestroyBuffer(m_renderer->GetDevice(), stagingBuffer, nullptr);
+	// Destroy staging buffers.
+	vkFreeMemory(m_renderer->GetDevice(), vertStagingBufferMemory, nullptr);
+	vkDestroyBuffer(m_renderer->GetDevice(), vertexStagingBuffer, nullptr);
+
+	vkFreeMemory(m_renderer->GetDevice(), indexStagingBufMemory, nullptr);
+	vkDestroyBuffer(m_renderer->GetDevice(), indexStagingBuffer, nullptr);
 
 	m_totalVertexCount = static_cast<unsigned int>(wholeMeshVertices.GetSize());
 	m_totalIndexCount = static_cast<unsigned int>(wholeMeshIndices.GetSize());
@@ -206,9 +214,14 @@ void Mesh::Load(const char* filePath)
 
 void Mesh::Bind(VkCommandBuffer& commandBuffer) 
 {
-	VkBuffer buffers[] = { m_vertexBuffer };
+	VkBuffer vertBuffers[] = { m_vertexBuffer };
 	size_t offsets[] = { 0 };
-	vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
+
+	// Bind vertex buffers.
+	vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertBuffers, offsets);
+
+	// Bind index buffer.
+	vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 }
 
 VkBuffer& Mesh::VertexBuffer() 
@@ -253,7 +266,7 @@ void Mesh::CreateCopyCommandBuffer(Renderer* renderer)
 	RENDERER_SAFECALL(vkAllocateCommandBuffers(renderer->GetDevice(), &allocInfo, &m_copyCmdBuffer), "Global Mesh Error: Failed to allocate copy command buffer.");
 }
 
-void Mesh::RecordCopyCommandBuffer(Renderer* renderer, VkBuffer stagingBuffer, VkBuffer finalBuffer, unsigned long long copySize) 
+void Mesh::RecordCopyCommandBuffer(Renderer* renderer, VkBuffer vertStagingBuffer, VkBuffer vertFinalBuffer, VkBuffer indStagingBuffer, VkBuffer indFinalBuffer, unsigned long long vertCopySize, unsigned long long indCopySize)
 {
 	VkCommandBufferBeginInfo beginInfo = {};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -264,13 +277,21 @@ void Mesh::RecordCopyCommandBuffer(Renderer* renderer, VkBuffer stagingBuffer, V
 	// Begin recording.
 	RENDERER_SAFECALL(vkBeginCommandBuffer(m_copyCmdBuffer, &beginInfo), "Mesh Error: Failed to begin recording of copy command buffer.");
 
-	VkBufferCopy copyRegion = {};
-	copyRegion.srcOffset = 0;
-	copyRegion.dstOffset = 0;
-	copyRegion.size = copySize;
+	VkBufferCopy vertCopyRegion = {};
+	vertCopyRegion.srcOffset = 0;
+	vertCopyRegion.dstOffset = 0;
+	vertCopyRegion.size = vertCopySize;
 
-	// Copy staging buffer contents to final buffer contents.
-	vkCmdCopyBuffer(m_copyCmdBuffer, stagingBuffer, finalBuffer, 1, &copyRegion);
+	// Copy vertex staging buffer contents to vertex final buffer contents.
+	vkCmdCopyBuffer(m_copyCmdBuffer, vertStagingBuffer, vertFinalBuffer, 1, &vertCopyRegion);
+
+	VkBufferCopy indCopyRegion = {};
+	indCopyRegion.srcOffset = 0;
+	indCopyRegion.dstOffset = 0;
+	indCopyRegion.size = indCopySize;
+
+	// Copy index staging buffer contents to index final buffer contents.
+	vkCmdCopyBuffer(m_copyCmdBuffer, indStagingBuffer, indFinalBuffer, 1, &indCopyRegion);
 
 	// End recording.
 	RENDERER_SAFECALL(vkEndCommandBuffer(m_copyCmdBuffer), "Mesh Error: Failed to end copy command buffer recording.");

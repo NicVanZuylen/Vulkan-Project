@@ -96,7 +96,7 @@ private:
 	/*
 	Description: Record the copy command buffer to copy this mesh's staging buffer memory to it's vertex and index buffers.
 	*/
-	static void RecordCopyCommandBuffer(Renderer* renderer, VkBuffer stagingBuffer, VkBuffer finalBuffer, unsigned long long copySize);
+	static void RecordCopyCommandBuffer(Renderer* renderer, VkBuffer vertStagingBuffer, VkBuffer vertFinalBuffer, VkBuffer indStagingBuffer, VkBuffer indFinalBuffer, unsigned long long vertCopySize, unsigned long long indCopySize);
 
 	/*
 	Description: Find the optimal memory type for allocating buffer memory.

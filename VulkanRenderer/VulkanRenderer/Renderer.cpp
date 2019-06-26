@@ -1260,6 +1260,11 @@ void Renderer::End()
 	RENDERER_SAFECALL(vkQueuePresentKHR(m_graphicsQueue, &presentInfo), "Renderer Error: Failed to present swap chain image.");
 }
 
+void Renderer::WaitGraphicsIdle() 
+{
+	vkQueueWaitIdle(m_graphicsQueue);
+}
+
 VkDevice Renderer::GetDevice() 
 {
 	return m_logicDevice;

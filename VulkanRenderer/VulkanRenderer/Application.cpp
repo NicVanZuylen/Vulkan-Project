@@ -75,17 +75,16 @@ int Application::Init()
 
 void Application::Run() 
 {
-	Shader* triangleShader = new Shader("Shaders/SPIR-V/vert.spv", "Shaders/SPIR-V/frag.spv");
-	m_renderer->RegisterShader(triangleShader);
+	Shader* sphereShader = new Shader("Shaders/SPIR-V/vertSphere.spv", "Shaders/SPIR-V/fragSphere.spv");
+	m_renderer->RegisterShader(sphereShader);
 
 	Shader* rectShader = new Shader("Shaders/SPIR-V/vertRect.spv", "Shaders/SPIR-V/fragRect.spv");
 	m_renderer->RegisterShader(rectShader);
 
-	VertexInfo vertFormat({ VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4 });
+	Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Bunny.obj");
+	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 
-	Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj", &vertFormat);
-
-	MeshRenderer* rect = new MeshRenderer(m_renderer, testMesh, rectShader);
+	MeshRenderer* rect = new MeshRenderer(m_renderer, testMesh, sphereShader);
 
 	float fDeltaTime = 0.0f;	
 	float fDebugDisplayTime = DEBUG_DISPLAY_TIME;
@@ -140,8 +139,8 @@ void Application::Run()
 
 	delete testMesh;
 
-	m_renderer->UnregisterShader(triangleShader);
-	delete triangleShader;
+	m_renderer->UnregisterShader(sphereShader);
+	delete sphereShader;
 
 	m_renderer->UnregisterShader(rectShader);
 	delete rectShader;

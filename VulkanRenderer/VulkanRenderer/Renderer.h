@@ -15,7 +15,7 @@
 
 #else
 
-#define RENDERER_SAFECALL(func, message) VkResult safeCallResult = func; //message
+#define RENDERER_SAFECALL(func, message) Renderer::m_safeCallResult = func; //message
 
 #endif
 
@@ -52,6 +52,9 @@ public:
 
 	// End the main render pass.
 	void End();
+
+	// Wait for the graphics queue to be idle.
+	void WaitGraphicsIdle();
 
 	// Getters and setters
 	VkDevice GetDevice();
