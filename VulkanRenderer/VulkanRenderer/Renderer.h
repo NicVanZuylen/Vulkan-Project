@@ -6,6 +6,7 @@
 
 #include "DynamicArray.h"
 #include "Table.h"
+#include "glm.hpp"
 
 #define QUEUE_PRIORITY 1.0f
 
@@ -27,6 +28,13 @@
 class MeshRenderer;
 
 struct Shader;
+
+struct MVPUniformBuffer 
+{
+	glm::mat4 model;
+	glm::mat4 view;
+	glm::mat4 proj;
+};
 
 class Renderer
 {
@@ -56,6 +64,16 @@ public:
 	// Wait for the graphics queue to be idle.
 	void WaitGraphicsIdle();
 
+	// Create a buffer with the provided size, usage flags, memory property flags, buffer and memory handles.
+	void CreateBuffer(const unsigned long long& size, const VkBufferUsageFlags& bufferUsage, VkMemoryPropertyFlags properties, VkBuffer& bufferHandle, VkDeviceMemory& bufferMemory);
+
+	/*
+	Description: Update the MVP uniform buffer for the provided swap chain image.
+	Param:
+	    const unsigned int& bufferIndex: The index of the swap chain image UBO to update.
+	*/
+	void UpdateMVP(const unsigned int& bufferIndex);
+
 	// Getters and setters
 	VkDevice GetDevice();
 
@@ -64,6 +82,8 @@ public:
 	VkCommandPool GetCommandPool();
 
 	VkRenderPass DynamicRenderPass();
+
+	VkDescriptorSetLayout MVPUBOSetLayout();
 
 	const DynamicArray<VkFramebuffer>& GetFramebuffers();
 
@@ -135,8 +155,11 @@ private:
 	// Create render pass.
 	void CreateRenderPasses();
 
-	// Create rendering pipeline
-	void CreateGraphicsPipeline(Shader* shader);
+	// Create MVP descriptor set layout.
+	void CreateMVPDescriptorSetLayout();
+
+	// Create MVP uniform buffers.
+	void CreateMVPUniformBuffers();
 
 	// Create framebuffer.
 	void CreateFramebuffers();
@@ -149,6 +172,9 @@ private:
 
 	// Create semaphores.
 	void CreateSyncObjects();
+
+    // Find the optimal memory type for allocating buffer memory.
+	unsigned int FindMemoryType(unsigned int typeFilter, VkMemoryPropertyFlags propertyFlags);
 
 	// -----------------------------------------------------------------------------------------------------
 	// Swap chain queries
@@ -208,15 +234,19 @@ private:
 	DynamicArray<VkCommandBuffer> m_staticPassBufs; // Command buffers for the static render pass.
 	DynamicArray<VkCommandBuffer> m_dynamicPassBufs; // Command buffers for the dynamic render pass.
 
-	// Rendering.
+	// Descriptors
+	VkDescriptorSetLayout m_uboDescriptorSetLayout;
+
+	// Descriptor buffers
+	DynamicArray<VkBuffer> m_mvpBuffers;
+	DynamicArray<VkDeviceMemory> m_mvpBufferMemBlocks;
+
+	// Rendering
 	VkRenderPass m_staticRenderPass;
 	VkRenderPass m_dynamicRenderPass;
 
 	DynamicArray<MeshRenderer*> m_dynamicObjects;
 	bool m_dynamicStateChange[3];
-
-	//PipelineInfo m_trianglePipeline;
-	//PipelineInfo m_altTrianglePipeline;
 
 	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
 	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;

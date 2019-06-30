@@ -1,3 +1,3 @@
-glslangValidator.exe -V sphere.vert
-glslangValidator.exe -V sphere.frag
+glslangValidator.exe -V model.vert
+glslangValidator.exe -V model.frag
 pause

@@ -118,9 +118,9 @@ void Mesh::Load(const char* filePath)
 		memcpy_s(chunkIndices.Data(), sizeof(unsigned int) * chunkIndices.GetSize(), shape.mesh.indices.data(), sizeof(unsigned int) * shape.mesh.indices.size());
 
 		// Append chunk indices to whole mesh indices...
-		wholeMeshIndices.SetSize(wholeMeshIndices.Count() + shape.mesh.indices.size());
+		wholeMeshIndices.SetSize(wholeMeshIndices.Count() + static_cast<unsigned int>(shape.mesh.indices.size()));
 		
-		int chunkIndicesSize = sizeof(unsigned int) * shape.mesh.indices.size();
+		int chunkIndicesSize = sizeof(unsigned int) * static_cast<unsigned int>(shape.mesh.indices.size());
 		memcpy_s(&wholeMeshIndices.Data()[wholeMeshIndices.Count()], chunkIndicesSize, shape.mesh.indices.data(), chunkIndicesSize);
 		
 		wholeMeshIndices.SetCount(wholeMeshIndices.GetSize());
@@ -166,17 +166,17 @@ void Mesh::Load(const char* filePath)
 	// Create new vertex staging buffer.
 	VkBuffer vertexStagingBuffer;
 	VkDeviceMemory vertStagingBufferMemory;
-	CreateBuffer(vertBufSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, vertexStagingBuffer, vertStagingBufferMemory);
+	m_renderer->CreateBuffer(vertBufSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, vertexStagingBuffer, vertStagingBufferMemory);
 
 	VkBuffer indexStagingBuffer;
 	VkDeviceMemory indexStagingBufMemory;
-	CreateBuffer(indexBufSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, indexStagingBuffer, indexStagingBufMemory);
+	m_renderer->CreateBuffer(indexBufSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, indexStagingBuffer, indexStagingBufMemory);
 
 	// Create vertex buffer.
-	CreateBuffer(vertBufSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_vertexBuffer, m_vertexMemory);
+	m_renderer->CreateBuffer(vertBufSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_vertexBuffer, m_vertexMemory);
 
 	// Create index buffer.
-	CreateBuffer(indexBufSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_indexBuffer, m_indexMemory);
+	m_renderer->CreateBuffer(indexBufSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_indexBuffer, m_indexMemory);
 
 	// Copy vertices to the vertex staging buffer.
 	void* bufMemory = nullptr;
@@ -295,51 +295,6 @@ void Mesh::RecordCopyCommandBuffer(Renderer* renderer, VkBuffer vertStagingBuffe
 
 	// End recording.
 	RENDERER_SAFECALL(vkEndCommandBuffer(m_copyCmdBuffer), "Mesh Error: Failed to end copy command buffer recording.");
-}
-
-unsigned int Mesh::FindMemoryType(unsigned int typeFilter, VkMemoryPropertyFlags propertyFlags) 
-{
-	VkPhysicalDeviceMemoryProperties memProperties;
-	vkGetPhysicalDeviceMemoryProperties(m_renderer->GetPhysDevice(), &memProperties);
-
-	for(unsigned int i = 0; i < memProperties.memoryTypeCount; ++i) 
-	{
-		// Ensure properties match...
-		if ((typeFilter & (1 << i)) && ((memProperties.memoryTypes[i].propertyFlags & propertyFlags) == propertyFlags)) 
-		{
-			return i;
-		}
-	}
-
-	throw std::exception("Mesh Error: Failed to find suitable memory type for buffer allocation.");
-	return 0;
-}
-
-void Mesh::CreateBuffer(const unsigned long long& size, const VkBufferUsageFlags& bufferUsage, VkMemoryPropertyFlags properties, VkBuffer& bufferHandle, VkDeviceMemory& bufferMemory) 
-{
-	VkBufferCreateInfo bufCreateInfo = {};
-	bufCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufCreateInfo.size = size;
-	bufCreateInfo.usage = bufferUsage;
-	bufCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-	// Create buffer object.
-	RENDERER_SAFECALL(vkCreateBuffer(m_renderer->GetDevice(), &bufCreateInfo, nullptr, &bufferHandle), "Mesh Error: Failed to create buffer.");
-
-	// Get memory requirements for the buffer.
-	VkMemoryRequirements memRequirements;
-	vkGetBufferMemoryRequirements(m_renderer->GetDevice(), bufferHandle, &memRequirements);
-
-	VkMemoryAllocateInfo allocInfo = {};
-	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocInfo.allocationSize = memRequirements.size;
-	allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
-	allocInfo.pNext = nullptr;
-
-	RENDERER_SAFECALL(vkAllocateMemory(m_renderer->GetDevice(), &allocInfo, nullptr, &bufferMemory), "Mesh Error: Failed to allocate buffer memory.");
-
-	// Associate the newly allocated memory with the buffer object.
-	vkBindBufferMemory(m_renderer->GetDevice(), bufferHandle, bufferMemory, 0);
 }
 
 void Mesh::CalculateTangents(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned int>& indices) 

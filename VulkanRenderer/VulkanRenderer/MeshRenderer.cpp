@@ -234,10 +234,12 @@ void MeshRenderer::CreateGraphicsPipeline()
 	m_pipelineData = new PipelineData;
 	m_pipelineData->m_renderObjects.Push(this);
 
+	VkDescriptorSetLayout uboSetLayout = m_renderer->MVPUBOSetLayout();
+
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 0;
-	pipelineLayoutInfo.pSetLayouts = nullptr;
+	pipelineLayoutInfo.setLayoutCount = 1;
+	pipelineLayoutInfo.pSetLayouts = &uboSetLayout; // MVP UBO
 	pipelineLayoutInfo.pushConstantRangeCount = 0;
 	pipelineLayoutInfo.pPushConstantRanges = nullptr;
 

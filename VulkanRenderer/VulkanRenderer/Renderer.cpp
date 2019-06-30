@@ -4,11 +4,10 @@
 
 #include "Shader.h"
 #include "MeshRenderer.h"
+#include "gtc/matrix_transform.hpp"
 
 #define GLFW_FORCE_RADIANS
 #define GLFW_FORCE_DEPTH_ZERO_TO_ONE
-
-#include "glm.hpp"
 
 const DynamicArray<const char*> Renderer::m_validationLayers = 
 {
@@ -67,15 +66,9 @@ Renderer::Renderer(GLFWwindow* window)
 	vkGetDeviceQueue(m_logicDevice, m_graphicsQueueFamilyIndex, 0, &m_graphicsQueue);
 	vkGetDeviceQueue(m_logicDevice, m_computeQueueFamilyIndex, 0, &m_computeQueue);
 
-	//m_triangleShader = new Shader("Shaders/SPIR-V/vert.spv", "Shaders/SPIR-V/frag.spv");
-	//RegisterShader(m_triangleShader);
-
-	//m_altTriangleShader = new Shader("Shaders/SPIR-V/vertAlt.spv", "Shaders/SPIR-V/fragAlt.spv");
-	//RegisterShader(m_altTriangleShader);
-
 	CreateRenderPasses();
-	//m_trianglePipeline = CreateGraphicsPipeline(m_triangleShader);
-	//m_altTrianglePipeline = CreateGraphicsPipeline(m_altTriangleShader);
+	CreateMVPDescriptorSetLayout();
+	CreateMVPUniformBuffers();
 	CreateFramebuffers();
 	CreateCommandPool();
 	CreateSyncObjects();
@@ -85,11 +78,15 @@ Renderer::~Renderer()
 {
 	vkDeviceWaitIdle(m_logicDevice);
 
-	//UnregisterShader(m_triangleShader);
-	//delete m_triangleShader;
+	// Destroy MVP Uniform buffers.
+	for (int i = 0; i < m_mvpBuffers.Count(); ++i)
+	{
+		vkDestroyBuffer(m_logicDevice, m_mvpBuffers[i], nullptr);
+		vkFreeMemory(m_logicDevice, m_mvpBufferMemBlocks[i], nullptr);
+	}
 
-	//UnregisterShader(m_altTriangleShader);
-	//delete m_altTriangleShader;
+	// Destroy MVP UBO descriptor set layout.
+	vkDestroyDescriptorSetLayout(m_logicDevice, m_uboDescriptorSetLayout, nullptr);
 
 	// Destroy semaphores.
 	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
@@ -107,17 +104,9 @@ Renderer::~Renderer()
 	for (int i = 0; i < m_swapChainFramebuffers.GetSize(); ++i)
 		vkDestroyFramebuffer(m_logicDevice, m_swapChainFramebuffers[i], nullptr);
 
-	// Destroy pipeline.
-	//vkDestroyPipeline(m_logicDevice, m_trianglePipeline.m_handle, nullptr);
-	//vkDestroyPipeline(m_logicDevice, m_altTrianglePipeline.m_handle, nullptr);
-
 	// Destroy render passes.
 	vkDestroyRenderPass(m_logicDevice, m_staticRenderPass, nullptr);
 	vkDestroyRenderPass(m_logicDevice, m_dynamicRenderPass, nullptr);
-
-	// Destroy pipeline layout.
-	//vkDestroyPipelineLayout(m_logicDevice, m_trianglePipeline.m_layout, nullptr);
-	//vkDestroyPipelineLayout(m_logicDevice, m_altTrianglePipeline.m_layout, nullptr);
 
 	delete[] m_extensions;
 
@@ -782,147 +771,37 @@ void Renderer::CreateRenderPasses()
 	// ------------------------------------------------------------------------------------------------------------
 }
 
-void Renderer::CreateGraphicsPipeline(Shader* shader) 
+void Renderer::CreateMVPDescriptorSetLayout() 
 {
-	/*
-	VkPipelineShaderStageCreateInfo vertStageInfo = {};
-	vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-	vertStageInfo.module = shader->m_vertModule;
-	vertStageInfo.pName = "main";
+	VkDescriptorSetLayoutBinding uboLayoutBinding = {};
+	uboLayoutBinding.binding = 0;
+	uboLayoutBinding.descriptorCount = 1;
+	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	uboLayoutBinding.pImmutableSamplers = nullptr;
 
-	VkPipelineShaderStageCreateInfo fragStageInfo = {};
-	fragStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	fragStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-	fragStageInfo.module = shader->m_fragModule;
-	fragStageInfo.pName = "main";
+	VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
+	layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutCreateInfo.bindingCount = 1;
+	layoutCreateInfo.pBindings = &uboLayoutBinding;
+	layoutCreateInfo.pNext = nullptr;
 
-	VkPipelineShaderStageCreateInfo shaderStageInfos[] = { vertStageInfo, fragStageInfo };
+	RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_logicDevice, &layoutCreateInfo, nullptr, &m_uboDescriptorSetLayout), "Renderer Error: Failed to create MVP UBO descriptor set layout.");
+}
 
-	VkPipelineVertexInputStateCreateInfo vertInputInfo = {};
-	vertInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertInputInfo.vertexBindingDescriptionCount = 0;
-	vertInputInfo.pVertexBindingDescriptions = nullptr;
-	vertInputInfo.vertexAttributeDescriptionCount = 0;
-	vertInputInfo.pVertexAttributeDescriptions = nullptr;
+void Renderer::CreateMVPUniformBuffers() 
+{
+	unsigned int bufferSize = sizeof(MVPUniformBuffer);
 
-	VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
-	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-	inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	inputAssembly.primitiveRestartEnable = VK_FALSE;
+	// Resize arrays.
+	m_mvpBuffers.SetSize(m_swapChainImageViews.Count());
+	m_mvpBuffers.SetCount(m_mvpBuffers.GetSize());
 
-	VkViewport viewPort = {};
-	viewPort.x = 0.0f;
-	viewPort.y = 0.0f;
-	viewPort.width = (float)m_swapChainImageExtents.width;
-	viewPort.height = (float)m_swapChainImageExtents.height;
-	viewPort.minDepth = 0.0f;
-	viewPort.maxDepth = 1.0f;
+	m_mvpBufferMemBlocks.SetSize(m_mvpBuffers.GetSize());
+	m_mvpBufferMemBlocks.SetCount(m_mvpBufferMemBlocks.GetSize());
 
-	VkRect2D scissor = {};
-	scissor.offset = { 0, 0 };
-	scissor.extent = m_swapChainImageExtents;
-
-	VkPipelineViewportStateCreateInfo viewportState = {};
-	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-	viewportState.viewportCount = 1;
-	viewportState.pViewports = &viewPort;
-	viewportState.scissorCount = 1;
-	viewportState.pScissors = &scissor;
-
-	// Primitive rasterizer.
-	VkPipelineRasterizationStateCreateInfo rasterizer = {};
-	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-	rasterizer.depthClampEnable = VK_FALSE;
-	rasterizer.rasterizerDiscardEnable = VK_FALSE;
-	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-	rasterizer.lineWidth = 1.0f;
-	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-
-	// Used for shadow mapping
-	rasterizer.depthBiasEnable = VK_FALSE;
-	rasterizer.depthBiasConstantFactor = 0.0f;
-	rasterizer.depthBiasClamp = 0.0f;
-	rasterizer.depthBiasSlopeFactor = 0.0f;
-
-	// Multisampler used for things such as MSAA.
-	VkPipelineMultisampleStateCreateInfo multisampler = {};
-	multisampler.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-	multisampler.sampleShadingEnable = VK_FALSE;
-	multisampler.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-	multisampler.minSampleShading = 1.0f;
-	multisampler.pSampleMask = nullptr;
-	multisampler.alphaToCoverageEnable = VK_FALSE;
-	multisampler.alphaToOneEnable = VK_FALSE;
-
-	// Depth/Stencil state
-	// ---
-
-	// Color blending
-	VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachment.blendEnable = VK_FALSE;
-	colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-	colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-	colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-	colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-	colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-	colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-
-	VkPipelineColorBlendStateCreateInfo colorBlending = {};
-	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-	colorBlending.logicOpEnable = VK_FALSE;
-	colorBlending.logicOp = VK_LOGIC_OP_COPY;
-	colorBlending.attachmentCount = 1;
-	colorBlending.pAttachments = &colorBlendAttachment;
-	colorBlending.blendConstants[0] = 0.0f;
-	colorBlending.blendConstants[1] = 0.0f;
-	colorBlending.blendConstants[2] = 0.0f;
-	colorBlending.blendConstants[3] = 0.0f;
-
-	// Dynamic states
-	
-	VkDynamicState dynState = VK_DYNAMIC_STATE_VIEWPORT;
-
-	VkPipelineDynamicStateCreateInfo dynamicState = {};
-	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-	dynamicState.dynamicStateCount = 1;
-	dynamicState.pDynamicStates = &dynState;
-	
-
-	PipelineData* info = shader->m_pipeline;
-
-	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 0;
-	pipelineLayoutInfo.pSetLayouts = nullptr;
-	pipelineLayoutInfo.pushConstantRangeCount = 0;
-	pipelineLayoutInfo.pPushConstantRanges = nullptr;
-
-	RENDERER_SAFECALL(vkCreatePipelineLayout(m_logicDevice, &pipelineLayoutInfo, nullptr, &info->m_layout), "Renderer Error: Failed to create graphics pipeline layout.");
-
-	// Create pipeline.
-	VkGraphicsPipelineCreateInfo pipelineInfo = {};
-	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipelineInfo.stageCount = 2;
-	pipelineInfo.pStages = shaderStageInfos;
-	pipelineInfo.pVertexInputState = &vertInputInfo;
-	pipelineInfo.pInputAssemblyState = &inputAssembly;
-	pipelineInfo.pViewportState = &viewportState;
-	pipelineInfo.pRasterizationState = &rasterizer;
-	pipelineInfo.pMultisampleState = &multisampler;
-	pipelineInfo.pDepthStencilState = nullptr;
-	pipelineInfo.pColorBlendState = &colorBlending;
-	pipelineInfo.pDynamicState = nullptr;
-	pipelineInfo.layout = info->m_layout;
-	pipelineInfo.renderPass = m_dynamicRenderPass;
-	pipelineInfo.subpass = 0;
-	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
-	pipelineInfo.basePipelineIndex = -1;
-
-	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_logicDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &info->m_handle), "Renderer Error: Failed to create graphics pipeline.");
-	*/
+	for (int i = 0; i < m_mvpBuffers.Count(); ++i)
+		CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_mvpBuffers[i], m_mvpBufferMemBlocks[i]);
 }
 
 void Renderer::CreateFramebuffers() 
@@ -1055,55 +934,6 @@ void Renderer::CreateCommandPool()
 	m_dynamicStateChange[0] = false;
 	m_dynamicStateChange[1] = false;
 	m_dynamicStateChange[2] = false;
-
-	/*
-	m_commandBufQueue.SetSize(m_swapChainFramebuffers.GetSize());
-	m_commandBufQueue.SetCount(m_swapChainFramebuffers.Count());
-
-	VkCommandBufferAllocateInfo cmdBufAllocateInfo = {};
-	cmdBufAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	cmdBufAllocateInfo.commandPool = m_commandPool;
-	cmdBufAllocateInfo.commandBufferCount = m_commandBufQueue.GetSize();
-	cmdBufAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-
-	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_commandBufQueue.Data()), "Renderer Error: Failed to allocate command buffers.");
-
-	for(int i = 0; i < m_commandBuffers.Count(); ++i) 
-	{
-		RecordCommandBuffer(m_commandBuffers[i], m_trianglePipeline, m_swapChainFramebuffers[i]);
-
-		// Command buffer beginning.
-		VkCommandBufferBeginInfo cmdBeginInfo = {};
-		cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-		cmdBeginInfo.pInheritanceInfo = nullptr;
-
-		RENDERER_SAFECALL(vkBeginCommandBuffer(m_commandBuffers[i], &cmdBeginInfo), "Renderer Error: Failed to begin recording of command buffer.");
-
-		// Render pass beginning.
-		VkRenderPassBeginInfo passBeginInfo = {};
-		passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		passBeginInfo.renderPass = m_renderPass;
-		passBeginInfo.framebuffer = m_swapChainFramebuffers[i];
-		passBeginInfo.renderArea.offset = { 0, 0 };
-		passBeginInfo.renderArea.extent = m_swapChainImageExtents;
-
-		VkClearValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
-		passBeginInfo.clearValueCount = 1;
-		passBeginInfo.pClearValues = &clearColor;
-
-		vkCmdBeginRenderPass(m_commandBuffers[i], &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-		// Bind pipeline.
-		vkCmdBindPipeline(m_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
-
-		vkCmdDraw(m_commandBuffers[i], 3, 1, 0, 0);
-
-		vkCmdEndRenderPass(m_commandBuffers[i]);
-
-		RENDERER_SAFECALL(vkEndCommandBuffer(m_commandBuffers[i]), "Renderer Error: Failed to end command buffer recording.");
-	}
-	*/
 }
 
 void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
@@ -1188,6 +1018,24 @@ void Renderer::CreateSyncObjects()
 	}
 }
 
+unsigned int Renderer::FindMemoryType(unsigned int typeFilter, VkMemoryPropertyFlags propertyFlags)
+{
+	VkPhysicalDeviceMemoryProperties memProperties;
+	vkGetPhysicalDeviceMemoryProperties(m_physDevice, &memProperties);
+
+	for (unsigned int i = 0; i < memProperties.memoryTypeCount; ++i)
+	{
+		// Ensure properties match...
+		if ((typeFilter & (1 << i)) && ((memProperties.memoryTypes[i].propertyFlags & propertyFlags) == propertyFlags))
+		{
+			return i;
+		}
+	}
+
+	throw std::exception("Mesh Error: Failed to find suitable memory type for buffer allocation.");
+	return 0;
+}
+
 void Renderer::Begin() 
 {
 	m_currentFrameIndex = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
@@ -1195,6 +1043,8 @@ void Renderer::Begin()
 	// Wait of frames-in-flight.
 	vkWaitForFences(m_logicDevice, 1, &m_inFlightFences[m_currentFrameIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
 	vkResetFences(m_logicDevice, 1, &m_inFlightFences[m_currentFrameIndex]);
+
+	UpdateMVP(m_currentFrameIndex);
 
 	// Aquire next image from the swap chain.
 	RENDERER_SAFECALL(vkAcquireNextImageKHR(m_logicDevice, m_swapChain, std::numeric_limits<unsigned long long>::max(), m_imageAvailableSemaphores[m_currentFrameIndex], VK_NULL_HANDLE, &m_presentImageIndex),
@@ -1265,6 +1115,53 @@ void Renderer::WaitGraphicsIdle()
 	vkQueueWaitIdle(m_graphicsQueue);
 }
 
+void Renderer::CreateBuffer(const unsigned long long& size, const VkBufferUsageFlags& bufferUsage, VkMemoryPropertyFlags properties, VkBuffer& bufferHandle, VkDeviceMemory& bufferMemory)
+{
+	VkBufferCreateInfo bufCreateInfo = {};
+	bufCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufCreateInfo.size = size;
+	bufCreateInfo.usage = bufferUsage;
+	bufCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	// Create buffer object.
+	RENDERER_SAFECALL(vkCreateBuffer(m_logicDevice, &bufCreateInfo, nullptr, &bufferHandle), "Mesh Error: Failed to create buffer.");
+
+	// Get memory requirements for the buffer.
+	VkMemoryRequirements memRequirements;
+	vkGetBufferMemoryRequirements(m_logicDevice, bufferHandle, &memRequirements);
+
+	VkMemoryAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+	allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
+	allocInfo.pNext = nullptr;
+
+	RENDERER_SAFECALL(vkAllocateMemory(m_logicDevice, &allocInfo, nullptr, &bufferMemory), "Mesh Error: Failed to allocate buffer memory.");
+
+	// Associate the newly allocated memory with the buffer object.
+	vkBindBufferMemory(m_logicDevice, bufferHandle, bufferMemory, 0);
+}
+
+void Renderer::UpdateMVP(const unsigned int& bufferIndex)
+{
+	MVPUniformBuffer mvp;
+
+	// Set up matrices...
+	mvp.model = glm::mat4();
+	mvp.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, -1.0f, 0.0f));
+	mvp.proj = glm::perspective(45.0f, (float)m_swapChainImageExtents.width / (float)m_swapChainImageExtents.height, 0.1f, 1000.0f);
+
+	unsigned int bufferSize = sizeof(mvp);
+
+	// Update buffer.
+	void* buffer = nullptr;
+	vkMapMemory(m_logicDevice, m_mvpBufferMemBlocks[bufferIndex], 0, bufferSize, 0, &buffer);
+
+	memcpy_s(buffer, bufferSize, &mvp, bufferSize);
+
+	vkUnmapMemory(m_logicDevice, m_mvpBufferMemBlocks[bufferIndex]);
+}
+
 VkDevice Renderer::GetDevice() 
 {
 	return m_logicDevice;
@@ -1283,6 +1180,11 @@ VkCommandPool Renderer::GetCommandPool()
 VkRenderPass Renderer::DynamicRenderPass() 
 {
 	return m_dynamicRenderPass;
+}
+
+VkDescriptorSetLayout Renderer::MVPUBOSetLayout() 
+{
+	return m_uboDescriptorSetLayout;
 }
 
 const DynamicArray<VkFramebuffer>& Renderer::GetFramebuffers() 

@@ -99,16 +99,6 @@ private:
 	static void RecordCopyCommandBuffer(Renderer* renderer, VkBuffer vertStagingBuffer, VkBuffer vertFinalBuffer, VkBuffer indStagingBuffer, VkBuffer indFinalBuffer, unsigned long long vertCopySize, unsigned long long indCopySize);
 
 	/*
-	Description: Find the optimal memory type for allocating buffer memory.
-	*/
-	unsigned int FindMemoryType(unsigned int typeFilter, VkMemoryPropertyFlags propertyFlags);
-
-	/*
-	Description: Helper function to create a GPU buffer.
-	*/
-	void CreateBuffer(const unsigned long long& size, const VkBufferUsageFlags& bufferUsage, VkMemoryPropertyFlags properties, VkBuffer& bufferHandle, VkDeviceMemory& bufferMemory);
-
-	/*
 	Description: Calculate mesh tangents.
 	*/
 	void CalculateTangents(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned int>& indices);

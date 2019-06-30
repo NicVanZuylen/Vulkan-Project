@@ -75,16 +75,16 @@ int Application::Init()
 
 void Application::Run() 
 {
-	Shader* sphereShader = new Shader("Shaders/SPIR-V/vertSphere.spv", "Shaders/SPIR-V/fragSphere.spv");
-	m_renderer->RegisterShader(sphereShader);
+	Shader* modelShader = new Shader("Shaders/SPIR-V/vertModel.spv", "Shaders/SPIR-V/fragModel.spv");
+	m_renderer->RegisterShader(modelShader);
 
 	Shader* rectShader = new Shader("Shaders/SPIR-V/vertRect.spv", "Shaders/SPIR-V/fragRect.spv");
 	m_renderer->RegisterShader(rectShader);
 
-	Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Bunny.obj");
+	Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 
-	MeshRenderer* rect = new MeshRenderer(m_renderer, testMesh, sphereShader);
+	MeshRenderer* rect = new MeshRenderer(m_renderer, testMesh, modelShader);
 
 	float fDeltaTime = 0.0f;	
 	float fDebugDisplayTime = DEBUG_DISPLAY_TIME;
@@ -139,8 +139,8 @@ void Application::Run()
 
 	delete testMesh;
 
-	m_renderer->UnregisterShader(sphereShader);
-	delete sphereShader;
+	m_renderer->UnregisterShader(modelShader);
+	delete modelShader;
 
 	m_renderer->UnregisterShader(rectShader);
 	delete rectShader;
