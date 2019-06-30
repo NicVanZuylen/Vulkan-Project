@@ -16,6 +16,8 @@
 #include "Mesh.h"
 #include "MeshRenderer.h"
 
+#include "Camera.h"
+
 Input* Application::m_input = nullptr;
 
 Application::Application()
@@ -81,13 +83,15 @@ void Application::Run()
 	Shader* rectShader = new Shader("Shaders/SPIR-V/vertRect.spv", "Shaders/SPIR-V/fragRect.spv");
 	m_renderer->RegisterShader(rectShader);
 
-	Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
+	Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 
 	MeshRenderer* rect = new MeshRenderer(m_renderer, testMesh, modelShader);
 
 	float fDeltaTime = 0.0f;	
 	float fDebugDisplayTime = DEBUG_DISPLAY_TIME;
+
+	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f));
 
 	while(!glfwWindowShouldClose(m_window)) 
 	{
@@ -102,6 +106,8 @@ void Application::Run()
 
 		fDebugDisplayTime -= fDeltaTime;
 
+		camera.Update(fDeltaTime, m_input, m_window);
+
 		// Poll events.
 		glfwPollEvents();
 
@@ -110,10 +116,11 @@ void Application::Run()
 
 		if (m_input->GetKey(GLFW_KEY_G) && !m_input->GetKey(GLFW_KEY_G, INPUTSTATE_PREVIOUS)) 
 		{
-			std::cout << "Adding Rectangle!" << std::endl;
+			std::cout << "Adding object!" << std::endl;
 			m_renderer->AddDynamicObject(rect);
 		}
 		
+		m_renderer->SetViewMatrix(camera.GetViewMatrix());
 
 		m_renderer->End();
 

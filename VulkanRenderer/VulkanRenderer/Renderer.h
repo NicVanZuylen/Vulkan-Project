@@ -67,14 +67,7 @@ public:
 	// Create a buffer with the provided size, usage flags, memory property flags, buffer and memory handles.
 	void CreateBuffer(const unsigned long long& size, const VkBufferUsageFlags& bufferUsage, VkMemoryPropertyFlags properties, VkBuffer& bufferHandle, VkDeviceMemory& bufferMemory);
 
-	/*
-	Description: Update the MVP uniform buffer for the provided swap chain image.
-	Param:
-	    const unsigned int& bufferIndex: The index of the swap chain image UBO to update.
-	*/
-	void UpdateMVP(const unsigned int& bufferIndex);
-
-	// Getters and setters
+	// Getters
 	VkDevice GetDevice();
 
 	VkPhysicalDevice GetPhysDevice();
@@ -91,6 +84,10 @@ public:
 
 	unsigned int FrameHeight();
 
+	// Setters
+	void SetViewMatrix(glm::mat4& viewMat);
+
+	// Debug
 	static VkResult m_safeCallResult;
 
 private:
@@ -161,11 +158,20 @@ private:
 	// Create MVP uniform buffers.
 	void CreateMVPUniformBuffers();
 
+	// Create UBO MVP descriptor pool.
+	void CreateUBOMVPDescriptorPool();
+
+	// Create UBO MVP descriptor sets.
+	void CreateUBOMVPDescriptorSets();
+
 	// Create framebuffer.
 	void CreateFramebuffers();
 
 	// Create command pool.
 	void CreateCommandPool();
+
+    // Update MVP Uniform buffer contents associated with the provided swap chain image.
+	void UpdateMVP(const unsigned int& bufferIndex);
 
 	// Record command buffer.
 	void RecordDynamicCommandBuffer(const unsigned int& bufferIndex);
@@ -237,9 +243,14 @@ private:
 	// Descriptors
 	VkDescriptorSetLayout m_uboDescriptorSetLayout;
 
+	VkDescriptorPool m_uboDescriptorPool;
+	DynamicArray<VkDescriptorSet> m_uboDescriptorSets;
+
 	// Descriptor buffers
 	DynamicArray<VkBuffer> m_mvpBuffers;
 	DynamicArray<VkDeviceMemory> m_mvpBufferMemBlocks;
+
+	MVPUniformBuffer m_mvp;
 
 	// Rendering
 	VkRenderPass m_staticRenderPass;
@@ -258,21 +269,5 @@ private:
 	// Extensions.
 	VkExtensionProperties* m_extensions;
 	unsigned int m_extensionCount;
-
-	// -----------------------------------------------------------------------------------------------------
-	// Shaders
-
-	struct ShaderRegister 
-	{
-		ShaderRegister();
-
-		VkShaderModule m_vertModule;
-		VkShaderModule m_fragModule;
-		bool m_registered;
-	};
-
-	// Temp
-	//Shader* m_triangleShader;
-	//Shader* m_altTriangleShader;
 };
 

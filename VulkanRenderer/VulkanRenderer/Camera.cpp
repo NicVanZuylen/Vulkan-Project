@@ -108,7 +108,7 @@ void Camera::Update(float fDeltaTime, Input* input, GLFWwindow* window)
 
 	// Construct translation and rotation matrices...
 	glm::mat4 posMat = glm::translate(glm::mat4(), m_v3Position);
-	glm::mat4 rotMat = glm::rotate(glm::mat4(), m_v3EulerAngles.z, glm::vec3(0.0f, 0.0f, 1.0f));
+	glm::mat4 rotMat = glm::rotate(glm::mat4(), -m_v3EulerAngles.z, glm::vec3(0.0f, 0.0f, 1.0f));
 	rotMat *= glm::rotate(rotMat, m_v3EulerAngles.y, glm::vec3(0.0f, 1.0f, 0.0f));
 	rotMat *= glm::rotate(rotMat, m_v3EulerAngles.x, glm::vec3(1.0f, 0.0f, 0.0f));
 

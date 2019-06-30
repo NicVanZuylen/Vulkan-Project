@@ -31,11 +31,6 @@ const bool Renderer::m_enableValidationLayers = true;
 
 VkResult Renderer::m_safeCallResult = VK_SUCCESS;
 
-Renderer::ShaderRegister::ShaderRegister() 
-{
-	m_registered = false;
-}
-
 Renderer::Renderer(GLFWwindow* window)
 {
 	m_window = window;
@@ -69,6 +64,8 @@ Renderer::Renderer(GLFWwindow* window)
 	CreateRenderPasses();
 	CreateMVPDescriptorSetLayout();
 	CreateMVPUniformBuffers();
+	CreateUBOMVPDescriptorPool();
+	CreateUBOMVPDescriptorSets();
 	CreateFramebuffers();
 	CreateCommandPool();
 	CreateSyncObjects();
@@ -77,6 +74,9 @@ Renderer::Renderer(GLFWwindow* window)
 Renderer::~Renderer()
 {
 	vkDeviceWaitIdle(m_logicDevice);
+
+	// Destroy descriptor pool.
+	vkDestroyDescriptorPool(m_logicDevice, m_uboDescriptorPool, nullptr);
 
 	// Destroy MVP Uniform buffers.
 	for (int i = 0; i < m_mvpBuffers.Count(); ++i)
@@ -155,12 +155,6 @@ void Renderer::RegisterShader(Shader* shader)
 	// Create modules.
 	RENDERER_SAFECALL(vkCreateShaderModule(m_logicDevice, &vertCreateInfo, nullptr, &shader->m_vertModule), "Renderer Error: Failed to create vertex shader module.");
 	RENDERER_SAFECALL(vkCreateShaderModule(m_logicDevice, &fragCreateInfo, nullptr, &shader->m_fragModule), "Renderer Error: Failed to create fragment shader module.");
-
-	// Allocate pipeline info structure.
-	//shader->m_pipeline = new PipelineData;
-
-	// Create pipeline for rendering with this shader.
-	//CreateGraphicsPipeline(shader);
 
 	// Shader is now registered.
 	shader->m_registered = true;
@@ -804,6 +798,66 @@ void Renderer::CreateMVPUniformBuffers()
 		CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_mvpBuffers[i], m_mvpBufferMemBlocks[i]);
 }
 
+void Renderer::CreateUBOMVPDescriptorPool()
+{
+	VkDescriptorPoolSize poolSize = {};
+	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSize.descriptorCount = static_cast<uint32_t>(m_swapChainImages.GetSize());
+
+	VkDescriptorPoolCreateInfo poolCreateInfo = {};
+	poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolCreateInfo.poolSizeCount = 1;
+	poolCreateInfo.pPoolSizes = &poolSize;
+	poolCreateInfo.maxSets = static_cast<uint32_t>(m_swapChainImages.GetSize());
+
+	RENDERER_SAFECALL(vkCreateDescriptorPool(m_logicDevice, &poolCreateInfo, nullptr, &m_uboDescriptorPool), "Renderer Error: Failed to create MVP UBO descriptor pool.");
+}
+
+void Renderer::CreateUBOMVPDescriptorSets() 
+{
+	// Descriptor layouts for each swap chain image
+	DynamicArray<VkDescriptorSetLayout> layouts;
+	for (int i = 0; i < m_swapChainImageViews.GetSize(); ++i)
+		layouts.Push(m_uboDescriptorSetLayout);
+
+	// Allocation info for descriptor sets.
+	VkDescriptorSetAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = m_uboDescriptorPool;
+	allocInfo.descriptorSetCount = layouts.GetSize();
+	allocInfo.pSetLayouts = layouts.Data();
+
+	// Resize descriptor set array.
+	m_uboDescriptorSets.SetSize(m_swapChainImageViews.GetSize());
+	m_uboDescriptorSets.SetCount(m_uboDescriptorSets.GetSize());
+
+	// Allocate sets, like command pools destroying the descriptor pool destroys the sets,
+	// so no explicit action is needed to free the descriptor sets.
+	RENDERER_SAFECALL(vkAllocateDescriptorSets(m_logicDevice, &allocInfo, m_uboDescriptorSets.Data()), "Renderer Error: Failed to allocate MVP UBO descriptor sets.");
+
+	for(int i = 0; i < m_uboDescriptorSets.GetSize(); ++i) 
+	{
+		VkDescriptorBufferInfo bufferInfo = {};
+		bufferInfo.buffer = m_mvpBuffers[i];
+		bufferInfo.offset = 0;
+		bufferInfo.range = sizeof(MVPUniformBuffer);
+
+		VkWriteDescriptorSet descWriteInfo = {};
+		descWriteInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descWriteInfo.dstSet = m_uboDescriptorSets[i];
+		descWriteInfo.dstBinding = 0;
+		descWriteInfo.dstArrayElement = 0;
+		descWriteInfo.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descWriteInfo.descriptorCount = 1;
+		descWriteInfo.pBufferInfo = &bufferInfo;
+		descWriteInfo.pImageInfo = nullptr;
+		descWriteInfo.pTexelBufferView = nullptr;
+
+		// Update descriptor sets to use the uniform buffers.
+		vkUpdateDescriptorSets(m_logicDevice, 1, &descWriteInfo, 0, nullptr);
+	}
+}
+
 void Renderer::CreateFramebuffers() 
 {
 	m_swapChainFramebuffers.SetSize(m_swapChainImageViews.GetSize());
@@ -936,6 +990,32 @@ void Renderer::CreateCommandPool()
 	m_dynamicStateChange[2] = false;
 }
 
+void Renderer::UpdateMVP(const unsigned int& bufferIndex)
+{
+	// Set up matrices...
+	m_mvp.model = glm::mat4();
+	//m_mvp.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, -1.0f, 0.0f));
+	m_mvp.proj = glm::perspective(45.0f, (float)m_swapChainImageExtents.width / (float)m_swapChainImageExtents.height, 0.1f, 1000.0f);
+
+	// Change coordinate system using this matrix.
+	glm::mat4 axisCorrection; // Inverts the Y axis to match the OpenGL coordinate system.
+	axisCorrection[1][1] = -1.0f;
+	axisCorrection[2][2] = 1.0f;
+	axisCorrection[3][3] = 1.0f;
+
+	m_mvp.proj = axisCorrection * m_mvp.proj;
+
+	unsigned int bufferSize = sizeof(m_mvp);
+
+	// Update buffer.
+	void* buffer = nullptr;
+	vkMapMemory(m_logicDevice, m_mvpBufferMemBlocks[bufferIndex], 0, bufferSize, 0, &buffer);
+
+	memcpy_s(buffer, bufferSize, &m_mvp, bufferSize);
+
+	vkUnmapMemory(m_logicDevice, m_mvpBufferMemBlocks[bufferIndex]);
+}
+
 void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 {
 	// If there was no dynamic state change, no re-recording is necessary.
@@ -975,6 +1055,8 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 	{
 		// Bind pipelines...
 		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, allPipelines[i]->m_handle);
+
+		vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, allPipelines[i]->m_layout, 0, 1, &m_uboDescriptorSets[bufferIndex], 0, nullptr);
 
 		// Draw objects using the pipeline.
 		DynamicArray<MeshRenderer*>& renderObjects = allPipelines[i]->m_renderObjects;
@@ -1044,8 +1126,6 @@ void Renderer::Begin()
 	vkWaitForFences(m_logicDevice, 1, &m_inFlightFences[m_currentFrameIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
 	vkResetFences(m_logicDevice, 1, &m_inFlightFences[m_currentFrameIndex]);
 
-	UpdateMVP(m_currentFrameIndex);
-
 	// Aquire next image from the swap chain.
 	RENDERER_SAFECALL(vkAcquireNextImageKHR(m_logicDevice, m_swapChain, std::numeric_limits<unsigned long long>::max(), m_imageAvailableSemaphores[m_currentFrameIndex], VK_NULL_HANDLE, &m_presentImageIndex),
 		"Renderer Error: Failed to aquire next swap chain image.");
@@ -1079,6 +1159,8 @@ void Renderer::AddDynamicObject(MeshRenderer* object)
 
 void Renderer::End() 
 {
+	UpdateMVP(m_presentImageIndex);
+
 	// Re-record the dynamic command buffer for this swap chain image if it has changed.
     RecordDynamicCommandBuffer(m_presentImageIndex);
 
@@ -1142,26 +1224,6 @@ void Renderer::CreateBuffer(const unsigned long long& size, const VkBufferUsageF
 	vkBindBufferMemory(m_logicDevice, bufferHandle, bufferMemory, 0);
 }
 
-void Renderer::UpdateMVP(const unsigned int& bufferIndex)
-{
-	MVPUniformBuffer mvp;
-
-	// Set up matrices...
-	mvp.model = glm::mat4();
-	mvp.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, -1.0f, 0.0f));
-	mvp.proj = glm::perspective(45.0f, (float)m_swapChainImageExtents.width / (float)m_swapChainImageExtents.height, 0.1f, 1000.0f);
-
-	unsigned int bufferSize = sizeof(mvp);
-
-	// Update buffer.
-	void* buffer = nullptr;
-	vkMapMemory(m_logicDevice, m_mvpBufferMemBlocks[bufferIndex], 0, bufferSize, 0, &buffer);
-
-	memcpy_s(buffer, bufferSize, &mvp, bufferSize);
-
-	vkUnmapMemory(m_logicDevice, m_mvpBufferMemBlocks[bufferIndex]);
-}
-
 VkDevice Renderer::GetDevice() 
 {
 	return m_logicDevice;
@@ -1200,6 +1262,11 @@ unsigned int Renderer::FrameWidth()
 unsigned int Renderer::FrameHeight() 
 {
 	return m_swapChainImageExtents.height;
+}
+
+void Renderer::SetViewMatrix(glm::mat4& viewMat) 
+{
+	m_mvp.view = viewMat;
 }
 
 VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(DynamicArray<VkSurfaceFormatKHR>& availableFormats) 
