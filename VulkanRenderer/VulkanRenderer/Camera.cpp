@@ -59,14 +59,17 @@ void Camera::Update(float fDeltaTime, Input* input, GLFWwindow* window)
 			m_bLooking = true;
 		}
 
-		m_v3EulerAngles.y -= fXDiff * m_fSensitivity * fDeltaTime;
-		m_v3EulerAngles.x -= fYDiff * m_fSensitivity * fDeltaTime;
+		m_v3EulerAngles.y -= fXDiff * m_fSensitivity * 0.001f;
+		m_v3EulerAngles.x -= fYDiff * m_fSensitivity * 0.001f;
 	}
 	else if(m_bLooking)
 	{
 		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 		m_bLooking = false;
 	}
+
+	m_fLastMouseX = fNewMouseX;
+	m_fLastMouseY = fNewMouseY;
 
 	// Strafe
 	if (input->GetKey(GLFW_KEY_W))
@@ -114,9 +117,6 @@ void Camera::Update(float fDeltaTime, Input* input, GLFWwindow* window)
 
 	// The camera will rotate around a pivot at it's centre, so concatenate translation first and rotation second.
 	m_matrix = posMat * rotMat;
-
-	m_fLastMouseX = fNewMouseX;
-	m_fLastMouseY = fNewMouseY;
 }
 
 glm::vec3 Camera::GetPosition() 

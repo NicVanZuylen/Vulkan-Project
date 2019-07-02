@@ -83,15 +83,16 @@ void Application::Run()
 	Shader* rectShader = new Shader("Shaders/SPIR-V/vertRect.spv", "Shaders/SPIR-V/fragRect.spv");
 	m_renderer->RegisterShader(rectShader);
 
-	Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
-	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
+	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
+	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Dragon.obj");
+	Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/plane.obj");
 
 	MeshRenderer* rect = new MeshRenderer(m_renderer, testMesh, modelShader);
 
 	float fDeltaTime = 0.0f;	
 	float fDebugDisplayTime = DEBUG_DISPLAY_TIME;
 
-	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f));
+	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), 0.3f, 5.0f);
 
 	while(!glfwWindowShouldClose(m_window)) 
 	{
@@ -120,7 +121,9 @@ void Application::Run()
 			m_renderer->AddDynamicObject(rect);
 		}
 		
-		m_renderer->SetViewMatrix(camera.GetViewMatrix());
+		glm::mat4 viewMat = camera.GetViewMatrix();
+
+		m_renderer->SetViewMatrix(viewMat);
 
 		m_renderer->End();
 
