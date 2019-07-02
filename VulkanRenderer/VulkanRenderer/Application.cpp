@@ -85,7 +85,7 @@ void Application::Run()
 
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Dragon.obj");
-	Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/plane.obj");
+	Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 
 	MeshRenderer* rect = new MeshRenderer(m_renderer, testMesh, modelShader);
 

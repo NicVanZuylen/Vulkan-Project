@@ -171,13 +171,6 @@ void Renderer::UnregisterShader(Shader* shader)
 		vkDestroyShaderModule(m_logicDevice, shader->m_vertModule, nullptr);
 		vkDestroyShaderModule(m_logicDevice, shader->m_fragModule, nullptr);
 
-		// Delete pipeline.
-		//vkDestroyPipeline(m_logicDevice, shader->m_pipeline->m_handle, nullptr);
-		//vkDestroyPipelineLayout(m_logicDevice, shader->m_pipeline->m_layout, nullptr);
-
-		// Delete pipeline structure.
-		//delete shader->m_pipeline;
-
 		// Shader is no longer registered.
 		shader->m_registered = false;
 	}
