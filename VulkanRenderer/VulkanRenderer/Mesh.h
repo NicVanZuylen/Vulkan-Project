@@ -3,10 +3,10 @@
 
 #include "glm.hpp"
 #include "DynamicArray.h"
+#include "Renderer.h"
 #include <string>
-#include <vulkan/vulkan.h>
 
-class Renderer;
+//class Renderer;
 class VertexInfo;
 
 struct Vertex
@@ -89,14 +89,9 @@ public:
 private:
 
 	/*
-	Description: Create the copy command buffer used for copying memory from the staging buffers to vertex and index buffer memory.
-	*/
-	static void CreateCopyCommandBuffer(Renderer* renderer);
-
-	/*
 	Description: Record the copy command buffer to copy this mesh's staging buffer memory to it's vertex and index buffers.
 	*/
-	static void RecordCopyCommandBuffer(Renderer* renderer, VkBuffer vertStagingBuffer, VkBuffer vertFinalBuffer, VkBuffer indStagingBuffer, VkBuffer indFinalBuffer, unsigned long long vertCopySize, unsigned long long indCopySize);
+	static void RecordCopyCommandBuffer(Renderer* renderer, VkCommandBuffer cmdBuffer, VkBuffer vertStagingBuffer, VkBuffer vertFinalBuffer, VkBuffer indStagingBuffer, VkBuffer indFinalBuffer, unsigned long long vertCopySize, unsigned long long indCopySize);
 
 	/*
 	Description: Calculate mesh tangents.
@@ -111,7 +106,6 @@ private:
 	};
 
 	// Vulkan handles
-	static VkCommandBuffer m_copyCmdBuffer;
 
 	VkBuffer m_vertexBuffer;
 	VkDeviceMemory m_vertexMemory;

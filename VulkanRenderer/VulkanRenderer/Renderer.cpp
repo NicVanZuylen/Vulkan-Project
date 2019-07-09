@@ -1093,24 +1093,6 @@ void Renderer::CreateSyncObjects()
 	}
 }
 
-unsigned int Renderer::FindMemoryType(unsigned int typeFilter, VkMemoryPropertyFlags propertyFlags)
-{
-	VkPhysicalDeviceMemoryProperties memProperties;
-	vkGetPhysicalDeviceMemoryProperties(m_physDevice, &memProperties);
-
-	for (unsigned int i = 0; i < memProperties.memoryTypeCount; ++i)
-	{
-		// Ensure properties match...
-		if ((typeFilter & (1 << i)) && ((memProperties.memoryTypes[i].propertyFlags & propertyFlags) == propertyFlags))
-		{
-			return i;
-		}
-	}
-
-	throw std::exception("Mesh Error: Failed to find suitable memory type for buffer allocation.");
-	return 0;
-}
-
 void Renderer::Begin() 
 {
 	m_currentFrameIndex = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
@@ -1190,6 +1172,24 @@ void Renderer::WaitGraphicsIdle()
 	vkQueueWaitIdle(m_graphicsQueue);
 }
 
+unsigned int Renderer::FindMemoryType(unsigned int typeFilter, VkMemoryPropertyFlags propertyFlags)
+{
+	VkPhysicalDeviceMemoryProperties memProperties;
+	vkGetPhysicalDeviceMemoryProperties(m_physDevice, &memProperties);
+
+	for (unsigned int i = 0; i < memProperties.memoryTypeCount; ++i)
+	{
+		// Ensure properties match...
+		if ((typeFilter & (1 << i)) && ((memProperties.memoryTypes[i].propertyFlags & propertyFlags) == propertyFlags))
+		{
+			return i;
+		}
+	}
+
+	throw std::exception("Mesh Error: Failed to find suitable memory type for buffer allocation.");
+	return 0;
+}
+
 void Renderer::CreateBuffer(const unsigned long long& size, const VkBufferUsageFlags& bufferUsage, VkMemoryPropertyFlags properties, VkBuffer& bufferHandle, VkDeviceMemory& bufferMemory)
 {
 	VkBufferCreateInfo bufCreateInfo = {};
@@ -1215,6 +1215,49 @@ void Renderer::CreateBuffer(const unsigned long long& size, const VkBufferUsageF
 
 	// Associate the newly allocated memory with the buffer object.
 	vkBindBufferMemory(m_logicDevice, bufferHandle, bufferMemory, 0);
+}
+
+Renderer::TempCmdBuffer Renderer::CreateTempCommandBuffer()
+{
+	TempCmdBuffer tempBuffer;
+
+	VkCommandBufferAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool = m_commandPool;
+	allocInfo.commandBufferCount = 1;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.pNext = nullptr;
+
+	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &allocInfo, &tempBuffer.m_handle), "Renderer Error: Failed to allocate temporary command buffer.");
+
+	VkFenceCreateInfo fenceCreateInfo = {};
+	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceCreateInfo.flags = 0;
+
+	RENDERER_SAFECALL(vkCreateFence(m_logicDevice, &fenceCreateInfo, nullptr, &tempBuffer.m_destroyFence), "Renderer Error: Failed to create temporary command buffer execution fence.");
+
+	return tempBuffer;
+}
+
+void Renderer::UseAndDestroyTempCommandBuffer(Renderer::TempCmdBuffer& buffer) 
+{
+	VkSubmitInfo bufferSubmitInfo = {};
+	bufferSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	bufferSubmitInfo.pCommandBuffers = &buffer.m_handle;
+	bufferSubmitInfo.commandBufferCount = 1;
+	bufferSubmitInfo.pSignalSemaphores = nullptr;
+	bufferSubmitInfo.pWaitSemaphores = nullptr;
+	bufferSubmitInfo.waitSemaphoreCount = 0;
+	bufferSubmitInfo.pWaitDstStageMask = nullptr;
+
+	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &bufferSubmitInfo, buffer.m_destroyFence), "Renderer Error: Failed to submit temporary command buffer for executino.");
+
+	//VkResult result = vkQueueSubmit(m_graphicsQueue, 1, &bufferSubmitInfo, buffer.m_destroyFence);
+
+	RENDERER_SAFECALL(vkWaitForFences(m_logicDevice, 1, &buffer.m_destroyFence, VK_TRUE, std::numeric_limits<unsigned long long>::max()), "Renderer Error: Failed to wait for temp command buffer fence.");
+
+	vkDestroyFence(m_logicDevice, buffer.m_destroyFence, nullptr);
+	vkFreeCommandBuffers(m_logicDevice, m_commandPool, 1, &buffer.m_handle);
 }
 
 VkDevice Renderer::GetDevice() 

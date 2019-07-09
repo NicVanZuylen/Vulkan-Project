@@ -9,8 +9,6 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
-VkCommandBuffer Mesh::m_copyCmdBuffer = nullptr;
-
 VertexInfo Mesh::defaultFormat = VertexInfo({ VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT2 });
 
 Mesh::Mesh(Renderer* renderer, const char* filePath) 
@@ -24,9 +22,6 @@ Mesh::Mesh(Renderer* renderer, const char* filePath)
 	// Use the filename as the name.
 	std::string tmpName = filePath;
 	m_name = "|" + tmpName.substr(tmpName.find_last_of('/') + 1) + "|";
-
-	if (!m_copyCmdBuffer)
-		CreateCopyCommandBuffer(m_renderer);
 
 	Load(filePath);
 
@@ -43,9 +38,6 @@ Mesh::Mesh(Renderer* renderer, const char* filePath, VertexInfo* vertexFormat)
 	// Use the filename as the name.
 	std::string tmpName = filePath;
 	m_name = "|" + tmpName.substr(tmpName.find_last_of('/') + 1) + "|";
-
-	if (!m_copyCmdBuffer)
-		CreateCopyCommandBuffer(m_renderer);
 
 	Load(filePath);
 
@@ -196,8 +188,9 @@ void Mesh::Load(const char* filePath)
 	vkUnmapMemory(m_renderer->GetDevice(), indexStagingBufMemory);
 
 	// Copy staging buffer contents to vertex buffer contents.
-	RecordCopyCommandBuffer(m_renderer, vertexStagingBuffer, m_vertexBuffer, indexStagingBuffer, m_indexBuffer, vertBufSize, indexBufSize);
-	m_renderer->SubmitCopyOperation(m_copyCmdBuffer);
+	Renderer::TempCmdBuffer tempCopyCmdBuffer = m_renderer->CreateTempCommandBuffer();
+	RecordCopyCommandBuffer(m_renderer, tempCopyCmdBuffer.m_handle, vertexStagingBuffer, m_vertexBuffer, indexStagingBuffer, m_indexBuffer, vertBufSize, indexBufSize);
+	m_renderer->UseAndDestroyTempCommandBuffer(tempCopyCmdBuffer);
 
 	// Destroy staging buffers.
 	vkFreeMemory(m_renderer->GetDevice(), vertStagingBufferMemory, nullptr);
@@ -254,19 +247,7 @@ const VertexInfo* Mesh::VertexFormat()
 	return m_vertexFormat;
 }
 
-void Mesh::CreateCopyCommandBuffer(Renderer* renderer) 
-{
-	VkCommandBufferAllocateInfo allocInfo = {};
-	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool = renderer->GetCommandPool();
-	allocInfo.commandBufferCount = 1;
-	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.pNext = nullptr;
-
-	RENDERER_SAFECALL(vkAllocateCommandBuffers(renderer->GetDevice(), &allocInfo, &m_copyCmdBuffer), "Global Mesh Error: Failed to allocate copy command buffer.");
-}
-
-void Mesh::RecordCopyCommandBuffer(Renderer* renderer, VkBuffer vertStagingBuffer, VkBuffer vertFinalBuffer, VkBuffer indStagingBuffer, VkBuffer indFinalBuffer, unsigned long long vertCopySize, unsigned long long indCopySize)
+void Mesh::RecordCopyCommandBuffer(Renderer* renderer, VkCommandBuffer cmdBuffer, VkBuffer vertStagingBuffer, VkBuffer vertFinalBuffer, VkBuffer indStagingBuffer, VkBuffer indFinalBuffer, unsigned long long vertCopySize, unsigned long long indCopySize)
 {
 	VkCommandBufferBeginInfo beginInfo = {};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -275,7 +256,7 @@ void Mesh::RecordCopyCommandBuffer(Renderer* renderer, VkBuffer vertStagingBuffe
 	beginInfo.pNext = nullptr;
 
 	// Begin recording.
-	RENDERER_SAFECALL(vkBeginCommandBuffer(m_copyCmdBuffer, &beginInfo), "Mesh Error: Failed to begin recording of copy command buffer.");
+	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &beginInfo), "Mesh Error: Failed to begin recording of copy command buffer.");
 
 	VkBufferCopy vertCopyRegion = {};
 	vertCopyRegion.srcOffset = 0;
@@ -283,7 +264,7 @@ void Mesh::RecordCopyCommandBuffer(Renderer* renderer, VkBuffer vertStagingBuffe
 	vertCopyRegion.size = vertCopySize;
 
 	// Copy vertex staging buffer contents to vertex final buffer contents.
-	vkCmdCopyBuffer(m_copyCmdBuffer, vertStagingBuffer, vertFinalBuffer, 1, &vertCopyRegion);
+	vkCmdCopyBuffer(cmdBuffer, vertStagingBuffer, vertFinalBuffer, 1, &vertCopyRegion);
 
 	VkBufferCopy indCopyRegion = {};
 	indCopyRegion.srcOffset = 0;
@@ -291,11 +272,12 @@ void Mesh::RecordCopyCommandBuffer(Renderer* renderer, VkBuffer vertStagingBuffe
 	indCopyRegion.size = indCopySize;
 
 	// Copy index staging buffer contents to index final buffer contents.
-	vkCmdCopyBuffer(m_copyCmdBuffer, indStagingBuffer, indFinalBuffer, 1, &indCopyRegion);
+	vkCmdCopyBuffer(cmdBuffer, indStagingBuffer, indFinalBuffer, 1, &indCopyRegion);
 
 	// End recording.
-	RENDERER_SAFECALL(vkEndCommandBuffer(m_copyCmdBuffer), "Mesh Error: Failed to end copy command buffer recording.");
+	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Mesh Error: Failed to end copy command buffer recording.");
 }
+
 
 void Mesh::CalculateTangents(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned int>& indices) 
 {

@@ -14,6 +14,7 @@
 #include "Shader.h"
 #include "VertexInfo.h"
 #include "Mesh.h"
+#include "Texture.h"
 #include "MeshRenderer.h"
 
 #include "Camera.h"
@@ -83,6 +84,8 @@ void Application::Run()
 	Shader* rectShader = new Shader("Shaders/SPIR-V/vertRect.spv", "Shaders/SPIR-V/fragRect.spv");
 	m_renderer->RegisterShader(rectShader);
 
+	Texture* testTexture = new Texture(m_renderer, "Assets/Objects/Metal/diffuse.tga");
+
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Dragon.obj");
 	Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
@@ -144,6 +147,9 @@ void Application::Run()
 			fDebugDisplayTime = DEBUG_DISPLAY_TIME;
 		}
 	}
+
+
+	delete testTexture;
 
 	delete rect;
 

@@ -64,8 +64,23 @@ public:
 	// Wait for the graphics queue to be idle.
 	void WaitGraphicsIdle();
 
+	// Find the optimal memory type for allocating buffer memory.
+	unsigned int FindMemoryType(unsigned int typeFilter, VkMemoryPropertyFlags propertyFlags);
+
 	// Create a buffer with the provided size, usage flags, memory property flags, buffer and memory handles.
 	void CreateBuffer(const unsigned long long& size, const VkBufferUsageFlags& bufferUsage, VkMemoryPropertyFlags properties, VkBuffer& bufferHandle, VkDeviceMemory& bufferMemory);
+
+	struct TempCmdBuffer 
+	{
+		VkCommandBuffer m_handle;
+		VkFence m_destroyFence;
+	};
+
+	// Create a temporary command buffer for a one-time operation.
+	TempCmdBuffer CreateTempCommandBuffer();
+
+	// Destroy a temporary command buffer.
+	void UseAndDestroyTempCommandBuffer(TempCmdBuffer& buffer);
 
 	// Getters
 	VkDevice GetDevice();
@@ -176,11 +191,8 @@ private:
 	// Record command buffer.
 	void RecordDynamicCommandBuffer(const unsigned int& bufferIndex);
 
-	// Create semaphores.
+	// Create semaphores & fences.
 	void CreateSyncObjects();
-
-    // Find the optimal memory type for allocating buffer memory.
-	unsigned int FindMemoryType(unsigned int typeFilter, VkMemoryPropertyFlags propertyFlags);
 
 	// -----------------------------------------------------------------------------------------------------
 	// Swap chain queries
