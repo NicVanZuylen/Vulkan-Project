@@ -50,7 +50,7 @@ void Shader::Load(const char* vertPath, const char* fragPath)
 		std::string vertStr = vertPath;
 		std::string fragStr = fragPath;
 
-		m_name = vertStr.substr(vertStr.find_last_of('/')) + fragStr.substr(fragStr.find_last_of('/'));
+		m_name = vertStr.substr(vertStr.find_last_of('/') + 1) + "|" + fragStr.substr(fragStr.find_last_of('/') + 1);
 	}
 
 	// -----------------------------------------------------------------------------------------------

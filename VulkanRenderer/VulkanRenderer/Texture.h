@@ -58,6 +58,16 @@ protected:
 	*/
 	void TransferContents();
 
+	/*
+	Description: Create the image view object used by samplers in shaders.
+	*/
+	void CreateTextureImageView();
+
+	/*
+	Description: Create the image sampler used in shaders.
+	*/
+	static void CreateSampler();
+
 	unsigned char* m_data;
 	Renderer* m_renderer;
 
@@ -67,6 +77,7 @@ protected:
 	VkDeviceMemory m_stagingMemory;
 
 	VkImage m_imageHandle;
+	VkImageView m_imageView;
 	VkDeviceMemory m_imageMemory;
 
 	int m_nWidth;

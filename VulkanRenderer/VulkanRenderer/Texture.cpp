@@ -42,6 +42,7 @@ Texture::~Texture()
 	if (m_bOwnsTexture)
 	{
 		// Destroy texture image.
+		vkDestroyImageView(m_renderer->GetDevice(), m_imageView, nullptr);
 		vkDestroyImage(m_renderer->GetDevice(), m_imageHandle, nullptr);
 		vkFreeMemory(m_renderer->GetDevice(), m_imageMemory, nullptr);
 	}
@@ -116,7 +117,7 @@ void Texture::CreateImageBuffer()
 	allocInfo.allocationSize = imageMemRequirements.size;
 	allocInfo.memoryTypeIndex = m_renderer->FindMemoryType(imageMemRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	RENDERER_SAFECALL(vkAllocateMemory(m_renderer->GetDevice(), &allocInfo, nullptr, &m_imageMemory), "Renderer Error: Failed to allocate texture image memory.");
+	RENDERER_SAFECALL(vkAllocateMemory(m_renderer->GetDevice(), &allocInfo, nullptr, &m_imageMemory), "Texture Error: Failed to allocate texture image memory.");
 
 	// Bind image memory to the image.
 	vkBindImageMemory(m_renderer->GetDevice(), m_imageHandle, m_imageMemory, 0);
@@ -141,7 +142,7 @@ void Texture::RecordImageMemBarrierCmdBuffer(VkCommandBuffer cmdBuffer, VkImageL
 	beginInfo.pNext = nullptr;
 
 	// Begin recording.
-	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &beginInfo), "Mesh Error: Failed to begin recording of copy command buffer.");
+	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &beginInfo), "Texture Error: Failed to begin recording of copy command buffer.");
 
 	VkPipelineStageFlags sourceStage;
 	VkPipelineStageFlags destStage;
@@ -182,7 +183,7 @@ void Texture::RecordImageMemBarrierCmdBuffer(VkCommandBuffer cmdBuffer, VkImageL
 	vkCmdPipelineBarrier(cmdBuffer, sourceStage, destStage, 0, 0, nullptr, 0, nullptr, 1, &memBarrier);
 
 	// End recording.
-	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Mesh Error: Failed to end copy command buffer recording.");
+	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Texture Error: Failed to end copy command buffer recording.");
 }
 
 void Texture::RecordCopyCommandBuffer(VkCommandBuffer cmdBuffer)
@@ -194,7 +195,7 @@ void Texture::RecordCopyCommandBuffer(VkCommandBuffer cmdBuffer)
 	beginInfo.pNext = nullptr;
 
 	// Begin recording.
-	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &beginInfo), "Mesh Error: Failed to begin recording of copy command buffer.");
+	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &beginInfo), "Texture Error: Failed to begin recording of copy command buffer.");
 
 	unsigned long long textureSize = m_nWidth * m_nHeight * sizeof(unsigned int);
 
@@ -213,7 +214,7 @@ void Texture::RecordCopyCommandBuffer(VkCommandBuffer cmdBuffer)
 	vkCmdCopyBufferToImage(cmdBuffer, m_stagingBuffer, m_imageHandle, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 
 	// End recording.
-	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Mesh Error: Failed to end copy command buffer recording.");
+	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Texture Error: Failed to end copy command buffer recording.");
 }
 
 void Texture::TransferContents() 
@@ -228,4 +229,23 @@ void Texture::TransferContents()
 
 	// Transition image layout to shader read only optimal layout.
 	TransitionImageLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+	// Next step.
+	CreateTextureImageView();
+}
+
+void Texture::CreateTextureImageView() 
+{
+	VkImageViewCreateInfo viewCreateInfo = {};
+	viewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	viewCreateInfo.image = m_imageHandle;
+	viewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	viewCreateInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	viewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	viewCreateInfo.subresourceRange.baseMipLevel = 0;
+	viewCreateInfo.subresourceRange.levelCount = 1;
+	viewCreateInfo.subresourceRange.baseArrayLayer = 0;
+	viewCreateInfo.subresourceRange.layerCount = 1;
+
+	RENDERER_SAFECALL(vkCreateImageView(m_renderer->GetDevice(), &viewCreateInfo, nullptr, &m_imageView), "Texture Error: Failed to create image view.");
 }
