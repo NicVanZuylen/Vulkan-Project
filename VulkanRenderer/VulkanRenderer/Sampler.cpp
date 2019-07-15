@@ -4,7 +4,7 @@
 
 Table<Sampler> Sampler::m_samplerTable;
 
-Sampler::Sampler(Renderer* renderer, EFilterMode filterMode = FILTER_MODE_NEAREST, ERepeatMode repeatMode = REPEAT_MODE_REPEAT, float fAnisoTropy)
+Sampler::Sampler(Renderer* renderer, EFilterMode filterMode, ERepeatMode repeatMode, float fAnisoTropy)
 {
 	m_renderer = renderer;
 	m_handle = nullptr;

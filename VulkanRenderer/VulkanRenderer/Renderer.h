@@ -93,13 +93,15 @@ public:
 
 	VkDescriptorSetLayout MVPUBOSetLayout();
 
+	VkBuffer MVPUBOHandle(const unsigned int& nSwapChainImageIndex);
+
 	const DynamicArray<VkFramebuffer>& GetFramebuffers() const;
 
 	const unsigned int& FrameWidth() const;
 
 	const unsigned int& FrameHeight() const;
 
-	const unsigned int& SwapChainImageCount() const;
+	const unsigned int SwapChainImageCount() const;
 
 	// Setters
 	void SetViewMatrix(glm::mat4& viewMat);

@@ -15,6 +15,7 @@
 #include "VertexInfo.h"
 #include "Mesh.h"
 #include "Texture.h"
+#include "Material.h"
 #include "MeshRenderer.h"
 
 #include "Camera.h"
@@ -86,11 +87,13 @@ void Application::Run()
 
 	Texture* testTexture = new Texture(m_renderer, "Assets/Objects/Metal/diffuse.tga");
 
+	Material* testMat = new Material(m_renderer, modelShader, { testTexture });
+
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Dragon.obj");
 	Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 
-	MeshRenderer* rect = new MeshRenderer(m_renderer, testMesh, modelShader);
+	MeshRenderer* testObject = new MeshRenderer(m_renderer, testMesh, testMat);
 
 	float fDeltaTime = 0.0f;	
 	float fDebugDisplayTime = DEBUG_DISPLAY_TIME;
@@ -121,7 +124,7 @@ void Application::Run()
 		if (m_input->GetKey(GLFW_KEY_G) && !m_input->GetKey(GLFW_KEY_G, INPUTSTATE_PREVIOUS)) 
 		{
 			std::cout << "Adding object!" << std::endl;
-			m_renderer->AddDynamicObject(rect);
+			m_renderer->AddDynamicObject(testObject);
 		}
 		
 		glm::mat4 viewMat = camera.GetViewMatrix();
@@ -151,9 +154,11 @@ void Application::Run()
 
 	delete testTexture;
 
-	delete rect;
+	delete testObject;
 
 	delete testMesh;
+
+	delete testMat;
 
 	m_renderer->UnregisterShader(modelShader);
 	delete modelShader;

@@ -20,6 +20,7 @@ struct PipelineData
 	DynamicArray<MeshRenderer*> m_renderObjects; // All objects using this pipeline.
 	VkPipeline m_handle;
 	VkPipelineLayout m_layout;
+	Material* m_material;
 };
 
 struct PipelineDataPtr 

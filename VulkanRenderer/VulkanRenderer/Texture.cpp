@@ -50,24 +50,24 @@ Texture::~Texture()
 	}
 }
 
-void Texture::Bind() 
-{
-	
-}
-
-const std::string& Texture::GetName() 
+const std::string& Texture::GetName() const
 {
 	return m_name;
 }
 
-int Texture::GetWidth() 
+int Texture::GetWidth() const
 {
 	return m_nWidth;
 }
 
-int Texture::GetHeight() 
+int Texture::GetHeight() const
 {
 	return m_nHeight;
+}
+
+const VkImageView& Texture::ImageView() const
+{
+	return m_imageView;
 }
 
 void Texture::StageImage() 

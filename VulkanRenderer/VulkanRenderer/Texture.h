@@ -10,26 +10,27 @@ public:
 	~Texture();
 
 	/*
-	Description: Bind this texture to a GPU texture unit.
-	*/
-	void Bind();
-
-	/*
 	Description: Get the name of the texture file.
 	*/
-	const std::string& GetName();
+	const std::string& GetName() const;
 
 	/*
 	Description: Get the width in pixels of the texture.
 	Return Type: int
 	*/
-	int GetWidth();
+	int GetWidth() const;
 
 	/*
 	Description: Get the height in pixels of the texture.
 	Return Type: int
 	*/
-	int GetHeight();
+	int GetHeight() const;
+
+	/*
+	Description: Get Vulkan image view handle for this texture.
+	Return Type: const VkImageView&
+	*/
+	const VkImageView& ImageView() const;
 
 protected:
 

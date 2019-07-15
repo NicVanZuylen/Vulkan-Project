@@ -3,6 +3,7 @@
 #include <set>
 
 #include "Shader.h"
+#include "Material.h"
 #include "MeshRenderer.h"
 #include "gtc/matrix_transform.hpp"
 
@@ -1047,13 +1048,17 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 	// Iterate through all pipelines and draw their objects.
 	for (int i = 0; i < allPipelines.Count(); ++i)
 	{
-		// Bind pipelines...
-		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, allPipelines[i]->m_handle);
+		PipelineData& currentPipeline = *allPipelines[i];
 
-		vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, allPipelines[i]->m_layout, 0, 1, &m_uboDescriptorSets[bufferIndex], 0, nullptr);
+		// Bind pipelines...
+		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline.m_handle);
+
+		currentPipeline.m_material->UseDescriptorSet(cmdBuffer, currentPipeline.m_layout, bufferIndex);
+
+		//vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, allPipelines[i]->m_layout, 0, 1, &m_uboDescriptorSets[bufferIndex], 0, nullptr);
 
 		// Draw objects using the pipeline.
-		DynamicArray<MeshRenderer*>& renderObjects = allPipelines[i]->m_renderObjects;
+		DynamicArray<MeshRenderer*>& renderObjects = currentPipeline.m_renderObjects;
 		for (int j = 0; j < renderObjects.Count(); ++j)
 		{
 			renderObjects[j]->CommandDraw(cmdBuffer);
@@ -1286,6 +1291,11 @@ VkDescriptorSetLayout Renderer::MVPUBOSetLayout()
 	return m_uboDescriptorSetLayout;
 }
 
+VkBuffer Renderer::MVPUBOHandle(const unsigned int& nSwapChainImageIndex)
+{
+	return m_mvpBuffers[nSwapChainImageIndex];
+}
+
 const DynamicArray<VkFramebuffer>& Renderer::GetFramebuffers() const
 {
 	return m_swapChainFramebuffers;
@@ -1301,7 +1311,7 @@ const unsigned int& Renderer::FrameHeight() const
 	return m_swapChainImageExtents.height;
 }
 
-const unsigned int& Renderer::SwapChainImageCount() const
+const unsigned int Renderer::SwapChainImageCount() const
 {
 	return m_swapChainImageViews.GetSize();
 }

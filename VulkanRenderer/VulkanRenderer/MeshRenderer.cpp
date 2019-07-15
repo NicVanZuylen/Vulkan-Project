@@ -9,6 +9,7 @@ PipelineData::PipelineData()
 {
 	m_handle = nullptr;
 	m_layout = nullptr;
+	m_material = nullptr;
 }
 
 PipelineDataPtr::PipelineDataPtr() 
@@ -36,6 +37,9 @@ void VertexType::AttributeDescriptions(DynamicArray<VkVertexInputAttributeDescri
 
 	outDescriptions = { defaultDesc };
 }
+
+Table<PipelineDataPtr> MeshRenderer::m_pipelineTable;
+DynamicArray<PipelineData*> MeshRenderer::m_allPipelines;
 
 MeshRenderer::MeshRenderer(Renderer* renderer, Mesh* mesh, Material* material)
 {
@@ -245,6 +249,9 @@ void MeshRenderer::CreateGraphicsPipeline()
 	pipelineInfo.basePipelineIndex = -1;
 
 	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_renderer->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipelineData->m_handle), "Renderer Error: Failed to create graphics pipeline.");
+
+	// Set pipeline material.
+	m_pipelineData->m_material = m_material;
 
 	// Set table pointer.
 	pipelineData = m_pipelineData;
