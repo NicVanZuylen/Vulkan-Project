@@ -122,6 +122,11 @@ const std::string& Material::GetName() const
 	return m_nameID;
 }
 
+const VkDescriptorSetLayout& Material::GetDescriptorLayout() const 
+{
+	return m_descriptorSetLayout;
+}
+
 void Material::CreateDescriptorSetLayouts() 
 {
 	// This needs to be the same as the binding defined in the renderer.

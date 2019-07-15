@@ -3,8 +3,12 @@
 
 layout(location = 0) out vec4 outColor;
 
+layout(binding = 1) uniform sampler2D diffuse;
+
+layout(location = 0) in vec2 finalTexCoords;
+
 void main() 
 {
-    outColor = vec4(1.0f);
+    outColor = texture(diffuse, finalTexCoords);
 }
 

@@ -55,7 +55,18 @@ MeshRenderer::MeshRenderer(Renderer* renderer, Mesh* mesh, Material* material)
 
 MeshRenderer::~MeshRenderer()
 {
-	
+	if (m_pipelineData->m_renderObjects.Count() <= 1) // This is the last object using the pipeline, destroy the pipeline.
+	{
+		// Wait for graphics queue to be idle.
+		m_renderer->WaitGraphicsIdle();
+
+		// Destroy pipeline objects.
+		vkDestroyPipeline(m_renderer->GetDevice(), m_pipelineData->m_handle, nullptr);
+		vkDestroyPipelineLayout(m_renderer->GetDevice(), m_pipelineData->m_layout, nullptr);
+
+		delete m_pipelineData;
+		m_pipelineData = nullptr;
+	}
 }
 
 DynamicArray<PipelineData*>& MeshRenderer::Pipelines() 
@@ -161,7 +172,7 @@ void MeshRenderer::CreateGraphicsPipeline()
 	rasterizer.rasterizerDiscardEnable = VK_FALSE;
 	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 	rasterizer.lineWidth = 1.0f;
-	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+	rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
 	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 
 	// Used for shadow mapping...
@@ -218,12 +229,12 @@ void MeshRenderer::CreateGraphicsPipeline()
 	m_pipelineData = new PipelineData;
 	m_pipelineData->m_renderObjects.Push(this);
 
-	VkDescriptorSetLayout uboSetLayout = m_renderer->MVPUBOSetLayout();
+	//VkDescriptorSetLayout uboSetLayout = m_renderer->MVPUBOSetLayout();
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutInfo.setLayoutCount = 1;
-	pipelineLayoutInfo.pSetLayouts = &uboSetLayout; // MVP UBO
+	pipelineLayoutInfo.pSetLayouts = &m_material->GetDescriptorLayout(); // MVP UBO
 	pipelineLayoutInfo.pushConstantRangeCount = 0;
 	pipelineLayoutInfo.pPushConstantRanges = nullptr;
 

@@ -13,7 +13,10 @@ layout(location = 1) in vec4 normal;
 layout(location = 2) in vec4 tangent;
 layout(location = 3) in vec2 texCoords;
 
+layout(location = 0) out vec2 finalTexCoords;
+
 void main() 
 {
+    finalTexCoords = texCoords;
     gl_Position = mvp.proj * mvp.view * mvp.model * position;
 }

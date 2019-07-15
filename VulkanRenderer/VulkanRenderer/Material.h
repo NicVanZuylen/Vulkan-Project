@@ -62,6 +62,11 @@ public:
 	*/
 	const std::string& GetName() const;
 
+	/*
+	Description: The descriptor set layout of this material.
+	*/
+	const VkDescriptorSetLayout& GetDescriptorLayout() const;
+
 private:
 
 	/*

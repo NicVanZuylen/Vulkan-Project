@@ -43,6 +43,8 @@ Texture::~Texture()
 {
 	if (m_bOwnsTexture)
 	{
+		m_renderer->WaitGraphicsIdle();
+
 		// Destroy texture image.
 		vkDestroyImageView(m_renderer->GetDevice(), m_imageView, nullptr);
 		vkDestroyImage(m_renderer->GetDevice(), m_imageHandle, nullptr);
