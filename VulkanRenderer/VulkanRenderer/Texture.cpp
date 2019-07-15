@@ -7,6 +7,8 @@
 Texture::Texture(Renderer* renderer, const char* szFilePath) 
 {
 	m_renderer = renderer;
+	m_name = szFilePath;
+	m_name = m_name.substr(m_name.find_last_of("/") + 1); // Remove the rest of the path from the name, to reduce memory usage and hashing time.
 	m_data = nullptr;
 
 	m_nWidth = 0;
@@ -51,6 +53,11 @@ Texture::~Texture()
 void Texture::Bind() 
 {
 	
+}
+
+const std::string& Texture::GetName() 
+{
+	return m_name;
 }
 
 int Texture::GetWidth() 

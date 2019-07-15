@@ -544,6 +544,7 @@ void Renderer::CreateLogicalDevice()
 
 	VkPhysicalDeviceFeatures features = {};
 	vkGetPhysicalDeviceFeatures(m_physDevice, &features);
+	features.samplerAnisotropy = VK_TRUE;
 
 	VkDeviceCreateInfo logicDeviceCreateInfo = {};
 	logicDeviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -1285,19 +1286,24 @@ VkDescriptorSetLayout Renderer::MVPUBOSetLayout()
 	return m_uboDescriptorSetLayout;
 }
 
-const DynamicArray<VkFramebuffer>& Renderer::GetFramebuffers() 
+const DynamicArray<VkFramebuffer>& Renderer::GetFramebuffers() const
 {
 	return m_swapChainFramebuffers;
 }
 
-unsigned int Renderer::FrameWidth() 
+const unsigned int& Renderer::FrameWidth() const
 {
 	return m_swapChainImageExtents.width;
 }
 
-unsigned int Renderer::FrameHeight() 
+const unsigned int& Renderer::FrameHeight() const
 {
 	return m_swapChainImageExtents.height;
+}
+
+const unsigned int& Renderer::SwapChainImageCount() const
+{
+	return m_swapChainImageViews.GetSize();
 }
 
 void Renderer::SetViewMatrix(glm::mat4& viewMat) 

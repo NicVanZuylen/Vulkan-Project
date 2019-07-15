@@ -15,6 +15,11 @@ public:
 	void Bind();
 
 	/*
+	Description: Get the name of the texture file.
+	*/
+	const std::string& GetName();
+
+	/*
 	Description: Get the width in pixels of the texture.
 	Return Type: int
 	*/
@@ -63,12 +68,8 @@ protected:
 	*/
 	void CreateTextureImageView();
 
-	/*
-	Description: Create the image sampler used in shaders.
-	*/
-	static void CreateSampler();
-
 	unsigned char* m_data;
+	std::string m_name;
 	Renderer* m_renderer;
 
 	VkCommandBuffer m_copyCmdBuffer;

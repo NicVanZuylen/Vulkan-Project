@@ -2,6 +2,7 @@
 #include "VertexInfo.h"
 #include "Mesh.h"
 #include "Shader.h"
+#include "Material.h"
 #include "Renderer.h"
 
 PipelineData::PipelineData() 
@@ -36,47 +37,21 @@ void VertexType::AttributeDescriptions(DynamicArray<VkVertexInputAttributeDescri
 	outDescriptions = { defaultDesc };
 }
 
-Table<PipelineDataPtr> MeshRenderer::m_pipelineTable;
-DynamicArray<PipelineData*> MeshRenderer::m_allPipelines;
-
-MeshRenderer::MeshRenderer(Renderer* renderer, Mesh* mesh, Shader* shader)
+MeshRenderer::MeshRenderer(Renderer* renderer, Mesh* mesh, Material* material)
 {
 	m_renderer = renderer;
 	m_mesh = mesh;
-	m_shader = shader;
+	m_material = material;
 	m_pipelineData = nullptr;
 
-	m_nameID = "|" + shader->m_name + mesh->VertexFormat()->NameID();
+	m_nameID = "|" + material->GetName() + mesh->VertexFormat()->NameID();
 
 	CreateGraphicsPipeline();
 }
 
 MeshRenderer::~MeshRenderer()
 {
-	if (m_pipelineData) 
-	{
-		// The lasto object using the pipeline is responsible for it's deletion.
-		if (m_pipelineData->m_renderObjects.Count() == 1) 
-		{
-			m_renderer->WaitGraphicsIdle();
-
-			// This is the only object remaining that is using the pipeline. Destroy it.
-			vkDestroyPipeline(m_renderer->GetDevice(), m_pipelineData->m_handle, nullptr);
-			vkDestroyPipelineLayout(m_renderer->GetDevice(), m_pipelineData->m_layout, nullptr);
-
-			// Remove from containers.
-			m_pipelineTable[{ m_nameID.c_str() }].m_ptr = nullptr;
-			m_allPipelines.Pop(m_pipelineData);
-
-			delete m_pipelineData;
-		}
-		else 
-		{
-			// Other objects are using the pipeline. They are now responsible for deleting it.
-			// Remove this object from the pipeline's list of objects using it.
-			m_pipelineData->m_renderObjects.Pop(this);
-		}
-	}
+	
 }
 
 DynamicArray<PipelineData*>& MeshRenderer::Pipelines() 
@@ -94,9 +69,14 @@ void MeshRenderer::CommandDraw(VkCommandBuffer_T* cmdBuffer)
 	vkCmdDrawIndexed(cmdBuffer, meshRef.IndexCount(), 1, 0, 0, 0);
 }
 
-const Shader* MeshRenderer::GetShader() 
+const Shader* MeshRenderer::GetShader() const
 {
-	return m_shader;
+	return m_material->GetShader();
+}
+
+const Material* MeshRenderer::GetMaterial() const 
+{
+	return m_material;
 }
 
 void MeshRenderer::CreateGraphicsPipeline() 
@@ -116,14 +96,14 @@ void MeshRenderer::CreateGraphicsPipeline()
 	VkPipelineShaderStageCreateInfo vertStageInfo = {};
 	vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-	vertStageInfo.module = m_shader->m_vertModule;
+	vertStageInfo.module = m_material->GetShader()->m_vertModule;
 	vertStageInfo.pName = "main";
 
 	// Fragment shader stage information.
 	VkPipelineShaderStageCreateInfo fragStageInfo = {};
 	fragStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	fragStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-	fragStageInfo.module = m_shader->m_fragModule;
+	fragStageInfo.module = m_material->GetShader()->m_fragModule;
 	fragStageInfo.pName = "main";
 
 	// Array of shader stage information.

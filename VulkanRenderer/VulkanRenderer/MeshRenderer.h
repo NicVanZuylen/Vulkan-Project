@@ -6,6 +6,7 @@
 class Renderer;
 class Mesh;
 class MeshRenderer;
+class Material;
 
 struct PipelineData;
 struct Shader;
@@ -47,7 +48,7 @@ class MeshRenderer
 {
 public:
 
-	MeshRenderer(Renderer* renderer, Mesh* mesh, Shader* shader);
+	MeshRenderer(Renderer* renderer, Mesh* mesh, Material* material);
 
 	~MeshRenderer();
 
@@ -64,7 +65,9 @@ public:
 	*/
 	void CommandDraw(VkCommandBuffer_T* cmdBuffer);
 
-	const Shader* GetShader();
+	const Shader* GetShader() const;
+
+	const Material* GetMaterial() const;
 
 private:
 
@@ -74,7 +77,7 @@ private:
 	std::string m_nameID;
 
 	Renderer* m_renderer;
-	Shader* m_shader;
+	Material* m_material;
 	Mesh* m_mesh;
 
 	// Pipeline information.
