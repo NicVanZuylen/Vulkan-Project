@@ -29,7 +29,17 @@ public:
 
 	~Sampler();
 
-	const VkSampler& GetHandle();
+	/*
+	Description: Get this sampler's Vulkan handle.
+	Return Type: const VkSampler&
+	*/
+	const VkSampler& GetHandle() const;
+
+	/*
+	Description: Get the name ID of this sampler.
+	Return Type: const std::string&
+	*/
+	const std::string& GetNameID() const;
 
 private:
 

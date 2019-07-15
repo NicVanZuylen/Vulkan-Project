@@ -23,6 +23,7 @@ Material::Material(Renderer* renderer, Shader* shader, bool bUseMVPUBO = true)
 
 	m_sampler = m_defaultSampler;
 
+	m_nameID += "S:Default|";
 	m_nameID += shader->m_name;
 }
 
@@ -50,6 +51,12 @@ Material::~Material()
 
 void Material::SetSampler(Sampler* sampler) 
 {
+	// Remove old sampler name from name ID.
+	size_t samplerNamePos = m_nameID.find_last_of("S:") + 2; // Offset of sampler name in string.
+
+	m_nameID.erase(samplerNamePos, m_sampler->GetNameID().size());
+	m_nameID.insert(samplerNamePos, sampler->GetNameID());
+
 	m_sampler = sampler;
 }
 

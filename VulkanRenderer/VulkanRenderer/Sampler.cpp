@@ -100,7 +100,12 @@ Sampler::~Sampler()
 	m_handle = nullptr;
 }
 
-const VkSampler& Sampler::GetHandle() 
+const VkSampler& Sampler::GetHandle() const
 {
 	return m_handle;
+}
+
+const std::string& Sampler::GetNameID() const 
+{
+	return m_nameID;
 }
