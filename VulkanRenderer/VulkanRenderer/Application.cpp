@@ -86,8 +86,9 @@ void Application::Run()
 	m_renderer->RegisterShader(rectShader);
 
 	Texture* testTexture = new Texture(m_renderer, "Assets/Objects/Metal/diffuse.tga");
+	Texture* testTexture2 = new Texture(m_renderer, "Assets/Objects/Metal/normal.tga");
 
-	Material* testMat = new Material(m_renderer, modelShader, { testTexture });
+	Material* testMat = new Material(m_renderer, modelShader, { testTexture, testTexture2 });
 
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Dragon.obj");
@@ -152,6 +153,7 @@ void Application::Run()
 	}
 
 
+	delete testTexture2;
 	delete testTexture;
 
 	delete testObject;

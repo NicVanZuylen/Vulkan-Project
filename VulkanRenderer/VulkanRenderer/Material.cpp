@@ -163,7 +163,7 @@ void Material::CreateDescriptorObjects()
 	VkDescriptorPoolSize poolSizes[2] = {};
 	poolSizes[0].descriptorCount = m_renderer->SwapChainImageCount();
 	poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSizes[1].descriptorCount = m_renderer->SwapChainImageCount();
+	poolSizes[1].descriptorCount = m_renderer->SwapChainImageCount() * m_textures.Count();
 	poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
 	int poolSizeCount = 1 + m_bUseMVPUBO;
@@ -192,7 +192,7 @@ void Material::CreateDescriptorObjects()
 	allocInfo.descriptorSetCount = m_renderer->SwapChainImageCount();
 	allocInfo.pSetLayouts = setLayouts;
 	allocInfo.pNext = nullptr;
-	
+
 	// There should be a descriptor set for each swap chain image.
 	m_descriptorSets.SetSize(m_renderer->SwapChainImageCount());
 	m_descriptorSets.SetCount(m_descriptorSets.GetSize());
