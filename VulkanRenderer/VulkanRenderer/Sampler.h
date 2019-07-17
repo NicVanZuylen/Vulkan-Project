@@ -25,7 +25,7 @@ class Sampler
 {
 public:
 
-	Sampler(Renderer* renderer, EFilterMode filterMode = FILTER_MODE_NEAREST, ERepeatMode repeatMode = REPEAT_MODE_REPEAT, float fAnisoTropy = DEFAULT_ANISOTROPIC_FILTERING);
+	Sampler(Renderer* renderer, EFilterMode filterMode = FILTER_MODE_BILINEAR, ERepeatMode repeatMode = REPEAT_MODE_REPEAT, float fAnisoTropy = DEFAULT_ANISOTROPIC_FILTERING);
 
 	~Sampler();
 
