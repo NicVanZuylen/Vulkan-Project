@@ -17,44 +17,46 @@ PipelineDataPtr::PipelineDataPtr()
 	m_ptr = nullptr;
 }
 
-VkVertexInputBindingDescription VertexType::BindingDescription() 
-{
-	VkVertexInputBindingDescription bindDesc = {};
-	bindDesc.binding = 0;
-	bindDesc.stride = sizeof(glm::vec4);
-	bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // Data is per-vertex rather than per-instance.
-
-	return bindDesc;
-}
-
-void VertexType::AttributeDescriptions(DynamicArray<VkVertexInputAttributeDescription>& outDescriptions)
-{
-	VkVertexInputAttributeDescription defaultDesc = {};
-	defaultDesc.binding = 0;
-	defaultDesc.location = 0;
-	defaultDesc.offset = 0;
-	defaultDesc.format = VK_FORMAT_R32G32B32A32_SFLOAT; // vec4 format.
-
-	outDescriptions = { defaultDesc };
-}
-
 Table<PipelineDataPtr> MeshRenderer::m_pipelineTable;
 DynamicArray<PipelineData*> MeshRenderer::m_allPipelines;
+DynamicArray<EVertexAttribute> MeshRenderer::m_defaultInstanceAttributes = { VERTEX_ATTRIB_MAT4 };
 
-MeshRenderer::MeshRenderer(Renderer* renderer, Mesh* mesh, Material* material)
+MeshRenderer::MeshRenderer(Renderer* renderer, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes, unsigned int nMaxInstanceCount)
 {
 	m_renderer = renderer;
 	m_mesh = mesh;
 	m_material = material;
 	m_pipelineData = nullptr;
+	
+	m_instanceArray = new Instance[nMaxInstanceCount];
+	m_nInstanceArraySize = nMaxInstanceCount;
+	m_nInstanceCount = 0;
+	m_bInstancesModified = true;
 
 	m_nameID = "|" + material->GetName() + mesh->VertexFormat()->NameID();
 
-	CreateGraphicsPipeline();
+	CreateGraphicsPipeline(instanceAttributes);
+
+	// Add first instance.
+	Instance firstInstance = { glm::mat4() };
+	AddInstance(firstInstance);
 }
 
 MeshRenderer::~MeshRenderer()
 {
+	if(m_instanceArray) 
+	{
+	    delete[] m_instanceArray;
+
+		// Destroy instance staging buffer & memory.
+		vkDestroyBuffer(m_renderer->GetDevice(), m_instanceStagingBuffer, nullptr);
+		vkFreeMemory(m_renderer->GetDevice(), m_instanceStagingMemory, nullptr);
+
+		// Destroy instance buffer & memory.
+		vkDestroyBuffer(m_renderer->GetDevice(), m_instanceBuffer, nullptr);
+		vkFreeMemory(m_renderer->GetDevice(), m_instanceMemory, nullptr);
+	}
+
 	if (m_pipelineData->m_renderObjects.Count() <= 1) // This is the last object using the pipeline, destroy the pipeline.
 	{
 		// Wait for graphics queue to be idle.
@@ -76,12 +78,82 @@ DynamicArray<PipelineData*>& MeshRenderer::Pipelines()
 
 void MeshRenderer::CommandDraw(VkCommandBuffer_T* cmdBuffer) 
 {
+	// Copy instance staging buffer to device local instance buffer.
+	if (m_bInstancesModified) 
+	{
+		// Nothing should draw if there are no instances, so avoid issuing commands if there are no instances.
+		if (m_nInstanceCount == 0)
+			return;
+
+		VkBufferCopy insCopyRegion = {};
+		insCopyRegion.srcOffset = 0;
+		insCopyRegion.dstOffset = 0;
+		insCopyRegion.size = sizeof(Instance) * m_nInstanceCount;
+
+	    vkCmdCopyBuffer(cmdBuffer, m_instanceStagingBuffer, m_instanceBuffer, 1, &insCopyRegion);
+		m_bInstancesModified = false;
+	}
+
 	Mesh& meshRef = *m_mesh;
 
-	meshRef.Bind(cmdBuffer);
+	// Bind vertex, index and instance buffers.
+	meshRef.Bind(cmdBuffer, m_instanceBuffer);
 
 	// Draw...
-	vkCmdDrawIndexed(cmdBuffer, meshRef.IndexCount(), 1, 0, 0, 0);
+	vkCmdDrawIndexed(cmdBuffer, meshRef.IndexCount(), m_nInstanceCount, 0, 0, 0);
+}
+
+void MeshRenderer::AddInstance(Instance& instance) 
+{
+	// Don't attempt to add beyond the max instance limit.
+	if (m_nInstanceCount >= m_nInstanceArraySize)
+		return;
+
+	m_instanceArray[m_nInstanceCount++] = instance;
+	m_bInstancesModified = true;
+}
+
+void MeshRenderer::RemoveInstance(const unsigned int& nIndex)
+{
+	if (m_nInstanceCount <= 0)
+		return;
+
+	// Copy the contents beyond the provided index to the provided index to overlap the old data, and close the gap.
+	if (nIndex < m_nInstanceCount - 1)
+	{
+		unsigned int nCopySize = (m_nInstanceCount - (nIndex + 1)) * sizeof(Instance);
+		memcpy_s(&m_instanceArray[nIndex], nCopySize, &m_instanceArray[nIndex + 1], nCopySize);
+	}
+	
+	--m_nInstanceCount;
+}
+
+void MeshRenderer::SetInstance(const unsigned int& nIndex, Instance& instance) 
+{
+	// Don't attempt to modify beyond the max instance limit.
+	if (nIndex < m_nInstanceCount) 
+	{
+	    m_instanceArray[nIndex] = instance;
+		m_bInstancesModified = true;
+	}
+}
+
+void MeshRenderer::UpdateInstanceData() 
+{
+	if (!m_bInstancesModified)
+		return;
+
+	int nCopySize = sizeof(Instance) * m_nInstanceCount;
+
+	// Map instance staging buffer.
+	void* bufferPtr = nullptr;
+	RENDERER_SAFECALL(vkMapMemory(m_renderer->GetDevice(), m_instanceStagingMemory, 0, nCopySize, 0, &bufferPtr), "RenderObject error: Failed to update instance data on GPU.");
+
+	// Copy data...
+	memcpy_s(bufferPtr, nCopySize, m_instanceArray, nCopySize);
+
+	// Unmap buffer.
+	vkUnmapMemory(m_renderer->GetDevice(), m_instanceStagingMemory);
 }
 
 const Shader* MeshRenderer::GetShader() const
@@ -94,7 +166,7 @@ const Material* MeshRenderer::GetMaterial() const
 	return m_material;
 }
 
-void MeshRenderer::CreateGraphicsPipeline() 
+void MeshRenderer::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* instanceAttributes)
 {
 	PipelineData*& pipelineData = m_pipelineTable[{ m_nameID.c_str() }].m_ptr;
 
@@ -106,6 +178,19 @@ void MeshRenderer::CreateGraphicsPipeline()
 
 		return;
 	}
+
+	// -------------------------------------------------------------------------------------------------------------------
+	// Instance buffer
+
+	VertexInfo insVertInfo(*instanceAttributes, true, m_mesh->VertexFormat());
+
+	// Create instance staging buffer.
+	m_renderer->CreateBuffer(m_nInstanceArraySize * sizeof(Instance), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_instanceStagingBuffer, m_instanceStagingMemory);
+
+	// Create device local instance buffer.
+	m_renderer->CreateBuffer(m_nInstanceArraySize * sizeof(Instance), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_instanceBuffer, m_instanceMemory);
+
+	// -------------------------------------------------------------------------------------------------------------------
 
 	// Vertex shader stage information.
 	VkPipelineShaderStageCreateInfo vertStageInfo = {};
@@ -127,15 +212,24 @@ void MeshRenderer::CreateGraphicsPipeline()
 	const VertexInfo& vertFormat = *m_mesh->VertexFormat();
 
 	// Vertex attribute information.
-	auto bindingDesc = vertFormat.BindingDescription();
-	const DynamicArray<VkVertexInputAttributeDescription>& attrDescriptions = vertFormat.AttributeDescriptions();
+	VkVertexInputBindingDescription bindingDescriptions[2] = { vertFormat.BindingDescription(), insVertInfo.BindingDescription() };
+
+	int nDescCount = vertFormat.AttributeDescriptionCount() + insVertInfo.AttributeDescriptionCount();
+	VkVertexInputAttributeDescription* attrDescriptions = new VkVertexInputAttributeDescription[nDescCount];
+
+	// Copy vertex descriptions...
+	memcpy_s(attrDescriptions, sizeof(VkVertexInputAttributeDescription) * nDescCount, vertFormat.AttributeDescriptions(), sizeof(VkVertexInputAttributeDescription) * vertFormat.AttributeDescriptionCount());
+
+	// Copy instance descriptions...
+	memcpy_s(&attrDescriptions[vertFormat.AttributeDescriptionCount()], sizeof(VkVertexInputAttributeDescription) * insVertInfo.AttributeDescriptionCount(), insVertInfo.AttributeDescriptions()
+		, sizeof(VkVertexInputAttributeDescription) * insVertInfo.AttributeDescriptionCount());
 
 	VkPipelineVertexInputStateCreateInfo vertInputInfo = {};
 	vertInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertInputInfo.vertexBindingDescriptionCount = 1;
-	vertInputInfo.pVertexBindingDescriptions = &bindingDesc;
-	vertInputInfo.vertexAttributeDescriptionCount = attrDescriptions.Count();
-	vertInputInfo.pVertexAttributeDescriptions = attrDescriptions.Data();
+	vertInputInfo.vertexBindingDescriptionCount = 2;
+	vertInputInfo.pVertexBindingDescriptions = bindingDescriptions;
+	vertInputInfo.vertexAttributeDescriptionCount = nDescCount;
+	vertInputInfo.pVertexAttributeDescriptions = attrDescriptions;
 
 	// Input assembly stage configuration.
 	VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
@@ -170,9 +264,9 @@ void MeshRenderer::CreateGraphicsPipeline()
 	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 	rasterizer.depthClampEnable = VK_FALSE;
 	rasterizer.rasterizerDiscardEnable = VK_FALSE;
-	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+	rasterizer.polygonMode = VK_POLYGON_MODE_FILL; // Fragment shader will be run on all rasterized fragments within each triangle.
 	rasterizer.lineWidth = 1.0f;
-	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; // Face culling
 	rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
 	// Used for shadow mapping...
@@ -260,6 +354,8 @@ void MeshRenderer::CreateGraphicsPipeline()
 	pipelineInfo.basePipelineIndex = -1;
 
 	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_renderer->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipelineData->m_handle), "Renderer Error: Failed to create graphics pipeline.");
+
+	delete[] attrDescriptions;
 
 	// Set pipeline material.
 	m_pipelineData->m_material = m_material;

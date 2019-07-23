@@ -9,7 +9,7 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
-VertexInfo Mesh::defaultFormat = VertexInfo({ VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT2 });
+const VertexInfo Mesh::defaultFormat = VertexInfo({ VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT2 });
 
 Mesh::Mesh(Renderer* renderer, const char* filePath) 
 {
@@ -28,7 +28,7 @@ Mesh::Mesh(Renderer* renderer, const char* filePath)
 	m_empty = false;
 }
 
-Mesh::Mesh(Renderer* renderer, const char* filePath, VertexInfo* vertexFormat)
+Mesh::Mesh(Renderer* renderer, const char* filePath, const VertexInfo* vertexFormat)
 {
 	m_renderer = renderer;
 	m_empty = true;
@@ -205,13 +205,25 @@ void Mesh::Load(const char* filePath)
 	// -----------------------------------------------------------------------------------------
 }
 
-void Mesh::Bind(VkCommandBuffer& commandBuffer) 
+void Mesh::Bind(VkCommandBuffer& commandBuffer)
 {
 	VkBuffer vertBuffers[] = { m_vertexBuffer };
 	size_t offsets[] = { 0 };
 
 	// Bind vertex buffers.
 	vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertBuffers, offsets);
+
+	// Bind index buffer.
+	vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+}
+
+void Mesh::Bind(VkCommandBuffer& commandBuffer, const VkBuffer& instanceBuffer) 
+{
+	VkBuffer vertBuffers[] = { m_vertexBuffer, instanceBuffer };
+	size_t offsets[] = { 0, 0 };
+
+	// Bind vertex buffers.
+	vkCmdBindVertexBuffers(commandBuffer, 0, 2, vertBuffers, offsets);
 
 	// Bind index buffer.
 	vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer, 0, VK_INDEX_TYPE_UINT32);

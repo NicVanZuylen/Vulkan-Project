@@ -29,7 +29,7 @@ public:
 
 	Mesh(Renderer* renderer, const char* szFilePath);
 
-	Mesh(Renderer* renderer, const char* szFilePath, VertexInfo* m_format);
+	Mesh(Renderer* renderer, const char* szFilePath, const VertexInfo* m_format);
 
 	~Mesh();
 
@@ -42,11 +42,19 @@ public:
 	void Load(const char* szFilePath);
 
 	/*
-	Description: Bind the VAO of this mesh for use in drawing.
+	Description: Bind the VAO of this mesh for use in drawing without instancing.
 	Param:
 	    VkCommandBuffer& commandBuffer: The command buffer to bind this mesh to.
 	*/
 	void Bind(VkCommandBuffer& commandBuffer);
+
+	/*
+	Description: Bind the VAO of this mesh for use in drawing with instancing.
+	Param:
+		VkCommandBuffer& commandBuffer: The command buffer to bind this mesh to.
+		VkBuffer& instanceBuffer: The instance buffer to bind alongside the vertex buffer.
+	*/
+	void Bind(VkCommandBuffer& commandBuffer, const VkBuffer& instanceBuffer);
 
 	/*
 	Description: Returns the vertex buffer handle of this mesh.
@@ -84,7 +92,7 @@ public:
 	*/
 	const VertexInfo* VertexFormat();
 
-	static VertexInfo defaultFormat;
+	const static VertexInfo defaultFormat;
 
 private:
 
@@ -119,7 +127,7 @@ private:
 	const char* m_filePath;
 	std::string m_name;
 
-	VertexInfo* m_vertexFormat;
+	const VertexInfo* m_vertexFormat;
 
 	unsigned int m_totalVertexCount;
 	unsigned int m_totalIndexCount;

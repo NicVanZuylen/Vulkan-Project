@@ -40,9 +40,6 @@ public:
 
 	DynArr(const std::initializer_list<T>& list) 
 	{
-		if (m_contents)
-			delete[] m_contents;
-
 		m_contents = new T[list.size()];
 		m_nCount = static_cast<int>(list.size());
 		m_nSize = static_cast<int>(list.size());
@@ -56,7 +53,7 @@ public:
 
 	~DynArr()
 	{
-		if (m_contents != nullptr)
+		if (m_contents)
 			delete[] m_contents;
 	}
 

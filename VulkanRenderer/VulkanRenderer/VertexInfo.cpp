@@ -1,35 +1,31 @@
 #include "VertexInfo.h"
+#include <iostream>
 
 VertexInfo::VertexInfo()
 {
 	m_nameID = "EMPTY_FORMAT";
+	m_attribDescriptions = nullptr;
 }
 
-VertexInfo::VertexInfo(const DynamicArray<EVertexAttribute>& attributes)
+VertexInfo::VertexInfo(const DynamicArray<EVertexAttribute>& attributes, bool bPerInstance, const VertexInfo* prevBufferInfo)
 {
 	m_attributes = attributes;
 	m_nameID = "EMPTY_FORMAT";
+	m_attribDescriptions = nullptr;
 
-	CalculateInputInformation();
+	CalculateInputInformation(bPerInstance, prevBufferInfo);
 }
 
 VertexInfo::~VertexInfo()
 {
-
+	delete[] m_attribDescriptions;
 }
 
-void VertexInfo::SetAttributes(const DynamicArray<EVertexAttribute>& attributes) 
+void VertexInfo::SetAttributes(const DynamicArray<EVertexAttribute>& attributes, bool bPerInstance, const VertexInfo* prevBufferInfo)
 {
 	m_attributes = attributes;
 
-	CalculateInputInformation();
-}
-
-void VertexInfo::operator=(const std::initializer_list<EVertexAttribute> attributes) 
-{
-	m_attributes = attributes;
-
-	CalculateInputInformation();
+	CalculateInputInformation(bPerInstance, prevBufferInfo);
 }
 
 VkVertexInputBindingDescription VertexInfo::BindingDescription() const
@@ -37,7 +33,12 @@ VkVertexInputBindingDescription VertexInfo::BindingDescription() const
 	return m_bindDescription;
 }
 
-const DynamicArray<VkVertexInputAttributeDescription>& VertexInfo::AttributeDescriptions() const
+int VertexInfo::AttributeDescriptionCount() const
+{
+	return m_attributes.Count();
+}
+
+const VkVertexInputAttributeDescription* VertexInfo::AttributeDescriptions() const
 {
 	return m_attribDescriptions;
 }
@@ -47,13 +48,18 @@ const std::string& VertexInfo::NameID() const
 	return m_nameID;
 }
 
-void VertexInfo::CalculateInputInformation()
+void VertexInfo::CalculateInputInformation(const bool& bPerInstance, const VertexInfo* prevBufferInfo)
 {
-	m_bindDescription.binding = 0;
-	m_bindDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // Data is per-vertex rather than per-instance.
+	if (m_attribDescriptions)
+		delete[] m_attribDescriptions;
 
-	// Make sure the attribute description array is clear.
-	m_attribDescriptions.Clear();
+	m_attribDescriptions = new VkVertexInputAttributeDescription[m_attributes.Count()];
+
+	m_bindDescription.inputRate = static_cast<VkVertexInputRate>(bPerInstance); // Data is per-vertex rather than per-instance.
+	m_bindDescription.binding = 0;
+
+	if(prevBufferInfo)
+	    m_bindDescription.binding = prevBufferInfo->m_bindDescription.binding + 1;
 
 	uint32_t& currentOffset = m_bindDescription.stride; // Will be used for stride when it's complete.
 
@@ -62,8 +68,15 @@ void VertexInfo::CalculateInputInformation()
 	for (int i = 0; i < m_attributes.Count(); ++i)
 	{
 		VkVertexInputAttributeDescription desc = {};
-		desc.binding = 0;
+		desc.binding = m_bindDescription.binding;
 		desc.location = i; // Location is index.
+
+		if(prevBufferInfo) 
+		{
+			// Location is the previous buffer's attribute count + i.
+			desc.location = prevBufferInfo->AttributeDescriptionCount() + i;
+		}
+
 		desc.offset = currentOffset;
 
 		// Switch the current attribute and add the appropriate size to the offset and set the appropriate attribute format.
@@ -97,6 +110,27 @@ void VertexInfo::CalculateInputInformation()
 			currentOffset += sizeof(float) * 4;
 			break;
 
+		case VERTEX_ATTRIB_MAT2:
+
+			m_nameID += "MAT2";
+			desc.format = VK_FORMAT_R32G32_SFLOAT;
+			currentOffset += sizeof(float) * 4;
+			break;
+
+		case VERTEX_ATTRIB_MAT3:
+
+			m_nameID += "MAT3";
+			desc.format = VK_FORMAT_R32G32B32_SFLOAT;
+			currentOffset += sizeof(float) * 9;
+			break;
+
+		case VERTEX_ATTRIB_MAT4:
+
+			m_nameID += "MAT4";
+			desc.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+			currentOffset += sizeof(float) * 16;
+			break;
+
 		case VERTEX_ATTRIB_INT:
 
 			m_nameID += "INT";
@@ -127,7 +161,7 @@ void VertexInfo::CalculateInputInformation()
 		}
 
 		// Add to output.
-		m_attribDescriptions.Push(desc);
+		m_attribDescriptions[i] = desc;
 	}
 
 	m_nameID += "|";

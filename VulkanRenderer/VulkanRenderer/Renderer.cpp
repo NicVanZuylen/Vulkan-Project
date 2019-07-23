@@ -1061,6 +1061,7 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 		DynamicArray<MeshRenderer*>& renderObjects = currentPipeline.m_renderObjects;
 		for (int j = 0; j < renderObjects.Count(); ++j)
 		{
+			renderObjects[j]->UpdateInstanceData(); // Instance data will be updated if it has changed.
 			renderObjects[j]->CommandDraw(cmdBuffer);
 		}
 	}
