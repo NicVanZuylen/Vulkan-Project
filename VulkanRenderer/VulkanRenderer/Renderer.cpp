@@ -31,6 +31,7 @@ const bool Renderer::m_enableValidationLayers = true;
 #endif
 
 VkResult Renderer::m_safeCallResult = VK_SUCCESS;
+DynamicArray<CopyRequest> Renderer::m_copyRequests;
 
 Renderer::Renderer(GLFWwindow* window)
 {
@@ -46,6 +47,7 @@ Renderer::Renderer(GLFWwindow* window)
 
 	m_graphicsQueueFamilyIndex = -1;
 	m_presentQueueFamilyIndex = -1;
+	m_transferQueueFamilyIndex = -1;
 	m_computeQueueFamilyIndex = -1;
 
 	CheckValidationLayerSupport();
@@ -60,7 +62,8 @@ Renderer::Renderer(GLFWwindow* window)
 	// Get queue handles...
 	vkGetDeviceQueue(m_logicDevice, m_presentQueueFamilyIndex, 0, &m_presentQueue);
 	vkGetDeviceQueue(m_logicDevice, m_graphicsQueueFamilyIndex, 0, &m_graphicsQueue);
-	vkGetDeviceQueue(m_logicDevice, m_computeQueueFamilyIndex, 0, &m_computeQueue);
+	vkGetDeviceQueue(m_logicDevice, m_transferQueueFamilyIndex, 0, &m_transferQueue);
+	vkGetDeviceQueue(m_logicDevice, m_computeQueueFamilyIndex, 0, &m_computeQueue); // May also be the graphics queue.
 
 	CreateRenderPasses();
 	CreateMVPDescriptorSetLayout();
@@ -98,8 +101,12 @@ Renderer::~Renderer()
 	    vkDestroySemaphore(m_logicDevice, m_imageAvailableSemaphores[i], nullptr);
 	}
 
-	// Destroy command pool.
-	vkDestroyCommandPool(m_logicDevice, m_commandPool, nullptr);
+	for (int i = 0; i < m_swapChainImageViews.Count(); ++i)
+		vkDestroyFence(m_logicDevice, m_copyReadyFences[i], nullptr);
+
+	// Destroy command pools.
+	vkDestroyCommandPool(m_logicDevice, m_graphicsCmdPool, nullptr);
+	vkDestroyCommandPool(m_logicDevice, m_transferCmdPool, nullptr);
 
 	// Destroy framebuffers.
 	for (int i = 0; i < m_swapChainFramebuffers.GetSize(); ++i)
@@ -493,9 +500,9 @@ bool Renderer::FindQueueFamilies(VkPhysicalDevice device)
 	unsigned int queueFamilyCount = 0;
 	vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
 
+	// Get queue family information...
 	DynamicArray<VkQueueFamilyProperties> queueFamilies(queueFamilyCount, 1);
-	for (unsigned int i = 0; i < queueFamilyCount; ++i)
-		queueFamilies.Push(VkQueueFamilyProperties());
+	queueFamilies.SetCount(queueFamilyCount);
 
 	vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.Data());
 
@@ -505,29 +512,38 @@ bool Renderer::FindQueueFamilies(VkPhysicalDevice device)
 		VkBool32 hasPresentSupport = VK_FALSE;
 		vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_windowSurface, &hasPresentSupport);
 
+		// Find present family index.
 		if (queueFamilies[i].queueCount > 0 && hasPresentSupport)
 		{
 			m_presentQueueFamilyIndex = i;
 		}
 
+		// Find graphics family index.
 		if (queueFamilies[i].queueCount > 0 && queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
 		{
 			m_graphicsQueueFamilyIndex = i;
 		}
 
+		// Find compute family index.
 		if (queueFamilies[i].queueCount > 0 && queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
 		{
 			m_computeQueueFamilyIndex = i;
 		}
+
+		// Find transfer queue family index, it should not be a graphics family.
+		if (queueFamilies[i].queueCount > 0 && queueFamilies[i].queueFlags & VK_QUEUE_TRANSFER_BIT && !(queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT))
+		{
+			m_transferQueueFamilyIndex = i;
+		}
 	}
 
-	return m_presentQueueFamilyIndex > -1 && m_graphicsQueueFamilyIndex > -1 && m_computeQueueFamilyIndex > -1;
+	return m_presentQueueFamilyIndex > -1 && m_graphicsQueueFamilyIndex > -1 && m_computeQueueFamilyIndex > -1 && m_transferQueueFamilyIndex > -1;
 }
 
 void Renderer::CreateLogicalDevice()
 {
 	DynamicArray<VkDeviceQueueCreateInfo> queueCreateInfos;
-	std::set<int> uniqueQueueFamilies = { m_presentQueueFamilyIndex, m_graphicsQueueFamilyIndex, m_computeQueueFamilyIndex };
+	std::set<int> uniqueQueueFamilies = { m_presentQueueFamilyIndex, m_graphicsQueueFamilyIndex, m_computeQueueFamilyIndex, m_transferQueueFamilyIndex };
 
 	float queuePriority = QUEUE_PRIORITY;
 
@@ -877,26 +893,29 @@ void Renderer::CreateFramebuffers()
 
 void Renderer::CreateCommandPool() 
 {
+	// ==================================================================================================================================================
+	// Graphics commands
+
 	VkCommandPoolCreateInfo poolCreateInfo = {};
 	poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolCreateInfo.queueFamilyIndex = m_graphicsQueueFamilyIndex;
 	poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
 
-	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_commandPool), "Renderer Error: Failed to create command pool.");
+	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_graphicsCmdPool), "Renderer Error: Failed to create command pool.");
 
 	// Allocate memory for static pass command buffers...
-	m_staticPassBufs.SetSize(m_swapChainFramebuffers.GetSize());
-	m_staticPassBufs.SetCount(m_staticPassBufs.GetSize());
+	m_staticPassCmdBufs.SetSize(m_swapChainFramebuffers.GetSize());
+	m_staticPassCmdBufs.SetCount(m_staticPassCmdBufs.GetSize());
 
 	// Allocation info.
 	VkCommandBufferAllocateInfo cmdBufAllocateInfo = {};
 	cmdBufAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	cmdBufAllocateInfo.commandPool = m_commandPool;
-	cmdBufAllocateInfo.commandBufferCount = m_staticPassBufs.GetSize();
+	cmdBufAllocateInfo.commandPool = m_graphicsCmdPool;
+	cmdBufAllocateInfo.commandBufferCount = m_staticPassCmdBufs.GetSize();
 	cmdBufAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
 	// Allocate static command buffers.
-	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_staticPassBufs.Data()), "Renderer Error: Failed to allocate static command buffers.");
+	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_staticPassCmdBufs.Data()), "Renderer Error: Failed to allocate static command buffers.");
 
 	VkCommandBufferBeginInfo cmdBeginInfo = {};
 	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -906,9 +925,9 @@ void Renderer::CreateCommandPool()
 	VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
 
 	// Record static command buffers...
-	for(int i = 0; i < m_staticPassBufs.Count(); ++i) 
+	for(int i = 0; i < m_staticPassCmdBufs.Count(); ++i) 
 	{
-		VkCommandBuffer& cmdBuffer = m_staticPassBufs[i];
+		VkCommandBuffer& cmdBuffer = m_staticPassCmdBufs[i];
 
 		RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of static pass command buffer.");
 
@@ -933,16 +952,16 @@ void Renderer::CreateCommandPool()
 	}
 
 	// Allocate memory for dynamic command buffers...
-	m_dynamicPassBufs.SetSize(m_swapChainFramebuffers.GetSize());
-	m_dynamicPassBufs.SetCount(m_dynamicPassBufs.GetSize());
+	m_dynamicPassCmdBufs.SetSize(m_swapChainFramebuffers.GetSize());
+	m_dynamicPassCmdBufs.SetCount(m_dynamicPassCmdBufs.GetSize());
 
 	// Allocate dynamic command buffers...
-	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_dynamicPassBufs.Data()), "Renderer Error: Failed to allocate dynamic command buffers.");
+	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_dynamicPassCmdBufs.Data()), "Renderer Error: Failed to allocate dynamic command buffers.");
 
 	// Initial recording of dynamic command buffers...
-	for (int i = 0; i < m_dynamicPassBufs.Count(); ++i)
+	for (int i = 0; i < m_dynamicPassCmdBufs.Count(); ++i)
 	{
-		VkCommandBuffer& cmdBuffer = m_dynamicPassBufs[i];
+		VkCommandBuffer& cmdBuffer = m_dynamicPassCmdBufs[i];
 
 		RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of static pass command buffer.");
 
@@ -983,6 +1002,27 @@ void Renderer::CreateCommandPool()
 	m_dynamicStateChange[0] = false;
 	m_dynamicStateChange[1] = false;
 	m_dynamicStateChange[2] = false;
+
+	// ==================================================================================================================================================
+	// Transfer commands
+
+	VkCommandPoolCreateInfo transferPoolInfo = {};
+	transferPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	transferPoolInfo.queueFamilyIndex = m_transferQueueFamilyIndex;
+	transferPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+
+	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &transferPoolInfo, nullptr, &m_transferCmdPool), "Renderer Error: Failed to create dedicated transfer command pool.");
+
+	VkCommandBufferAllocateInfo transAllocInfo = {};
+	transAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	transAllocInfo.commandPool = m_transferCmdPool;
+	transAllocInfo.commandBufferCount = 3;
+	transAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+	m_transferCmdBufs.SetSize(m_swapChainImageViews.Count());
+	m_transferCmdBufs.SetCount(m_transferCmdBufs.GetSize());
+
+	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &transAllocInfo, m_transferCmdBufs.Data()), "Renderer Error: Failed to create dedicated transfer command buffer.");
 }
 
 void Renderer::UpdateMVP(const unsigned int& bufferIndex)
@@ -1011,15 +1051,32 @@ void Renderer::UpdateMVP(const unsigned int& bufferIndex)
 	vkUnmapMemory(m_logicDevice, m_mvpBufferMemBlocks[bufferIndex]);
 }
 
+void Renderer::RecordTransferCommandBuffer(const unsigned int& bufferIndex)
+{
+	VkCommandBuffer& cmdBuffer = m_transferCmdBufs[bufferIndex];
+
+	VkCommandBufferBeginInfo cmdBeginInfo = {};
+	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	cmdBeginInfo.pInheritanceInfo = nullptr;
+
+	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of transfer command buffer.");
+
+	// Issue commands for each requested copy operation.
+	for (int i = 0; i < m_copyRequests.Count(); ++i) 
+	{
+		vkCmdCopyBuffer(cmdBuffer, m_copyRequests[i].srcBuffer, m_copyRequests[i].dstBuffer, 1, &m_copyRequests[i].copyRegion);
+	}
+
+	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of transfer command buffer.");
+	m_copyRequests.Clear();
+}
+
 void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 {
 	// If there was no dynamic state change, no re-recording is necessary.
 	if (!m_dynamicStateChange[bufferIndex])
 		return;
-
-	// Wait for fence, since the command buffer cannot be re-recorded until it has finished execution.
-	//if(m_dynamicCmdBufFences[bufferIndex])
-	    //vkWaitForFences(m_logicDevice, 1, &m_dynamicCmdBufFences[bufferIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
 
 	VkCommandBufferBeginInfo cmdBeginInfo = {};
 	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1027,7 +1084,7 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 	cmdBeginInfo.pInheritanceInfo = nullptr;
 
 	// Initial recording of dynamic command buffers...
-	VkCommandBuffer& cmdBuffer = m_dynamicPassBufs[bufferIndex];
+	VkCommandBuffer& cmdBuffer = m_dynamicPassCmdBufs[bufferIndex];
 
 	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of static pass command buffer.");
 
@@ -1055,13 +1112,11 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 
 		currentPipeline.m_material->UseDescriptorSet(cmdBuffer, currentPipeline.m_layout, bufferIndex);
 
-		//vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, allPipelines[i]->m_layout, 0, 1, &m_uboDescriptorSets[bufferIndex], 0, nullptr);
-
 		// Draw objects using the pipeline.
 		DynamicArray<MeshRenderer*>& renderObjects = currentPipeline.m_renderObjects;
 		for (int j = 0; j < renderObjects.Count(); ++j)
 		{
-			renderObjects[j]->UpdateInstanceData(); // Instance data will be updated if it has changed.
+			renderObjects[j]->UpdateInstanceData();
 			renderObjects[j]->CommandDraw(cmdBuffer);
 		}
 	}
@@ -1082,6 +1137,9 @@ void Renderer::CreateSyncObjects()
 	m_renderFinishedSemaphores.SetSize(MAX_FRAMES_IN_FLIGHT);
 	m_renderFinishedSemaphores.SetCount(MAX_FRAMES_IN_FLIGHT);
 
+	m_copyReadyFences.SetSize(m_swapChainImageViews.Count());
+	m_copyReadyFences.SetCount(m_copyReadyFences.GetSize());
+
 	m_inFlightFences.SetSize(MAX_FRAMES_IN_FLIGHT);
 	m_inFlightFences.SetCount(MAX_FRAMES_IN_FLIGHT);
 
@@ -1091,13 +1149,19 @@ void Renderer::CreateSyncObjects()
 	VkFenceCreateInfo fenceInfo = {};
 	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	// Create rendering semaphores.
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
 	{
-		RENDERER_SAFECALL(vkCreateSemaphore(m_logicDevice, &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]), "Renderer Error: Failed to create semaphore.");
-		RENDERER_SAFECALL(vkCreateSemaphore(m_logicDevice, &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]), "Renderer Error: Failed to create semaphore.");
-
+		RENDERER_SAFECALL(vkCreateSemaphore(m_logicDevice, &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]), "Renderer Error: Failed to create semaphores.");
+		RENDERER_SAFECALL(vkCreateSemaphore(m_logicDevice, &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]), "Renderer Error: Failed to create semaphores.");
+		
 		RENDERER_SAFECALL(vkCreateFence(m_logicDevice, &fenceInfo, nullptr, &m_inFlightFences[i]), "Renderer Error: Failed to create in-flight fence.");
 	}
+
+	// Create transfer semaphores.
+	for(int i = 0; i < m_swapChainImageViews.Count(); ++i) 
+		RENDERER_SAFECALL(vkCreateFence(m_logicDevice, &fenceInfo, nullptr, &m_copyReadyFences[i]), "Renderer Error: Failed to create semaphores.");
 }
 
 void Renderer::Begin() 
@@ -1130,10 +1194,22 @@ void Renderer::SubmitCopyOperation(VkCommandBuffer commandBuffer)
 	vkQueueWaitIdle(m_graphicsQueue);
 }
 
+void Renderer::RequestCopy(const CopyRequest& request) 
+{
+	m_copyRequests.Push(request);
+}
+
 void Renderer::AddDynamicObject(MeshRenderer* object) 
 {
 	m_dynamicObjects.Push(object);
 
+	m_dynamicStateChange[0] = true;
+	m_dynamicStateChange[1] = true;
+	m_dynamicStateChange[2] = true;
+}
+
+void Renderer::ForceDynamicStateChange() 
+{
 	m_dynamicStateChange[0] = true;
 	m_dynamicStateChange[1] = true;
 	m_dynamicStateChange[2] = true;
@@ -1146,11 +1222,32 @@ void Renderer::End()
 	// Re-record the dynamic command buffer for this swap chain image if it has changed.
     RecordDynamicCommandBuffer(m_presentImageIndex);
 
+	if (m_copyRequests.Count() > 0)
+	{
+		VkSubmitInfo transSubmitInfo = {};
+		transSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		transSubmitInfo.commandBufferCount = 1;
+		transSubmitInfo.waitSemaphoreCount = 0;
+		transSubmitInfo.pWaitSemaphores = nullptr;
+		transSubmitInfo.signalSemaphoreCount = 0;
+		transSubmitInfo.pSignalSemaphores = nullptr;
+		transSubmitInfo.pCommandBuffers = &m_transferCmdBufs[m_presentImageIndex];
+
+		vkWaitForFences(m_logicDevice, 1, &m_copyReadyFences[m_presentImageIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
+		vkResetFences(m_logicDevice, 1, &m_copyReadyFences[m_presentImageIndex]);
+
+		// Record new transfer commands.
+		RecordTransferCommandBuffer(m_presentImageIndex);
+
+		// Execute transfer commands.
+		vkQueueSubmit(m_transferQueue, 1, &transSubmitInfo, m_copyReadyFences[m_presentImageIndex]);
+	}
+
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-	VkCommandBuffer cmdBuffers[] = { m_staticPassBufs[m_presentImageIndex], m_dynamicPassBufs[m_presentImageIndex] };
+	VkCommandBuffer cmdBuffers[] = { m_staticPassCmdBufs[m_presentImageIndex], m_dynamicPassCmdBufs[m_presentImageIndex] };
 
 	submitInfo.waitSemaphoreCount = 1;
 	submitInfo.pWaitSemaphores = &m_imageAvailableSemaphores[m_currentFrameIndex];
@@ -1177,6 +1274,11 @@ void Renderer::End()
 void Renderer::WaitGraphicsIdle() 
 {
 	vkQueueWaitIdle(m_graphicsQueue);
+}
+
+void Renderer::WaitTransferIdle() 
+{
+	vkQueueWaitIdle(m_transferQueue);
 }
 
 unsigned int Renderer::FindMemoryType(unsigned int typeFilter, VkMemoryPropertyFlags propertyFlags)
@@ -1230,7 +1332,7 @@ Renderer::TempCmdBuffer Renderer::CreateTempCommandBuffer()
 
 	VkCommandBufferAllocateInfo allocInfo = {};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool = m_commandPool;
+	allocInfo.commandPool = m_graphicsCmdPool;
 	allocInfo.commandBufferCount = 1;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	allocInfo.pNext = nullptr;
@@ -1259,12 +1361,10 @@ void Renderer::UseAndDestroyTempCommandBuffer(Renderer::TempCmdBuffer& buffer)
 
 	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &bufferSubmitInfo, buffer.m_destroyFence), "Renderer Error: Failed to submit temporary command buffer for executino.");
 
-	//VkResult result = vkQueueSubmit(m_graphicsQueue, 1, &bufferSubmitInfo, buffer.m_destroyFence);
-
 	RENDERER_SAFECALL(vkWaitForFences(m_logicDevice, 1, &buffer.m_destroyFence, VK_TRUE, std::numeric_limits<unsigned long long>::max()), "Renderer Error: Failed to wait for temp command buffer fence.");
 
 	vkDestroyFence(m_logicDevice, buffer.m_destroyFence, nullptr);
-	vkFreeCommandBuffers(m_logicDevice, m_commandPool, 1, &buffer.m_handle);
+	vkFreeCommandBuffers(m_logicDevice, m_graphicsCmdPool, 1, &buffer.m_handle);
 }
 
 VkDevice Renderer::GetDevice() 
@@ -1279,7 +1379,7 @@ VkPhysicalDevice Renderer::GetPhysDevice()
 
 VkCommandPool Renderer::GetCommandPool() 
 {
-	return m_commandPool;
+	return m_graphicsCmdPool;
 }
 
 VkRenderPass Renderer::DynamicRenderPass() 

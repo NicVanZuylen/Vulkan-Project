@@ -79,7 +79,7 @@ int Application::Init()
 
 void Application::Run() 
 {
-	Shader* modelShader = new Shader("Shaders/SPIR-V/vertModel.spv", "Shaders/SPIR-V/fragModel.spv");
+	Shader* modelShader = new Shader("Shaders/SPIR-V/vertModelIns.spv", "Shaders/SPIR-V/fragModel.spv");
 	m_renderer->RegisterShader(modelShader);
 
 	Shader* rectShader = new Shader("Shaders/SPIR-V/vertRect.spv", "Shaders/SPIR-V/fragRect.spv");
@@ -94,12 +94,15 @@ void Application::Run()
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Dragon.obj");
 	Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 
-	MeshRenderer* testObject = new MeshRenderer(m_renderer, testMesh, testMat);
+	MeshRenderer* testObject = new MeshRenderer(m_renderer, testMesh, testMat, &MeshRenderer::m_defaultInstanceAttributes, 100);
 
 	float fDeltaTime = 0.0f;	
 	float fDebugDisplayTime = DEBUG_DISPLAY_TIME;
 
 	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), 0.3f, 5.0f);
+
+	m_renderer->AddDynamicObject(testObject);
+	glm::mat4 instanceModelMat;
 
 	while(!glfwWindowShouldClose(m_window)) 
 	{
@@ -125,7 +128,11 @@ void Application::Run()
 		if (m_input->GetKey(GLFW_KEY_G) && !m_input->GetKey(GLFW_KEY_G, INPUTSTATE_PREVIOUS)) 
 		{
 			std::cout << "Adding object!" << std::endl;
-			m_renderer->AddDynamicObject(testObject);
+
+			instanceModelMat = glm::translate(instanceModelMat, glm::vec3(0.0f, 0.0f, -3.0f));
+
+			Instance newInstance = { instanceModelMat };
+			testObject->AddInstance(newInstance);
 		}
 		
 		glm::mat4 viewMat = camera.GetViewMatrix();

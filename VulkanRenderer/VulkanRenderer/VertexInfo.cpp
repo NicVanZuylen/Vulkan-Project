@@ -110,27 +110,6 @@ void VertexInfo::CalculateInputInformation(const bool& bPerInstance, const Verte
 			currentOffset += sizeof(float) * 4;
 			break;
 
-		case VERTEX_ATTRIB_MAT2:
-
-			m_nameID += "MAT2";
-			desc.format = VK_FORMAT_R32G32_SFLOAT;
-			currentOffset += sizeof(float) * 4;
-			break;
-
-		case VERTEX_ATTRIB_MAT3:
-
-			m_nameID += "MAT3";
-			desc.format = VK_FORMAT_R32G32B32_SFLOAT;
-			currentOffset += sizeof(float) * 9;
-			break;
-
-		case VERTEX_ATTRIB_MAT4:
-
-			m_nameID += "MAT4";
-			desc.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-			currentOffset += sizeof(float) * 16;
-			break;
-
 		case VERTEX_ATTRIB_INT:
 
 			m_nameID += "INT";

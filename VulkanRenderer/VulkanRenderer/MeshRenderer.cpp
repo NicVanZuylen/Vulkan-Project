@@ -19,7 +19,7 @@ PipelineDataPtr::PipelineDataPtr()
 
 Table<PipelineDataPtr> MeshRenderer::m_pipelineTable;
 DynamicArray<PipelineData*> MeshRenderer::m_allPipelines;
-DynamicArray<EVertexAttribute> MeshRenderer::m_defaultInstanceAttributes = { VERTEX_ATTRIB_MAT4 };
+DynamicArray<EVertexAttribute> MeshRenderer::m_defaultInstanceAttributes = { VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4 };
 
 MeshRenderer::MeshRenderer(Renderer* renderer, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes, unsigned int nMaxInstanceCount)
 {
@@ -47,6 +47,8 @@ MeshRenderer::~MeshRenderer()
 	if(m_instanceArray) 
 	{
 	    delete[] m_instanceArray;
+
+		m_renderer->WaitTransferIdle();
 
 		// Destroy instance staging buffer & memory.
 		vkDestroyBuffer(m_renderer->GetDevice(), m_instanceStagingBuffer, nullptr);
@@ -78,22 +80,6 @@ DynamicArray<PipelineData*>& MeshRenderer::Pipelines()
 
 void MeshRenderer::CommandDraw(VkCommandBuffer_T* cmdBuffer) 
 {
-	// Copy instance staging buffer to device local instance buffer.
-	if (m_bInstancesModified) 
-	{
-		// Nothing should draw if there are no instances, so avoid issuing commands if there are no instances.
-		if (m_nInstanceCount == 0)
-			return;
-
-		VkBufferCopy insCopyRegion = {};
-		insCopyRegion.srcOffset = 0;
-		insCopyRegion.dstOffset = 0;
-		insCopyRegion.size = sizeof(Instance) * m_nInstanceCount;
-
-	    vkCmdCopyBuffer(cmdBuffer, m_instanceStagingBuffer, m_instanceBuffer, 1, &insCopyRegion);
-		m_bInstancesModified = false;
-	}
-
 	Mesh& meshRef = *m_mesh;
 
 	// Bind vertex, index and instance buffers.
@@ -110,6 +96,7 @@ void MeshRenderer::AddInstance(Instance& instance)
 		return;
 
 	m_instanceArray[m_nInstanceCount++] = instance;
+	m_renderer->ForceDynamicStateChange();
 	m_bInstancesModified = true;
 }
 
@@ -124,6 +111,8 @@ void MeshRenderer::RemoveInstance(const unsigned int& nIndex)
 		unsigned int nCopySize = (m_nInstanceCount - (nIndex + 1)) * sizeof(Instance);
 		memcpy_s(&m_instanceArray[nIndex], nCopySize, &m_instanceArray[nIndex + 1], nCopySize);
 	}
+
+	m_renderer->ForceDynamicStateChange();
 	
 	--m_nInstanceCount;
 }
@@ -134,6 +123,8 @@ void MeshRenderer::SetInstance(const unsigned int& nIndex, Instance& instance)
 	if (nIndex < m_nInstanceCount) 
 	{
 	    m_instanceArray[nIndex] = instance;
+
+		m_renderer->ForceDynamicStateChange();
 		m_bInstancesModified = true;
 	}
 }
@@ -154,6 +145,26 @@ void MeshRenderer::UpdateInstanceData()
 
 	// Unmap buffer.
 	vkUnmapMemory(m_renderer->GetDevice(), m_instanceStagingMemory);
+
+	// Copy instance staging buffer to device local instance buffer.
+	if (m_bInstancesModified)
+	{
+		// Nothing should draw if there are no instances, so avoid issuing commands if there are no instances.
+		if (m_nInstanceCount == 0)
+			return;
+
+		VkBufferCopy insCopyRegion = {};
+		insCopyRegion.srcOffset = 0;
+		insCopyRegion.dstOffset = 0;
+		insCopyRegion.size = sizeof(Instance) * m_nInstanceCount;
+
+		// Create and submit copy request.
+		CopyRequest bufferCopyRequest = { m_instanceStagingBuffer, m_instanceBuffer, insCopyRegion };
+		m_renderer->RequestCopy(bufferCopyRequest);
+
+		m_bInstancesModified = false;
+	}
+
 }
 
 const Shader* MeshRenderer::GetShader() const

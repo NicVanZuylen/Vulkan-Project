@@ -36,6 +36,13 @@ struct MVPUniformBuffer
 	glm::mat4 proj;
 };
 
+struct CopyRequest 
+{
+	VkBuffer srcBuffer;
+	VkBuffer dstBuffer;
+	VkBufferCopy copyRegion;
+};
+
 class Renderer
 {
 public:
@@ -55,14 +62,23 @@ public:
 	// Submit a copy operation to the GPU.
 	void SubmitCopyOperation(VkCommandBuffer commandBuffer);
 
+	// Request a dedicated transfer operation.
+	void RequestCopy(const CopyRequest& request);
+
 	// Schedule a render object to be drawn.
 	void AddDynamicObject(MeshRenderer* object);
+
+	// Force re-recording of the dynamic rendering commands.
+	void ForceDynamicStateChange();
 
 	// End the main render pass.
 	void End();
 
 	// Wait for the graphics queue to be idle.
 	void WaitGraphicsIdle();
+
+	// Wait for the transfer queue to be idle.
+	void WaitTransferIdle();
 
 	// Find the optimal memory type for allocating buffer memory.
 	unsigned int FindMemoryType(unsigned int typeFilter, VkMemoryPropertyFlags propertyFlags);
@@ -119,14 +135,16 @@ private:
 		void* userData
 	);
 
+	static DynamicArray<CopyRequest> m_copyRequests;
+
 	// Create Vulkan instance.
-	void CreateVKInstance();
+	inline void CreateVKInstance();
 
 	// Check if the necessary validation layers are supported for debug.
-	void CheckValidationLayerSupport();
+	inline void CheckValidationLayerSupport();
 
 	// Check if the device supports all the necessary extensions for this renderer.
-	bool CheckDeviceExtensionSupport(VkPhysicalDevice device);
+	inline bool CheckDeviceExtensionSupport(VkPhysicalDevice device);
 
 	struct SwapChainDetails
 	{
@@ -139,10 +157,10 @@ private:
 	SwapChainDetails* GetSwapChainSupportDetails(VkPhysicalDevice device);
 
 	// Rate how suitable a device is for this renderer.
-	int DeviceSuitable(VkPhysicalDevice device);
+	inline int DeviceSuitable(VkPhysicalDevice device);
 
 	// Get GPU to be used for rendering.
-	void GetPhysicalDevice();
+	inline void GetPhysicalDevice();
 
 	// Debug messenger creation proxy function.
 	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* createInfo, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger);
@@ -151,52 +169,55 @@ private:
 	VkResult DestroyDebugUtilsMessengerEXT(VkInstance instance, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger);
 
 	// Create debug messenger.
-	void SetupDebugMessenger();
+	inline void SetupDebugMessenger();
 
 	// Find supported queue families.
-	bool FindQueueFamilies(VkPhysicalDevice device);
+	inline bool FindQueueFamilies(VkPhysicalDevice device);
 
 	// Create logical device to interface with the physical device.
-	void CreateLogicalDevice();
+	inline void CreateLogicalDevice();
 
 	// Creates the window surface displayed on the OS window.
-	void CreateWindowSurface();
+	inline void CreateWindowSurface();
 
 	// Create the swap chain used to present images to the window.
-	void CreateSwapChain();
+	inline void CreateSwapChain();
 
 	// Create swapchain image views.
-	void CreateSwapChainImageViews();
+	inline void CreateSwapChainImageViews();
 
 	// Create render pass.
-	void CreateRenderPasses();
+	inline void CreateRenderPasses();
 
 	// Create MVP descriptor set layout.
-	void CreateMVPDescriptorSetLayout();
+	inline void CreateMVPDescriptorSetLayout();
 
 	// Create MVP uniform buffers.
-	void CreateMVPUniformBuffers();
+	inline void CreateMVPUniformBuffers();
 
 	// Create UBO MVP descriptor pool.
-	void CreateUBOMVPDescriptorPool();
+	inline void CreateUBOMVPDescriptorPool();
 
 	// Create UBO MVP descriptor sets.
-	void CreateUBOMVPDescriptorSets();
+	inline void CreateUBOMVPDescriptorSets();
 
 	// Create framebuffer.
-	void CreateFramebuffers();
+	inline void CreateFramebuffers();
 
 	// Create command pool.
-	void CreateCommandPool();
+	inline void CreateCommandPool();
 
     // Update MVP Uniform buffer contents associated with the provided swap chain image.
-	void UpdateMVP(const unsigned int& bufferIndex);
+	inline void UpdateMVP(const unsigned int& bufferIndex);
+
+	// Record transfer command buffer.
+	inline void RecordTransferCommandBuffer(const unsigned int& bufferIndex);
 
 	// Record command buffer.
-	void RecordDynamicCommandBuffer(const unsigned int& bufferIndex);
+	inline void RecordDynamicCommandBuffer(const unsigned int& bufferIndex);
 
 	// Create semaphores & fences.
-	void CreateSyncObjects();
+	inline void CreateSyncObjects();
 
 	// -----------------------------------------------------------------------------------------------------
 	// Swap chain queries
@@ -234,10 +255,12 @@ private:
 	// Queue families.
 	VkQueue m_graphicsQueue;
 	VkQueue m_presentQueue;
+	VkQueue m_transferQueue;
 	VkQueue m_computeQueue;
 
 	int m_graphicsQueueFamilyIndex;
 	int m_presentQueueFamilyIndex;
+	int m_transferQueueFamilyIndex;
 	int m_computeQueueFamilyIndex;
 
 	// Window surface.
@@ -252,9 +275,11 @@ private:
 	DynamicArray<VkFramebuffer> m_swapChainFramebuffers;
 
 	// Commands
-	VkCommandPool m_commandPool;
-	DynamicArray<VkCommandBuffer> m_staticPassBufs; // Command buffers for the static render pass.
-	DynamicArray<VkCommandBuffer> m_dynamicPassBufs; // Command buffers for the dynamic render pass.
+	VkCommandPool m_graphicsCmdPool;
+	VkCommandPool m_transferCmdPool;
+	DynamicArray<VkCommandBuffer> m_staticPassCmdBufs; // Command buffers for the static render pass.
+	DynamicArray<VkCommandBuffer> m_dynamicPassCmdBufs; // Command buffers for the dynamic render pass.
+	DynamicArray<VkCommandBuffer> m_transferCmdBufs; // Command buffer for dedicated transfer operations.
 
 	// Descriptors
 	VkDescriptorSetLayout m_uboDescriptorSetLayout;
@@ -277,6 +302,7 @@ private:
 
 	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
 	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;
+	DynamicArray<VkFence> m_copyReadyFences;
 	DynamicArray<VkFence> m_inFlightFences;
 	unsigned long long m_currentFrame;
 	unsigned int m_currentFrameIndex;
