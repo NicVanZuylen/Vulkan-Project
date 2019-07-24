@@ -3,6 +3,7 @@
 #include "glfw3.h"
 #include <stdexcept>
 #include <iostream>
+#include <thread>
 
 #include "DynamicArray.h"
 #include "Table.h"
@@ -220,6 +221,9 @@ private:
 	// Create semaphores & fences.
 	inline void CreateSyncObjects();
 
+	// Submit transfer operations to the GPU.
+	void SubmitTransferOperations();
+
 	// -----------------------------------------------------------------------------------------------------
 	// Swap chain queries
 
@@ -303,11 +307,16 @@ private:
 
 	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
 	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;
+	DynamicArray<VkSemaphore> m_copyReadySemaphores;
 	DynamicArray<VkFence> m_copyReadyFences;
 	DynamicArray<VkFence> m_inFlightFences;
 	unsigned long long m_currentFrame;
 	unsigned int m_currentFrameIndex;
 	unsigned int m_presentImageIndex;
+	
+	std::thread* m_transferThread;
+	bool m_bTransferThread;
+	bool m_bTransferReady;
 
 	// Extensions.
 	VkExtensionProperties* m_extensions;
