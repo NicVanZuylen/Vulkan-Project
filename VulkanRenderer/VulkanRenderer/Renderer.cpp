@@ -117,8 +117,6 @@ Renderer::~Renderer()
 
 	for (int i = 0; i < MAX_CONCURRENT_COPIES; ++i) 
 	{
-		vkDestroySemaphore(m_logicDevice, m_copyReadySemaphores[i], nullptr);
-
 		vkDestroyFence(m_logicDevice, m_copyReadyFences[i], nullptr);
 	}
 
@@ -1160,9 +1158,6 @@ void Renderer::CreateSyncObjects()
 	m_renderFinishedSemaphores.SetSize(MAX_FRAMES_IN_FLIGHT);
 	m_renderFinishedSemaphores.SetCount(MAX_FRAMES_IN_FLIGHT);
 
-	m_copyReadySemaphores.SetSize(MAX_CONCURRENT_COPIES);
-	m_copyReadySemaphores.SetCount(MAX_CONCURRENT_COPIES);
-
 	m_copyReadyFences.SetSize(MAX_CONCURRENT_COPIES);
 	m_copyReadyFences.SetCount(MAX_CONCURRENT_COPIES);
 
@@ -1188,8 +1183,6 @@ void Renderer::CreateSyncObjects()
 	// Create transfer semaphores.
 	for(int i = 0; i < MAX_CONCURRENT_COPIES; ++i) 
 	{
-		RENDERER_SAFECALL(vkCreateSemaphore(m_logicDevice, &semaphoreInfo, nullptr, &m_copyReadySemaphores[i]), "Renderer Error: Failed to create semaphores.");
-
 		RENDERER_SAFECALL(vkCreateFence(m_logicDevice, &fenceInfo, nullptr, &m_copyReadyFences[i]), "Renderer Error: Failed to create semaphores.");
 	}
 }

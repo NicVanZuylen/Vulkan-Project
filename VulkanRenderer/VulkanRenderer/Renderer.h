@@ -307,7 +307,6 @@ private:
 
 	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
 	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;
-	DynamicArray<VkSemaphore> m_copyReadySemaphores;
 	DynamicArray<VkFence> m_copyReadyFences;
 	DynamicArray<VkFence> m_inFlightFences;
 	unsigned long long m_currentFrame;
