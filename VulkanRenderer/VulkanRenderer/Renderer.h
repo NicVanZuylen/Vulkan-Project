@@ -24,6 +24,7 @@
 #define WINDOW_HEIGHT 720
 
 #define MAX_FRAMES_IN_FLIGHT 2
+#define MAX_CONCURRENT_COPIES 3
 
 class MeshRenderer;
 

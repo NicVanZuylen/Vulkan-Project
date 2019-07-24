@@ -1016,11 +1016,11 @@ void Renderer::CreateCommandPool()
 	VkCommandBufferAllocateInfo transAllocInfo = {};
 	transAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	transAllocInfo.commandPool = m_transferCmdPool;
-	transAllocInfo.commandBufferCount = 3;
+	transAllocInfo.commandBufferCount = MAX_CONCURRENT_COPIES;
 	transAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-	m_transferCmdBufs.SetSize(m_swapChainImageViews.Count());
-	m_transferCmdBufs.SetCount(m_transferCmdBufs.GetSize());
+	m_transferCmdBufs.SetSize(MAX_CONCURRENT_COPIES);
+	m_transferCmdBufs.SetCount(MAX_CONCURRENT_COPIES);
 
 	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &transAllocInfo, m_transferCmdBufs.Data()), "Renderer Error: Failed to create dedicated transfer command buffer.");
 }
@@ -1137,8 +1137,8 @@ void Renderer::CreateSyncObjects()
 	m_renderFinishedSemaphores.SetSize(MAX_FRAMES_IN_FLIGHT);
 	m_renderFinishedSemaphores.SetCount(MAX_FRAMES_IN_FLIGHT);
 
-	m_copyReadyFences.SetSize(m_swapChainImageViews.Count());
-	m_copyReadyFences.SetCount(m_copyReadyFences.GetSize());
+	m_copyReadyFences.SetSize(MAX_CONCURRENT_COPIES);
+	m_copyReadyFences.SetCount(MAX_CONCURRENT_COPIES);
 
 	m_inFlightFences.SetSize(MAX_FRAMES_IN_FLIGHT);
 	m_inFlightFences.SetCount(MAX_FRAMES_IN_FLIGHT);
@@ -1160,7 +1160,7 @@ void Renderer::CreateSyncObjects()
 	}
 
 	// Create transfer semaphores.
-	for(int i = 0; i < m_swapChainImageViews.Count(); ++i) 
+	for(int i = 0; i < MAX_CONCURRENT_COPIES; ++i)
 		RENDERER_SAFECALL(vkCreateFence(m_logicDevice, &fenceInfo, nullptr, &m_copyReadyFences[i]), "Renderer Error: Failed to create semaphores.");
 }
 
@@ -1224,6 +1224,8 @@ void Renderer::End()
 
 	if (m_copyRequests.Count() > 0)
 	{
+		unsigned int currentCmdIndex = m_currentFrame % MAX_CONCURRENT_COPIES;
+
 		VkSubmitInfo transSubmitInfo = {};
 		transSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		transSubmitInfo.commandBufferCount = 1;
@@ -1231,16 +1233,16 @@ void Renderer::End()
 		transSubmitInfo.pWaitSemaphores = nullptr;
 		transSubmitInfo.signalSemaphoreCount = 0;
 		transSubmitInfo.pSignalSemaphores = nullptr;
-		transSubmitInfo.pCommandBuffers = &m_transferCmdBufs[m_presentImageIndex];
+		transSubmitInfo.pCommandBuffers = &m_transferCmdBufs[currentCmdIndex];
 
-		vkWaitForFences(m_logicDevice, 1, &m_copyReadyFences[m_presentImageIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
-		vkResetFences(m_logicDevice, 1, &m_copyReadyFences[m_presentImageIndex]);
+		vkWaitForFences(m_logicDevice, 1, &m_copyReadyFences[currentCmdIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
+		vkResetFences(m_logicDevice, 1, &m_copyReadyFences[currentCmdIndex]);
 
 		// Record new transfer commands.
-		RecordTransferCommandBuffer(m_presentImageIndex);
+		RecordTransferCommandBuffer(currentCmdIndex);
 
 		// Execute transfer commands.
-		vkQueueSubmit(m_transferQueue, 1, &transSubmitInfo, m_copyReadyFences[m_presentImageIndex]);
+		vkQueueSubmit(m_transferQueue, 1, &transSubmitInfo, m_copyReadyFences[currentCmdIndex]);
 	}
 
 	VkSubmitInfo submitInfo = {};
