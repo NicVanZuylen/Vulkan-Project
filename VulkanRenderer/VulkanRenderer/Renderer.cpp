@@ -1072,6 +1072,8 @@ void Renderer::RecordTransferCommandBuffer(const unsigned int& bufferIndex)
 	if (m_copyRequests.Count() == 0 || !m_bTransferReady)
 		return;
 
+	m_transferFrameIndex = bufferIndex;
+
 	VkCommandBuffer& cmdBuffer = m_transferCmdBufs[bufferIndex];
 
 	VkCommandBufferBeginInfo cmdBeginInfo = {};
@@ -1206,16 +1208,13 @@ void Renderer::SubmitTransferOperations()
 			transSubmitInfo.pWaitSemaphores = nullptr;
 			transSubmitInfo.signalSemaphoreCount = 0;
 			transSubmitInfo.pSignalSemaphores = nullptr;
-			transSubmitInfo.pCommandBuffers = &m_transferCmdBufs[0];
+			transSubmitInfo.pCommandBuffers = &m_transferCmdBufs[m_transferFrameIndex];
 
-			vkWaitForFences(m_logicDevice, 1, &m_copyReadyFences[0], VK_TRUE, std::numeric_limits<unsigned long long>::max());
-			vkResetFences(m_logicDevice, 1, &m_copyReadyFences[0]);
-
-			// Record new transfer commands.
-			//RecordTransferCommandBuffer(0);
+			vkWaitForFences(m_logicDevice, 1, &m_copyReadyFences[m_transferFrameIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
+			vkResetFences(m_logicDevice, 1, &m_copyReadyFences[m_transferFrameIndex]);
 
 			// Execute transfer commands.
-			vkQueueSubmit(m_transferQueue, 1, &transSubmitInfo, m_copyReadyFences[0]);
+			vkQueueSubmit(m_transferQueue, 1, &transSubmitInfo, m_copyReadyFences[m_transferFrameIndex]);
 
 			m_bTransferReady = true;
 		}
@@ -1303,7 +1302,7 @@ void Renderer::End()
 	*/
 
 	if (m_copyRequests.Count() > 0)
-		RecordTransferCommandBuffer(0);
+		RecordTransferCommandBuffer(m_currentFrameIndex % MAX_CONCURRENT_COPIES);
 
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;

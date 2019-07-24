@@ -314,6 +314,7 @@ private:
 	unsigned int m_presentImageIndex;
 	
 	std::thread* m_transferThread;
+	unsigned int m_transferFrameIndex;
 	bool m_bTransferThread;
 	bool m_bTransferReady;
 
