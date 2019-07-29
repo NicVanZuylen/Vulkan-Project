@@ -6,6 +6,7 @@
 #include <thread>
 
 #include "DynamicArray.h"
+#include "Queue.h"
 #include "Table.h"
 #include "glm.hpp"
 
@@ -25,7 +26,7 @@
 #define WINDOW_HEIGHT 720
 
 #define MAX_FRAMES_IN_FLIGHT 2
-#define MAX_CONCURRENT_COPIES 3
+#define MAX_CONCURRENT_COPIES 16
 
 class MeshRenderer;
 
@@ -137,7 +138,7 @@ private:
 		void* userData
 	);
 
-	static DynamicArray<CopyRequest> m_copyRequests;
+	static DynamicArray<CopyRequest> m_newTransferRequests;
 
 	// Create Vulkan instance.
 	inline void CreateVKInstance();
@@ -313,6 +314,8 @@ private:
 	unsigned int m_currentFrameIndex;
 	unsigned int m_presentImageIndex;
 	
+	DynamicArray<DynamicArray<CopyRequest>> m_transferBuffers; // Arrays of transfer request buffer arrays for each concurrent transfer command buffer.
+	Queue<unsigned int> m_transferIndices;
 	std::thread* m_transferThread;
 	unsigned int m_transferFrameIndex;
 	bool m_bTransferThread;

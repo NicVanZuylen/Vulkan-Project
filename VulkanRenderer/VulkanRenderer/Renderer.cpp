@@ -32,7 +32,7 @@ const bool Renderer::m_enableValidationLayers = true;
 #endif
 
 VkResult Renderer::m_safeCallResult = VK_SUCCESS;
-DynamicArray<CopyRequest> Renderer::m_copyRequests;
+DynamicArray<CopyRequest> Renderer::m_newTransferRequests;
 
 Renderer::Renderer(GLFWwindow* window)
 {
@@ -51,9 +51,11 @@ Renderer::Renderer(GLFWwindow* window)
 	m_transferQueueFamilyIndex = -1;
 	m_computeQueueFamilyIndex = -1;
 
-	m_transferThread = new std::thread(&Renderer::SubmitTransferOperations, this);
+	m_transferBuffers.SetSize(MAX_CONCURRENT_COPIES);
+	m_transferBuffers.SetCount(MAX_CONCURRENT_COPIES);
 	m_bTransferThread = true;
 	m_bTransferReady = true;
+	m_transferThread = new std::thread(&Renderer::SubmitTransferOperations, this);
 
 	CheckValidationLayerSupport();
 	CreateVKInstance();
@@ -1069,30 +1071,25 @@ void Renderer::UpdateMVP(const unsigned int& bufferIndex)
 
 void Renderer::RecordTransferCommandBuffer(const unsigned int& bufferIndex)
 {
-	if (m_copyRequests.Count() == 0 || !m_bTransferReady)
-		return;
-
-	m_transferFrameIndex = bufferIndex;
-
 	VkCommandBuffer& cmdBuffer = m_transferCmdBufs[bufferIndex];
 
 	VkCommandBufferBeginInfo cmdBeginInfo = {};
 	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 	cmdBeginInfo.pInheritanceInfo = nullptr;
 
 	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of transfer command buffer.");
 
+	DynamicArray<CopyRequest>& requests = m_transferBuffers[bufferIndex];
+
 	// Issue commands for each requested copy operation.
-	for (int i = 0; i < m_copyRequests.Count(); ++i) 
+	for (int i = 0; i < requests.Count(); ++i)
 	{
-		vkCmdCopyBuffer(cmdBuffer, m_copyRequests[i].srcBuffer, m_copyRequests[i].dstBuffer, 1, &m_copyRequests[i].copyRegion);
+		vkCmdCopyBuffer(cmdBuffer, requests[i].srcBuffer, requests[i].dstBuffer, 1, &requests[i].copyRegion);
 	}
 
 	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of transfer command buffer.");
-	m_copyRequests.Clear();
-
-	m_bTransferReady = false;
+	requests.Clear();
 }
 
 void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
@@ -1191,30 +1188,31 @@ void Renderer::CreateSyncObjects()
 
 void Renderer::SubmitTransferOperations() 
 {
+	VkSubmitInfo transSubmitInfo = {};
+	transSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	transSubmitInfo.commandBufferCount = 1;
+	transSubmitInfo.waitSemaphoreCount = 0;
+	transSubmitInfo.pWaitSemaphores = nullptr;
+	transSubmitInfo.signalSemaphoreCount = 0;
+	transSubmitInfo.pSignalSemaphores = nullptr;
+
 	while(m_bTransferThread) 
 	{
-		//std::cout << "Noice." << std::endl;
-
-		if (!m_bTransferReady)
+		if (!m_bTransferReady && m_transferIndices.Count() > 0) 
 		{
-			//std::cout << "Transfering..." << std::endl;
+			unsigned int transferIndex = m_transferIndices.Dequeue();
 
-			unsigned int currentCmdIndex = m_currentFrame % MAX_CONCURRENT_COPIES;
+			// Set command buffer.
+			transSubmitInfo.pCommandBuffers = &m_transferCmdBufs[transferIndex];
 
-			VkSubmitInfo transSubmitInfo = {};
-			transSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-			transSubmitInfo.commandBufferCount = 1;
-			transSubmitInfo.waitSemaphoreCount = 0;
-			transSubmitInfo.pWaitSemaphores = nullptr;
-			transSubmitInfo.signalSemaphoreCount = 0;
-			transSubmitInfo.pSignalSemaphores = nullptr;
-			transSubmitInfo.pCommandBuffers = &m_transferCmdBufs[m_transferFrameIndex];
+			vkWaitForFences(m_logicDevice, 1, &m_copyReadyFences[transferIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
+			vkResetFences(m_logicDevice, 1, &m_copyReadyFences[transferIndex]);
 
-			vkWaitForFences(m_logicDevice, 1, &m_copyReadyFences[m_transferFrameIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
-			vkResetFences(m_logicDevice, 1, &m_copyReadyFences[m_transferFrameIndex]);
+			// Record command buffer.
+			RecordTransferCommandBuffer(transferIndex);
 
 			// Execute transfer commands.
-			vkQueueSubmit(m_transferQueue, 1, &transSubmitInfo, m_copyReadyFences[m_transferFrameIndex]);
+			vkQueueSubmit(m_transferQueue, 1, &transSubmitInfo, m_copyReadyFences[transferIndex]);
 
 			m_bTransferReady = true;
 		}
@@ -1253,7 +1251,7 @@ void Renderer::SubmitCopyOperation(VkCommandBuffer commandBuffer)
 
 void Renderer::RequestCopy(const CopyRequest& request) 
 {
-	m_copyRequests.Push(request);
+	m_newTransferRequests.Push(request);
 }
 
 void Renderer::AddDynamicObject(MeshRenderer* object) 
@@ -1279,30 +1277,28 @@ void Renderer::End()
 	// Re-record the dynamic command buffer for this swap chain image if it has changed.
     RecordDynamicCommandBuffer(m_presentImageIndex);
 
-	/*
-	if (m_copyRequests.Count() > 0)
+	if (m_bTransferReady && m_newTransferRequests.Count() > 0) 
 	{
-		unsigned int currentCmdIndex = m_currentFrame % MAX_CONCURRENT_COPIES;
+		m_transferFrameIndex = m_currentFrame % MAX_CONCURRENT_COPIES;
 
-		VkSubmitInfo transSubmitInfo = {};
-		transSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		transSubmitInfo.commandBufferCount = 1;
-		transSubmitInfo.waitSemaphoreCount = m_currentFrame / MAX_CONCURRENT_COPIES > 0;
-		transSubmitInfo.pWaitSemaphores = &m_copyReadySemaphores[currentCmdIndex];
-		transSubmitInfo.signalSemaphoreCount = 1;
-		transSubmitInfo.pSignalSemaphores = &m_copyReadySemaphores[currentCmdIndex];
-		transSubmitInfo.pCommandBuffers = &m_transferCmdBufs[currentCmdIndex];
+		DynamicArray<CopyRequest>& requests = m_transferBuffers[m_transferFrameIndex];
 
-		// Record new transfer commands.
-		RecordTransferCommandBuffer(currentCmdIndex);
+		// Ensure there is enough room for the new requests.
+		if(requests.GetSize() < m_newTransferRequests.GetSize())
+			requests.SetSize(m_newTransferRequests.GetSize());
 
-		// Execute transfer commands.
-		vkQueueSubmit(m_transferQueue, 1, &transSubmitInfo, VK_NULL_HANDLE);
+		// Move all new transfer requests to the correct location for command buffer recording and submission.
+		requests.SetCount(m_newTransferRequests.Count());
+
+		unsigned int nCopySize = sizeof(CopyRequest) * m_newTransferRequests.Count();
+		memcpy_s(requests.Data(), nCopySize, m_newTransferRequests.Data(), nCopySize);
+
+		m_newTransferRequests.Clear();
+
+		// Enqueue index of these requests for command buffer recording and execution.
+		m_transferIndices.Enqueue(m_transferFrameIndex);
+		m_bTransferReady = false;
 	}
-	*/
-
-	if (m_copyRequests.Count() > 0)
-		RecordTransferCommandBuffer(m_currentFrameIndex % MAX_CONCURRENT_COPIES);
 
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;

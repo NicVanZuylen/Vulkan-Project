@@ -131,7 +131,7 @@ void MeshRenderer::SetInstance(const unsigned int& nIndex, Instance& instance)
 
 void MeshRenderer::UpdateInstanceData() 
 {
-	if (!m_bInstancesModified)
+	if (!m_bInstancesModified || m_nInstanceCount == 0)
 		return;
 
 	int nCopySize = sizeof(Instance) * m_nInstanceCount;
@@ -147,24 +147,16 @@ void MeshRenderer::UpdateInstanceData()
 	vkUnmapMemory(m_renderer->GetDevice(), m_instanceStagingMemory);
 
 	// Copy instance staging buffer to device local instance buffer.
-	if (m_bInstancesModified)
-	{
-		// Nothing should draw if there are no instances, so avoid issuing commands if there are no instances.
-		if (m_nInstanceCount == 0)
-			return;
+	VkBufferCopy insCopyRegion = {};
+	insCopyRegion.srcOffset = 0;
+	insCopyRegion.dstOffset = 0;
+	insCopyRegion.size = sizeof(Instance) * m_nInstanceCount;
 
-		VkBufferCopy insCopyRegion = {};
-		insCopyRegion.srcOffset = 0;
-		insCopyRegion.dstOffset = 0;
-		insCopyRegion.size = sizeof(Instance) * m_nInstanceCount;
+	// Create and submit copy request.
+	CopyRequest bufferCopyRequest = { m_instanceStagingBuffer, m_instanceBuffer, insCopyRegion };
+	m_renderer->RequestCopy(bufferCopyRequest);
 
-		// Create and submit copy request.
-		CopyRequest bufferCopyRequest = { m_instanceStagingBuffer, m_instanceBuffer, insCopyRegion };
-		m_renderer->RequestCopy(bufferCopyRequest);
-
-		m_bInstancesModified = false;
-	}
-
+	m_bInstancesModified = false;
 }
 
 const Shader* MeshRenderer::GetShader() const
