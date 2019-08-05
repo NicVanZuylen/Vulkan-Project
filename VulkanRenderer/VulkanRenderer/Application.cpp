@@ -104,6 +104,8 @@ void Application::Run()
 	m_renderer->AddDynamicObject(testObject);
 	glm::mat4 instanceModelMat;
 
+	glm::mat4 moveModelMat;
+
 	while(!glfwWindowShouldClose(m_window)) 
 	{
 		// Time
@@ -125,7 +127,7 @@ void Application::Run()
 		// Draw...
 		m_renderer->Begin();
 
-		/*
+		
 		if (m_input->GetKey(GLFW_KEY_G) && !m_input->GetKey(GLFW_KEY_G, INPUTSTATE_PREVIOUS)) 
 		{
 			std::cout << "Adding object!" << std::endl;
@@ -135,13 +137,13 @@ void Application::Run()
 			Instance newInstance = { instanceModelMat };
 			testObject->AddInstance(newInstance);
 		}
-		*/
 		
-		if (m_input->GetKey(GLFW_KEY_G))
+		
+		if (m_input->GetKey(GLFW_KEY_M))
 		{
-			instanceModelMat = glm::translate(instanceModelMat, glm::vec3(0.0f, 0.0f, -3.0f * fDeltaTime));
+			moveModelMat = glm::translate(moveModelMat, glm::vec3(0.0f, 0.0f, -3.0f * fDeltaTime));
 
-			Instance newInstance = { instanceModelMat };
+			Instance newInstance = { moveModelMat };
 			testObject->SetInstance(0, newInstance);
 		}
 

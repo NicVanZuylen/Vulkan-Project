@@ -39,6 +39,55 @@ Texture::Texture(Renderer* renderer, const char* szFilePath)
 	}
 }
 
+Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachmentType type, VkFormat format)
+{
+	m_renderer = renderer;
+	m_nWidth = nWidth;
+	m_nHeight = nHeight;
+	m_bOwnsTexture = true;
+
+	m_format = format;
+
+	VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+
+	switch (type)
+	{
+	case ATTACHMENT_COLOR:
+		m_nChannels = 4;
+		m_name = "COLOR_ATTACHMENT";
+
+	    m_renderer->CreateImage(m_imageHandle, m_imageMemory, m_nWidth, m_nHeight, m_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+		m_renderer->CreateImageView(m_imageHandle, m_imageView, m_format, aspect);
+
+		// Transition layout.
+		TransitionImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, m_format);
+
+		break;
+
+	case ATTACHMENT_DEPTH_STENCIL:
+		m_nChannels = 1;
+		m_name = "DEPTH_STENCIL_ATTACHMENT";
+
+		m_renderer->CreateImage(m_imageHandle, m_imageMemory, m_nWidth, m_nHeight, m_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+
+		aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+		// Include stencil aspect if the format supports it.
+		if (format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT)
+			aspect |= VK_IMAGE_ASPECT_STENCIL_BIT;
+
+		m_renderer->CreateImageView(m_imageHandle, m_imageView, m_format, aspect);
+
+		// Transition layout.
+		TransitionImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, m_format);
+
+		break;
+
+	default:
+		break;
+	}
+}
+
 Texture::~Texture() 
 {
 	if (m_bOwnsTexture)
@@ -72,6 +121,11 @@ const VkImageView& Texture::ImageView() const
 	return m_imageView;
 }
 
+const VkFormat& Texture::Format() 
+{
+	return m_format;
+}
+
 void Texture::StageImage() 
 {
 	unsigned long long textureSize = m_nWidth * m_nHeight * sizeof(unsigned int);
@@ -93,56 +147,26 @@ void Texture::StageImage()
 	stbi_image_free(m_data);
 	m_data = nullptr;
 
-	// Next step.
-	CreateImageBuffer();
-}
-
-void Texture::CreateImageBuffer() 
-{
-	VkImageCreateInfo createInfo = {};
-	createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	createInfo.imageType = VK_IMAGE_TYPE_2D;
-	createInfo.extent.width = static_cast<unsigned int>(m_nWidth);
-	createInfo.extent.height = static_cast<unsigned int>(m_nHeight);
-	createInfo.extent.depth = 1;
-	createInfo.mipLevels = 1;
-	createInfo.arrayLayers = 1;
-	createInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-	createInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-	createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	createInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-	createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	createInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-	createInfo.flags = 0;
+	m_format = VK_FORMAT_R8G8B8A8_UNORM;
 
 	// Create image.
-	RENDERER_SAFECALL(vkCreateImage(m_renderer->GetDevice(), &createInfo, nullptr, &m_imageHandle), "Texture Error: Failed to create image object.");
-
-	VkMemoryRequirements imageMemRequirements;
-	vkGetImageMemoryRequirements(m_renderer->GetDevice(), m_imageHandle, &imageMemRequirements);
-
-	VkMemoryAllocateInfo allocInfo = {};
-	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocInfo.allocationSize = imageMemRequirements.size;
-	allocInfo.memoryTypeIndex = m_renderer->FindMemoryType(imageMemRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	RENDERER_SAFECALL(vkAllocateMemory(m_renderer->GetDevice(), &allocInfo, nullptr, &m_imageMemory), "Texture Error: Failed to allocate texture image memory.");
-
-	// Bind image memory to the image.
-	vkBindImageMemory(m_renderer->GetDevice(), m_imageHandle, m_imageMemory, 0);
+	m_renderer->CreateImage(m_imageHandle, m_imageMemory, m_nWidth, m_nHeight, m_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
 	// Next step.
 	TransferContents();
 }
 
-void Texture::TransitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout) 
+void Texture::TransitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout, VkFormat format) 
 {
 	Renderer::TempCmdBuffer tmpCmdBuffer = m_renderer->CreateTempCommandBuffer();
-	RecordImageMemBarrierCmdBuffer(tmpCmdBuffer.m_handle, oldLayout, newLayout);
+
+	bool bStencilFormat = format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+	RecordImageMemBarrierCmdBuffer(tmpCmdBuffer.m_handle, oldLayout, newLayout, bStencilFormat);
+
 	m_renderer->UseAndDestroyTempCommandBuffer(tmpCmdBuffer);
 }
 
-void Texture::RecordImageMemBarrierCmdBuffer(VkCommandBuffer cmdBuffer, VkImageLayout oldLayout, VkImageLayout newLayout)
+void Texture::RecordImageMemBarrierCmdBuffer(VkCommandBuffer cmdBuffer, VkImageLayout oldLayout, VkImageLayout newLayout, bool bHasStencil)
 {
 	VkCommandBufferBeginInfo beginInfo = {};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -176,6 +200,19 @@ void Texture::RecordImageMemBarrierCmdBuffer(VkCommandBuffer cmdBuffer, VkImageL
 
 		sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 		destStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) 
+	{
+		memBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT; // Change aspect mask to depth.
+		memBarrier.srcAccessMask = 0;
+		memBarrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+		// Add stencil aspect if the format supports it.
+		if (bHasStencil)
+			memBarrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+
+		sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		destStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 	}
 	else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
 	{
@@ -229,7 +266,7 @@ void Texture::RecordCopyCommandBuffer(VkCommandBuffer cmdBuffer)
 void Texture::TransferContents() 
 {
 	// Transition layout to transfer destination optimal layout.
-	TransitionImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	TransitionImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, m_format);
 
 	// Copy staging buffer to image.
 	Renderer::TempCmdBuffer tmpCmdBuffer = m_renderer->CreateTempCommandBuffer();
@@ -237,24 +274,8 @@ void Texture::TransferContents()
 	m_renderer->UseAndDestroyTempCommandBuffer(tmpCmdBuffer);
 
 	// Transition image layout to shader read only optimal layout.
-	TransitionImageLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+	TransitionImageLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, m_format);
 
-	// Next step.
-	CreateTextureImageView();
-}
-
-void Texture::CreateTextureImageView() 
-{
-	VkImageViewCreateInfo viewCreateInfo = {};
-	viewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	viewCreateInfo.image = m_imageHandle;
-	viewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	viewCreateInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-	viewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	viewCreateInfo.subresourceRange.baseMipLevel = 0;
-	viewCreateInfo.subresourceRange.levelCount = 1;
-	viewCreateInfo.subresourceRange.baseArrayLayer = 0;
-	viewCreateInfo.subresourceRange.layerCount = 1;
-
-	RENDERER_SAFECALL(vkCreateImageView(m_renderer->GetDevice(), &viewCreateInfo, nullptr, &m_imageView), "Texture Error: Failed to create image view.");
+	// Create image view.
+	m_renderer->CreateImageView(m_imageHandle, m_imageView, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
 }

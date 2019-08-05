@@ -29,6 +29,7 @@
 #define MAX_CONCURRENT_COPIES 16
 
 class MeshRenderer;
+class Texture;
 
 struct Shader;
 
@@ -88,6 +89,12 @@ public:
 
 	// Create a buffer with the provided size, usage flags, memory property flags, buffer and memory handles.
 	void CreateBuffer(const unsigned long long& size, const VkBufferUsageFlags& bufferUsage, VkMemoryPropertyFlags properties, VkBuffer& bufferHandle, VkDeviceMemory& bufferMemory);
+
+	// Create an image with the specified width, height, format, tiling and usage flags.
+	void CreateImage(VkImage& image, VkDeviceMemory& imageMemory, const uint32_t& nWidth, const uint32_t& nHeight, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage);
+
+	// Create an image view for the specified image.
+	void CreateImageView(const VkImage& image, VkImageView& view, VkFormat format, VkImageAspectFlags aspectFlags);
 
 	struct TempCmdBuffer 
 	{
@@ -171,6 +178,9 @@ private:
 	// Debug messenger destruction proxy function.
 	VkResult DestroyDebugUtilsMessengerEXT(VkInstance instance, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger);
 
+	// Find most suitable format for depth images.
+	inline VkFormat FindBestFormat(DynamicArray<VkFormat>& formats, VkImageTiling tiling, VkFormatFeatureFlags features);
+
 	// Create debug messenger.
 	inline void SetupDebugMessenger();
 
@@ -188,6 +198,9 @@ private:
 
 	// Create swapchain image views.
 	inline void CreateSwapChainImageViews();
+
+	// Create depth/stencil images.
+	inline void CreateDepthImages();
 
 	// Create render pass.
 	inline void CreateRenderPasses();
@@ -209,6 +222,9 @@ private:
 
 	// Create command pool.
 	inline void CreateCommandPool();
+
+	// Create main command buffers.
+	inline void CreateCmdBuffers();
 
     // Update MVP Uniform buffer contents associated with the provided swap chain image.
 	inline void UpdateMVP(const unsigned int& bufferIndex);
@@ -279,6 +295,9 @@ private:
 	DynamicArray<VkImage> m_swapChainImages;
 	DynamicArray<VkImageView> m_swapChainImageViews;
 	DynamicArray<VkFramebuffer> m_swapChainFramebuffers;
+
+	// Images and framebuffers.
+	DynamicArray<Texture*> m_depthImages;
 
 	// Commands
 	VkCommandPool m_graphicsCmdPool;

@@ -6,6 +6,7 @@
 #include "Shader.h"
 #include "Material.h"
 #include "MeshRenderer.h"
+#include "Texture.h"
 #include "gtc/matrix_transform.hpp"
 
 #define GLFW_FORCE_RADIANS
@@ -57,14 +58,24 @@ Renderer::Renderer(GLFWwindow* window)
 	m_bTransferReady = true;
 	m_transferThread = new std::thread(&Renderer::SubmitTransferOperations, this);
 
+	// Check for validation layer support.
 	CheckValidationLayerSupport();
+
+	// Vulkan instance
 	CreateVKInstance();
+
+	// Debug
 	SetupDebugMessenger();
+
+	// Window
 	CreateWindowSurface();
+
+	// Phyiscal device
 	GetPhysicalDevice();
+
+	// Device & command pools
 	CreateLogicalDevice();
-	CreateSwapChain();
-	CreateSwapChainImageViews();
+	CreateCommandPool();
 
 	// Get queue handles...
 	vkGetDeviceQueue(m_logicDevice, m_presentQueueFamilyIndex, 0, &m_presentQueue);
@@ -72,13 +83,25 @@ Renderer::Renderer(GLFWwindow* window)
 	vkGetDeviceQueue(m_logicDevice, m_transferQueueFamilyIndex, 0, &m_transferQueue);
 	vkGetDeviceQueue(m_logicDevice, m_computeQueueFamilyIndex, 0, &m_computeQueue); // May also be the graphics queue.
 
+	// Images
+	CreateSwapChain();
+	CreateSwapChainImageViews();
+	CreateDepthImages();
+
+	// Render passes
 	CreateRenderPasses();
+
+	// Buffers & descriptors setup
 	CreateMVPDescriptorSetLayout();
 	CreateMVPUniformBuffers();
 	CreateUBOMVPDescriptorPool();
 	CreateUBOMVPDescriptorSets();
+
+	// Framebuffers & main command buffers
 	CreateFramebuffers();
-	CreateCommandPool();
+	CreateCmdBuffers();
+
+	// Syncronization
 	CreateSyncObjects();
 
 	WaitGraphicsIdle();
@@ -138,6 +161,10 @@ Renderer::~Renderer()
 
 	// Destroy debug messenger.
 	DestroyDebugUtilsMessengerEXT(m_instance, nullptr, &m_messenger);
+
+	// Destroy depth images.
+	for (int i = 0; i < m_depthImages.Count(); ++i) 
+		delete m_depthImages[i];
 
 	// Destroy image views.
 	for (int i = 0; i < m_swapChainImageViews.Count(); ++i)
@@ -433,6 +460,29 @@ VkResult Renderer::DestroyDebugUtilsMessengerEXT(VkInstance instance, const VkAl
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
+VkFormat Renderer::FindBestFormat(DynamicArray<VkFormat>& formats, VkImageTiling tiling, VkFormatFeatureFlags features)
+{
+	for (int i = 0; i < formats.Count(); ++i) 
+	{
+		VkFormatProperties properties;
+
+		// Get format properties.
+		vkGetPhysicalDeviceFormatProperties(m_physDevice, formats[i], &properties);
+
+		// Find matching format.
+		if (tiling == VK_IMAGE_TILING_LINEAR && (properties.linearTilingFeatures & features) == features)
+		{
+			return formats[i];
+		}
+		else if (tiling == VK_IMAGE_TILING_OPTIMAL && (properties.optimalTilingFeatures & features) == features)
+			return formats[i];
+	}
+
+	throw std::exception("Renderer Error: Failed to find correct depth buffer format.");
+
+	return formats[0];
+}
+
 void Renderer::SetupDebugMessenger() 
 {
 	if (!m_enableValidationLayers)
@@ -662,8 +712,7 @@ void Renderer::CreateSwapChain()
 	RENDERER_SAFECALL(vkGetSwapchainImagesKHR(m_logicDevice, m_swapChain, &swapChainImageCount, nullptr), "Renderer Error: Failed to retrieve swap chain image count.");
 
 	m_swapChainImages.SetSize(swapChainImageCount);
-	for (unsigned int i = 0; i < swapChainImageCount; ++i)
-		m_swapChainImages.Push(VkImage());
+	m_swapChainImages.SetCount(swapChainImageCount);
 
 	RENDERER_SAFECALL(vkGetSwapchainImagesKHR(m_logicDevice, m_swapChain, &swapChainImageCount, m_swapChainImages.Data()), "Renderer Error: Failed to retieve swap chain images.");
 
@@ -701,6 +750,32 @@ void Renderer::CreateSwapChainImageViews()
 	}
 }
 
+void Renderer::CreateDepthImages() 
+{
+	// Resize arrays.
+	m_depthImages.SetSize(m_swapChainImageViews.GetSize());
+	m_depthImages.SetCount(m_depthImages.GetSize());
+
+	//m_depthImageMemories.SetSize(m_depthImages.GetSize());
+	//m_depthImageMemories.SetCount(m_depthImageMemories.GetSize());
+
+	//m_depthImageViews.SetSize(m_depthImages.GetSize());
+	//m_depthImageViews.SetCount(m_depthImageViews.GetSize());
+
+	DynamicArray<VkFormat> formats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
+
+	VkFormat depthFormat = FindBestFormat(formats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+
+	for(int i = 0; i < m_depthImages.Count(); ++i) 
+	{
+		// Create depth images and views.
+		//CreateImage(m_depthImages[i], m_depthImageMemories[i], m_swapChainImageExtents.width, m_swapChainImageExtents.height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+		//CreateImageView(m_depthImages[i], m_depthImageViews[i], depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+		m_depthImages[i] = new Texture(this, m_swapChainImageExtents.width, m_swapChainImageExtents.height, ATTACHMENT_DEPTH_STENCIL, depthFormat);
+	}
+}
+
 void Renderer::CreateRenderPasses() 
 {
 	// ------------------------------------------------------------------------------------------------------------
@@ -710,7 +785,7 @@ void Renderer::CreateRenderPasses()
 		VkAttachmentDescription colorAttachment = {};
 		colorAttachment.format = m_swapChainImageFormat;
 		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // No multisampling.
-		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear buffer initially.
+		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear on load.
 		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store for use in a future render pass.
 		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // Don't care.
 		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't care.
@@ -719,27 +794,45 @@ void Renderer::CreateRenderPasses()
 
 		VkAttachmentReference colorAttachmentRef = {};
 		colorAttachmentRef.attachment = 0;
-		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Expected optimal layout.
+		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Expected optimal color layout.
+
+		VkAttachmentDescription depthAttachment = {};
+		depthAttachment.format = m_depthImages[0]->Format();
+		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // No multisampling.
+		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear on load.
+		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store for next pass.
+		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // We are not using stencil for now, so we don't care.
+		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't care.
+		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Initial layout should have already been determined.
+		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Output optimal layout for the next render pass.
+
+		VkAttachmentReference depthAttachmentRef = {};
+		depthAttachmentRef.attachment = 1;
+		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Expected optimal depth/stencil layout.
 
 		VkSubpassDescription subpass = {};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		subpass.colorAttachmentCount = 1; // One attachment.
 		subpass.pColorAttachments = &colorAttachmentRef;
+		subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+		VkAttachmentDescription attachments[2] = { colorAttachment, depthAttachment };
 
 		VkRenderPassCreateInfo renderPassInfo = {};
 		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInfo.attachmentCount = 1;
-		renderPassInfo.pAttachments = &colorAttachment;
+		renderPassInfo.attachmentCount = 2;
+		renderPassInfo.pAttachments = attachments;
 		renderPassInfo.subpassCount = 1;
 		renderPassInfo.pSubpasses = &subpass;
 
 		VkSubpassDependency dependency = {};
 		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
 		dependency.dstSubpass = 0;
-		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT; // Ensures the source color is outputted from the pipeline, meaning processing has finished.
+		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; // Ensures color & depth/stencil output has completed.
 		dependency.srcAccessMask = 0;
-		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+			| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
 		renderPassInfo.dependencyCount = 1;
 		renderPassInfo.pDependencies = &dependency;
@@ -765,25 +858,43 @@ void Renderer::CreateRenderPasses()
 		colorAttachmentRef.attachment = 0;
 		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Expected optimal layout.
 
+		VkAttachmentDescription depthAttachment = {};
+		depthAttachment.format = m_depthImages[0]->Format();
+		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // No multisampling.
+		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; // // Load from previous pass.
+		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store.
+		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // We are not using stencil for now, so we don't care.
+		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't care.
+		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Initial layout should have already been determined.
+		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Output optimal layout for the next render pass.
+
+		VkAttachmentReference depthAttachmentRef = {};
+		depthAttachmentRef.attachment = 1;
+		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Expected optimal depth/stencil layout.
+
 		VkSubpassDescription subpass = {};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = 1;
+		subpass.colorAttachmentCount = 1; // One attachment.
 		subpass.pColorAttachments = &colorAttachmentRef;
+		subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+		VkAttachmentDescription attachments[2] = { colorAttachment, depthAttachment };
 
 		VkRenderPassCreateInfo renderPassInfo = {};
 		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInfo.attachmentCount = 1; // One attachment.
-		renderPassInfo.pAttachments = &colorAttachment;
+		renderPassInfo.attachmentCount = 2;
+		renderPassInfo.pAttachments = attachments;
 		renderPassInfo.subpassCount = 1;
 		renderPassInfo.pSubpasses = &subpass;
 
 		VkSubpassDependency dependency = {};
 		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
 		dependency.dstSubpass = 0;
-		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT; // Ensures the source color is outputted from the pipeline, meaning processing has finished.
+		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; // Ensures color & depth/stencil output has completed.
 		dependency.srcAccessMask = 0;
-		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+			| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
 		renderPassInfo.dependencyCount = 1;
 		renderPassInfo.pDependencies = &dependency;
@@ -894,13 +1005,13 @@ void Renderer::CreateFramebuffers()
 
 	for (int i = 0; i < m_swapChainImageViews.Count(); ++i) 
 	{
-		VkImageView attachment = m_swapChainImageViews[i]; // Image used as the framebuffer attachment.
+		VkImageView attachments[2] = { m_swapChainImageViews[i], m_depthImages[i]->ImageView() }; // Image used as the framebuffer attachment.
 
 		VkFramebufferCreateInfo framebufferInfo = {};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		framebufferInfo.renderPass = m_dynamicRenderPass;
-		framebufferInfo.attachmentCount = 1;
-		framebufferInfo.pAttachments = &attachment;
+		framebufferInfo.attachmentCount = 2;
+		framebufferInfo.pAttachments = attachments;
 		framebufferInfo.width = m_swapChainImageExtents.width;
 		framebufferInfo.height = m_swapChainImageExtents.height;
 		framebufferInfo.layers = 1;
@@ -912,7 +1023,7 @@ void Renderer::CreateFramebuffers()
 void Renderer::CreateCommandPool() 
 {
 	// ==================================================================================================================================================
-	// Graphics commands
+	// Graphics command pool.
 
 	VkCommandPoolCreateInfo poolCreateInfo = {};
 	poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -920,6 +1031,13 @@ void Renderer::CreateCommandPool()
 	poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
 
 	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_graphicsCmdPool), "Renderer Error: Failed to create command pool.");
+
+}
+
+void Renderer::CreateCmdBuffers() 
+{
+	// ==================================================================================================================================================
+	// Graphics commands.
 
 	// Allocate memory for static pass command buffers...
 	m_staticPassCmdBufs.SetSize(m_swapChainFramebuffers.GetSize());
@@ -941,9 +1059,12 @@ void Renderer::CreateCommandPool()
 	cmdBeginInfo.pInheritanceInfo = nullptr;
 
 	VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+	VkClearValue depthClearVal = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+	VkClearValue clearVals[2] = { clearVal, depthClearVal };
 
 	// Record static command buffers...
-	for(int i = 0; i < m_staticPassCmdBufs.Count(); ++i) 
+	for (int i = 0; i < m_staticPassCmdBufs.Count(); ++i)
 	{
 		VkCommandBuffer& cmdBuffer = m_staticPassCmdBufs[i];
 
@@ -957,8 +1078,8 @@ void Renderer::CreateCommandPool()
 		passBeginInfo.renderArea.offset = { 0, 0 };
 		passBeginInfo.renderArea.extent = m_swapChainImageExtents;
 
-		passBeginInfo.clearValueCount = 1;
-		passBeginInfo.pClearValues = &clearVal;
+		passBeginInfo.clearValueCount = 2;
+		passBeginInfo.pClearValues = clearVals;
 
 		vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -998,14 +1119,14 @@ void Renderer::CreateCommandPool()
 		DynamicArray<PipelineData*>& allPipelines = MeshRenderer::Pipelines();
 
 		// Iterate through all pipelines and draw their objects.
-		for(int i = 0; i < allPipelines.Count(); ++i) 
+		for (int i = 0; i < allPipelines.Count(); ++i)
 		{
 			// Bind pipelines...
 			vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, allPipelines[i]->m_handle);
 
 			// Draw objects using the pipeline.
 			DynamicArray<MeshRenderer*>& renderObjects = allPipelines[i]->m_renderObjects;
-			for(int j = 0; j < renderObjects.Count(); ++j) 
+			for (int j = 0; j < renderObjects.Count(); ++j)
 			{
 				renderObjects[j]->CommandDraw(cmdBuffer);
 			}
@@ -1381,6 +1502,57 @@ void Renderer::CreateBuffer(const unsigned long long& size, const VkBufferUsageF
 
 	// Associate the newly allocated memory with the buffer object.
 	vkBindBufferMemory(m_logicDevice, bufferHandle, bufferMemory, 0);
+}
+
+void Renderer::CreateImage(VkImage& image, VkDeviceMemory& imageMemory, const uint32_t& nWidth, const uint32_t& nHeight, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage)
+{
+	VkImageCreateInfo createInfo = {};
+	createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	createInfo.imageType = VK_IMAGE_TYPE_2D;
+	createInfo.extent.width = nWidth;
+	createInfo.extent.height = nHeight;
+	createInfo.extent.depth = 1;
+	createInfo.mipLevels = 1;
+	createInfo.arrayLayers = 1;
+	createInfo.format = format;
+	createInfo.tiling = tiling;
+	createInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	createInfo.usage = usage;
+	createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	createInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	createInfo.flags = 0;
+
+	// Create image.
+	RENDERER_SAFECALL(vkCreateImage(m_logicDevice, &createInfo, nullptr, &image), "Renderer Error: Failed to create image object.");
+
+	VkMemoryRequirements imageMemRequirements;
+	vkGetImageMemoryRequirements(m_logicDevice, image, &imageMemRequirements);
+
+	VkMemoryAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = imageMemRequirements.size;
+	allocInfo.memoryTypeIndex = FindMemoryType(imageMemRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	RENDERER_SAFECALL(vkAllocateMemory(m_logicDevice, &allocInfo, nullptr, &imageMemory), "Renderer Error: Failed to allocate texture image memory.");
+
+	// Bind image memory to the image.
+	vkBindImageMemory(m_logicDevice, image, imageMemory, 0);
+}
+
+void Renderer::CreateImageView(const VkImage& image, VkImageView& view, VkFormat format, VkImageAspectFlags aspectFlags) 
+{
+	VkImageViewCreateInfo viewCreateInfo = {};
+	viewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	viewCreateInfo.image = image;
+	viewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	viewCreateInfo.format = format;
+	viewCreateInfo.subresourceRange.aspectMask = aspectFlags;
+	viewCreateInfo.subresourceRange.baseMipLevel = 0;
+	viewCreateInfo.subresourceRange.levelCount = 1;
+	viewCreateInfo.subresourceRange.baseArrayLayer = 0;
+	viewCreateInfo.subresourceRange.layerCount = 1;
+
+	RENDERER_SAFECALL(vkCreateImageView(m_logicDevice, &viewCreateInfo, nullptr, &view), "Renderer Error: Failed to create image view.");
 }
 
 Renderer::TempCmdBuffer Renderer::CreateTempCommandBuffer()

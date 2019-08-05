@@ -278,6 +278,18 @@ void MeshRenderer::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* instan
 	rasterizer.depthBiasClamp = 0.0f;
 	rasterizer.depthBiasSlopeFactor = 0.0f;
 
+	// Depth / Stencil state
+	VkPipelineDepthStencilStateCreateInfo depthStencilState = {};
+	depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+	depthStencilState.depthTestEnable = VK_TRUE;
+	depthStencilState.depthWriteEnable = VK_TRUE;
+	depthStencilState.stencilTestEnable = VK_FALSE;
+	depthStencilState.depthBoundsTestEnable = VK_FALSE; // We don't need the bounds test.
+	depthStencilState.minDepthBounds = 0.0f;
+	depthStencilState.maxDepthBounds = 1.0f;
+	depthStencilState.flags = 0;
+
 	// Multisampling stage configuration.
 	VkPipelineMultisampleStateCreateInfo multisampler = {};
 	multisampler.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -347,7 +359,7 @@ void MeshRenderer::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* instan
 	pipelineInfo.pViewportState = &viewportState;
 	pipelineInfo.pRasterizationState = &rasterizer;
 	pipelineInfo.pMultisampleState = &multisampler;
-	pipelineInfo.pDepthStencilState = nullptr;
+	pipelineInfo.pDepthStencilState = &depthStencilState;
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = nullptr;
 	pipelineInfo.layout = m_pipelineData->m_layout;
