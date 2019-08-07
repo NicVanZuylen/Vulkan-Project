@@ -23,6 +23,14 @@ struct ComplexVertex
 	glm::vec2 m_texCoords;
 };
 
+struct MeshCacheData 
+{
+	uint64_t m_nVertCount;
+	uint64_t m_nIndexCount;
+	size_t m_nVertOffset;
+	size_t m_nIndexOffset;
+};
+
 class Mesh 
 {
 public:
@@ -105,6 +113,15 @@ private:
 	Description: Calculate mesh tangents.
 	*/
 	void CalculateTangents(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned int>& indices);
+
+	/*
+	Description: Load and convert mesh from an OBJ file.
+	Param:
+	    DynamicArray<ComplexVertex>& vertices: The array of output vertices.
+		DynamicArray<unsigned int>& indices: The array of output indices.
+		const char* path: The file path of the .obj file to load.
+	*/
+	void LoadOBJ(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned int>& indices, const char* path);
 
 	struct Instance
 	{

@@ -74,86 +74,108 @@ void Mesh::Load(const char* filePath)
 
 	m_filePath = filePath;
 
-	std::vector<tinyobj::shape_t> shapes;
-	std::vector<tinyobj::material_t> materials;
-	std::string errorMessage;
-	
-	std::string path = filePath;
-	const char* szMaterialPath = path.substr(0, path.find_last_of('/') + 1).c_str();
-
-	// Load meshes and materials from the OBJ file.
-	bool bLoadSuccess = tinyobj::LoadObj(shapes, materials, errorMessage, filePath, szMaterialPath);
-
-	if (!bLoadSuccess)
-	{
-		std::cout << "Mesh Error: Error loading OBJ: " + errorMessage << std::endl;
-		return;
-	}
-
-	// Copy meshes into appropriate buffers...
-
-	int chunkCount = static_cast<int>(shapes.size());
-
 	// -----------------------------------------------------------------------------------------
-	// Meshes
+	// Mesh loading from obj
 
 	// Array of all vertices of all mesh chunks, for a single mesh VAO.
 	DynamicArray<ComplexVertex> wholeMeshVertices;
 	DynamicArray<unsigned int> wholeMeshIndices;
 
-	for(int i = 0; i < chunkCount; ++i) 
+	// -----------------------------------------------------------------------------------------
+	// Cache reading
+
+	std::string cachePath = m_filePath;
+	size_t nExtensionStart = cachePath.find_last_of(".");
+
+	cachePath.erase(nExtensionStart); // Remove old file extension.
+	cachePath.append(".mcache"); // Append new file extension.
+
+	std::ifstream cacheInStream(cachePath.c_str(), std::ios::binary | std::ios::in);
+
+	unsigned long long vertBufSize = 0;
+	unsigned long long indexBufSize = 0;
+
+	// Read cache if one is found.
+	if(cacheInStream.good()) 
 	{
-		tinyobj::shape_t& shape = shapes[i];
+		std::cout << "Mesh: Reading cache file at: " << cachePath << "\n";
 
-		DynamicArray<unsigned int> chunkIndices(static_cast<int>(shape.mesh.indices.size()), 1);
-		chunkIndices.SetCount(chunkIndices.GetSize());
-		memcpy_s(chunkIndices.Data(), sizeof(unsigned int) * chunkIndices.GetSize(), shape.mesh.indices.data(), sizeof(unsigned int) * shape.mesh.indices.size());
+		MeshCacheData inCacheData;
 
-		// Append chunk indices to whole mesh indices...
-		wholeMeshIndices.SetSize(wholeMeshIndices.Count() + static_cast<unsigned int>(shape.mesh.indices.size()));
-		
-		int chunkIndicesSize = sizeof(unsigned int) * static_cast<unsigned int>(shape.mesh.indices.size());
-		memcpy_s(&wholeMeshIndices.Data()[wholeMeshIndices.Count()], chunkIndicesSize, shape.mesh.indices.data(), chunkIndicesSize);
-		
-		wholeMeshIndices.SetCount(wholeMeshIndices.GetSize());
+		// Read cache data...
+		cacheInStream.read((char*)&inCacheData, sizeof(MeshCacheData));
 
-		// Set up chunk vertices and add to whole mesh vertices.
-		DynamicArray<ComplexVertex> chunkVertices;
-		chunkVertices.SetSize(static_cast<int>(shape.mesh.positions.size() / 3)); // Divide size by 3 to account for the fact that the array is of floats rather than vector structs.
-		chunkVertices.SetCount(chunkVertices.GetSize());
+		// Resize vertex array.
+		wholeMeshVertices.SetSize(inCacheData.m_nVertCount);
+		wholeMeshVertices.SetCount(inCacheData.m_nVertCount);
 
-		for(int j = 0; j < chunkVertices.Count(); ++j) 
+		// Move read offset to vertex start offset.
+		cacheInStream.seekg(inCacheData.m_nVertOffset);
+
+		// Read vertex data...
+		cacheInStream.read((char*)wholeMeshVertices.Data(), inCacheData.m_nVertCount * sizeof(ComplexVertex));
+
+		// Resize index array.
+		wholeMeshIndices.SetSize(inCacheData.m_nIndexCount);
+		wholeMeshIndices.SetCount(inCacheData.m_nIndexCount);
+
+		// Move read offset to index start offset.
+		cacheInStream.seekg(inCacheData.m_nIndexOffset);
+
+		// Read index data...
+		cacheInStream.read((char*)wholeMeshIndices.Data(), inCacheData.m_nIndexCount * sizeof(unsigned int));
+
+		// Set buffer sizes.
+		vertBufSize = sizeof(ComplexVertex) * wholeMeshVertices.Count();
+		indexBufSize = sizeof(unsigned int) * wholeMeshIndices.Count();
+
+		// Release file handle.
+		cacheInStream.close();
+	}
+	else // Otherwise load and convert OBJ file.
+	{
+		LoadOBJ(wholeMeshVertices, wholeMeshIndices, m_filePath);
+
+		vertBufSize = sizeof(ComplexVertex) * wholeMeshVertices.Count();
+		indexBufSize = sizeof(unsigned int) * wholeMeshIndices.Count();
+
+		// -----------------------------------------------------------------------------------------
+		// Cache writing
+
+		std::ofstream cacheOutStream(cachePath.c_str(), std::ios::binary | std::ios::out);
+
+		MeshCacheData outCacheData;
+		outCacheData.m_nVertCount = wholeMeshVertices.Count();
+		outCacheData.m_nIndexCount = wholeMeshIndices.Count();
+		outCacheData.m_nVertOffset = sizeof(MeshCacheData);
+		outCacheData.m_nIndexOffset = outCacheData.m_nVertOffset + vertBufSize;
+
+		if (cacheOutStream.good())
 		{
-			// Positions, normals etc are stored in float format, in groups. (3 for positions and normals, 2 for tex coords).
-			// Multiply the index to jump to the current float group.
-			int nIndex = j * 3; // Three floats long for positions and normals.
-			int nTexIndex = j * 2; // Two floats long for texture coordinates.
+			std::cout << "Mesh: Writing cache file at: " << cachePath << "\n";
 
-			// Copy positions...
-			if (shape.mesh.positions.size())
-				chunkVertices[i].m_position = glm::vec4(shape.mesh.positions[nIndex], shape.mesh.positions[nIndex + 1], shape.mesh.positions[nIndex + 2], 1.0f);
-			
-			// Copy normals...
-			if (shape.mesh.normals.size())
-				chunkVertices[i].m_normal = glm::vec4(shape.mesh.normals[nIndex], shape.mesh.normals[nIndex + 1], shape.mesh.normals[nIndex + 2], 0.0f);
+			// Write cache data.
+			cacheOutStream.write((const char*)&outCacheData, sizeof(MeshCacheData));
 
-			// Copy texture coordinates.
-			if (shape.mesh.texcoords.size())
-				chunkVertices[i].m_texCoords = glm::vec2(shape.mesh.texcoords[nTexIndex], 1 - shape.mesh.texcoords[nTexIndex + 1]);
+			// Seek to vertex data start offset.
+			cacheOutStream.seekp(outCacheData.m_nVertOffset);
 
-			// Add the vertex to the whole mesh vertex array.
-			wholeMeshVertices.Push(chunkVertices[i]);
+			// Write vertex data...
+			cacheOutStream.write((const char*)wholeMeshVertices.Data(), vertBufSize);
+
+			// Seek to index data start offset.
+			cacheOutStream.seekp(outCacheData.m_nIndexOffset);
+
+			// Write index data.
+			cacheOutStream.write((const char*)wholeMeshIndices.Data(), indexBufSize);
+
+			// Release file handle.
+			cacheOutStream.close();
 		}
-
-		// Calculate tangents for each vertex...
-		CalculateTangents(chunkVertices, chunkIndices);
 	}
 
-	// Calculate tangents for whole mesh...
-	CalculateTangents(wholeMeshVertices, wholeMeshIndices);
-
-	unsigned long long vertBufSize = sizeof(ComplexVertex) * wholeMeshVertices.Count();
-	unsigned long long indexBufSize = sizeof(unsigned int) * wholeMeshIndices.Count();
+	// -----------------------------------------------------------------------------------------
+	// Buffers
 
 	// Create new vertex staging buffer.
 	VkBuffer vertexStagingBuffer;
@@ -355,4 +377,73 @@ void Mesh::CalculateTangents(DynamicArray<ComplexVertex>& vertices, DynamicArray
 	}
 
 	delete[] tan1;
+}
+
+void Mesh::LoadOBJ(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned int>& indices, const char* path) 
+{
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
+	std::string errorMessage;
+
+	// Load meshes and materials from the OBJ file.
+	bool bLoadSuccess = tinyobj::LoadObj(shapes, materials, errorMessage, path, nullptr);
+
+	if (!bLoadSuccess)
+	{
+		std::cout << "Mesh Error: Error loading OBJ: " + errorMessage << std::endl;
+		return;
+	}
+
+	int chunkCount = static_cast<int>(shapes.size());
+
+	for (int i = 0; i < chunkCount; ++i)
+	{
+		tinyobj::shape_t& shape = shapes[i];
+
+		DynamicArray<unsigned int> chunkIndices(static_cast<int>(shape.mesh.indices.size()), 1);
+		chunkIndices.SetCount(chunkIndices.GetSize());
+		memcpy_s(chunkIndices.Data(), sizeof(unsigned int) * chunkIndices.GetSize(), shape.mesh.indices.data(), sizeof(unsigned int) * shape.mesh.indices.size());
+
+		// Append chunk indices to whole mesh indices...
+		indices.SetSize(indices.Count() + static_cast<unsigned int>(shape.mesh.indices.size()));
+
+		int chunkIndicesSize = sizeof(unsigned int) * static_cast<unsigned int>(shape.mesh.indices.size());
+		memcpy_s(&indices.Data()[indices.Count()], chunkIndicesSize, shape.mesh.indices.data(), chunkIndicesSize);
+
+		indices.SetCount(indices.GetSize());
+
+		// Set up chunk vertices and add to whole mesh vertices.
+		DynamicArray<ComplexVertex> chunkVertices;
+		chunkVertices.SetSize(static_cast<int>(shape.mesh.positions.size() / 3)); // Divide size by 3 to account for the fact that the array is of floats rather than vector structs.
+		chunkVertices.SetCount(chunkVertices.GetSize());
+
+		for (int j = 0; j < chunkVertices.Count(); ++j)
+		{
+			// Positions, normals etc are stored in float format, in groups. (3 for positions and normals, 2 for tex coords).
+			// Multiply the index to jump to the current float group.
+			int nIndex = j * 3; // Three floats long for positions and normals.
+			int nTexIndex = j * 2; // Two floats long for texture coordinates.
+
+			// Copy positions...
+			if (shape.mesh.positions.size())
+				chunkVertices[i].m_position = glm::vec4(shape.mesh.positions[nIndex], shape.mesh.positions[nIndex + 1], shape.mesh.positions[nIndex + 2], 1.0f);
+
+			// Copy normals...
+			if (shape.mesh.normals.size())
+				chunkVertices[i].m_normal = glm::vec4(shape.mesh.normals[nIndex], shape.mesh.normals[nIndex + 1], shape.mesh.normals[nIndex + 2], 0.0f);
+
+			// Copy texture coordinates.
+			if (shape.mesh.texcoords.size())
+				chunkVertices[i].m_texCoords = glm::vec2(shape.mesh.texcoords[nTexIndex], 1 - shape.mesh.texcoords[nTexIndex + 1]);
+
+			// Add the vertex to the whole mesh vertex array.
+			vertices.Push(chunkVertices[i]);
+		}
+
+		// Calculate tangents for each vertex...
+		CalculateTangents(chunkVertices, chunkIndices);
+	}
+
+	// Calculate tangents for whole mesh...
+	CalculateTangents(vertices, indices);
 }

@@ -91,8 +91,8 @@ void Application::Run()
 	Material* testMat = new Material(m_renderer, modelShader, { testTexture, testTexture2 });
 
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
-	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Dragon.obj");
-	Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
+	Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Dragon.obj");
+	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 
 	MeshRenderer* testObject = new MeshRenderer(m_renderer, testMesh, testMat, &MeshRenderer::m_defaultInstanceAttributes, 100);
 
