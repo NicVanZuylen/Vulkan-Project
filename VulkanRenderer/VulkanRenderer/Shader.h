@@ -7,6 +7,13 @@ class MeshRenderer;
 struct PipelineData;
 struct VkShaderModule_T;
 
+enum EShaderStage 
+{
+	SHADER_VERTEX,
+	SHADER_GEOMETRY,
+	SHADER_FRAGMENT
+};
+
 struct Shader 
 {
 	/*
@@ -38,6 +45,25 @@ struct Shader
 		const char* fragPath: Path to the SPIR-V code of the fragment shader stage.
 	*/
 	void Load(const char* vertPath, const char* fragPath);
+
+	/*
+	Description: Load raw GLSL source from the provided file path.
+	Return Type: string
+	Param:
+		const char* path: Path to the GLSL source file.
+	*/
+	std::string LoadRaw(const char* path);
+
+	/*
+	Description: Compile Raw GLSL source into SPIR-V & use the compiled SPIR-V output.
+	Param:
+	    const char* contents: GLSL source to compile.
+		const char* path: filepath to the GLSL source file to compile.
+		EShaderStage eStage: The shader stage to compile for.
+		const char** includeDirs: Array of include directory strings.
+		unsigned int nIncludeDirCount: Amount of include directories in the array.
+	*/
+	void CompileGLSL(const char* contents, const char* path, EShaderStage eStage, const char** includeDirs, unsigned int nIncludeDirCount);
 
 	std::string m_name;
 	DynamicArray<char> m_vertContents;

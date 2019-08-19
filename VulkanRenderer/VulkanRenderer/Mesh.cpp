@@ -106,8 +106,8 @@ void Mesh::Load(const char* filePath)
 		cacheInStream.read((char*)&inCacheData, sizeof(MeshCacheData));
 
 		// Resize vertex array.
-		wholeMeshVertices.SetSize(inCacheData.m_nVertCount);
-		wholeMeshVertices.SetCount(inCacheData.m_nVertCount);
+		wholeMeshVertices.SetSize(static_cast<int>(inCacheData.m_nVertCount));
+		wholeMeshVertices.SetCount(static_cast<int>(inCacheData.m_nVertCount));
 
 		// Move read offset to vertex start offset.
 		cacheInStream.seekg(inCacheData.m_nVertOffset);
@@ -116,8 +116,8 @@ void Mesh::Load(const char* filePath)
 		cacheInStream.read((char*)wholeMeshVertices.Data(), inCacheData.m_nVertCount * sizeof(ComplexVertex));
 
 		// Resize index array.
-		wholeMeshIndices.SetSize(inCacheData.m_nIndexCount);
-		wholeMeshIndices.SetCount(inCacheData.m_nIndexCount);
+		wholeMeshIndices.SetSize(static_cast<int>(inCacheData.m_nIndexCount));
+		wholeMeshIndices.SetCount(static_cast<int>(inCacheData.m_nIndexCount));
 
 		// Move read offset to index start offset.
 		cacheInStream.seekg(inCacheData.m_nIndexOffset);

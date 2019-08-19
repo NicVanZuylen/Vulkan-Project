@@ -59,7 +59,10 @@ MeshRenderer::~MeshRenderer()
 		vkFreeMemory(m_renderer->GetDevice(), m_instanceMemory, nullptr);
 	}
 
-	if (m_pipelineData->m_renderObjects.Count() <= 1) // This is the last object using the pipeline, destroy the pipeline.
+	// Remove this render object from the pipeline.
+	m_pipelineData->m_renderObjects.Pop(this);
+
+	if (m_pipelineData->m_renderObjects.Count() == 0) // This is the last object using the pipeline, destroy the pipeline.
 	{
 		// Wait for graphics queue to be idle.
 		m_renderer->WaitGraphicsIdle();
@@ -171,17 +174,6 @@ const Material* MeshRenderer::GetMaterial() const
 
 void MeshRenderer::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* instanceAttributes)
 {
-	PipelineData*& pipelineData = m_pipelineTable[{ m_nameID.c_str() }].m_ptr;
-
-	if (pipelineData)
-	{
-		// Pipeline already exists. This class does not own it but can use it.
-		m_pipelineData = pipelineData;
-		m_pipelineData->m_renderObjects.Push(this);
-
-		return;
-	}
-
 	// -------------------------------------------------------------------------------------------------------------------
 	// Instance buffer
 
@@ -193,6 +185,20 @@ void MeshRenderer::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* instan
 	// Create device local instance buffer.
 	m_renderer->CreateBuffer(m_nInstanceArraySize * sizeof(Instance), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_instanceBuffer, m_instanceMemory);
 
+	// -------------------------------------------------------------------------------------------------------------------
+	// Check for existing matching pipeline.
+
+	PipelineData*& pipelineData = m_pipelineTable[{ m_nameID.c_str() }].m_ptr;
+
+	if (pipelineData)
+	{
+		// Pipeline already exists. This class does not own it but can use it.
+		m_pipelineData = pipelineData;
+		m_pipelineData->m_renderObjects.Push(this);
+
+		return;
+	}
+	
 	// -------------------------------------------------------------------------------------------------------------------
 
 	// Vertex shader stage information.

@@ -92,9 +92,10 @@ void Application::Run()
 
 	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
 	Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Dragon.obj");
-	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
+	Mesh* testMesh2 = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 
 	MeshRenderer* testObject = new MeshRenderer(m_renderer, testMesh, testMat, &MeshRenderer::m_defaultInstanceAttributes, 100);
+	MeshRenderer* testObject2 = new MeshRenderer(m_renderer, testMesh2, testMat, &MeshRenderer::m_defaultInstanceAttributes, 100);
 
 	float fDeltaTime = 0.0f;	
 	float fDebugDisplayTime = DEBUG_DISPLAY_TIME;
@@ -102,6 +103,15 @@ void Application::Run()
 	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), 0.3f, 5.0f);
 
 	m_renderer->AddDynamicObject(testObject);
+	m_renderer->AddDynamicObject(testObject2);
+	
+	Instance ins;
+	ins.m_modelMat = glm::translate(glm::vec3(1.0f, 0.0f, 0.0f));
+
+	testObject2->AddInstance(ins);
+
+	//testObject2->SetInstance(0, ins);
+
 	glm::mat4 instanceModelMat;
 
 	glm::mat4 moveModelMat;
@@ -176,8 +186,10 @@ void Application::Run()
 	delete testTexture;
 
 	delete testObject;
+	delete testObject2;
 
 	delete testMesh;
+	delete testMesh2;
 
 	delete testMat;
 

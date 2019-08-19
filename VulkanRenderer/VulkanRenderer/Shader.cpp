@@ -1,6 +1,7 @@
 #include "Shader.h"
 #include "Renderer.h"
 #include "MeshRenderer.h"
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -28,7 +29,23 @@ Shader::Shader(const char* vertPath, const char* fragPath)
 	// Name is the name of the fragment shader file appended to the name of the vertex shader file.
 	m_name = vertStr.substr(vertStr.find_last_of('/') + 1) + "|" + fragStr.substr(fragStr.find_last_of('/') + 1);
 
-	Load(vertPath, fragPath);
+	// Detect if the files are SPIR-V or raw GLSL.
+	std::string vertExtension = vertPath;
+	vertExtension = vertExtension.substr(vertExtension.find_last_of('.') + 1);
+
+	std::string fragExtension = fragPath;
+	fragExtension = fragExtension.substr(fragExtension.find_last_of('.') + 1);
+
+	// Check if files are SPIR-V files.
+	bool bRawFiles = std::strcmp(vertExtension.c_str(), "spv") != 0 && std::strcmp(fragExtension.c_str(), "spv") != 0;
+
+	if (!bRawFiles)
+		Load(vertPath, fragPath);
+	else
+	{
+		std::string vertContents = LoadRaw(vertPath);
+		std::string fragContents = LoadRaw(fragPath);
+	}
 }
 
 Shader::Shader(const char* name, const char* vertPath, const char* fragPath)
@@ -40,7 +57,23 @@ Shader::Shader(const char* name, const char* vertPath, const char* fragPath)
 
 	m_registered = false;
 
-	Load(vertPath, fragPath);
+	// Detect if the files are SPIR-V or raw GLSL.
+	std::string vertExtension = vertPath;
+	vertExtension = vertExtension.substr(vertExtension.find_last_of('.') + 1);
+
+	std::string fragExtension = fragPath;
+	fragExtension = fragExtension.substr(fragExtension.find_last_of('.') + 1);
+
+	// Check if files are now SPIR-V files.
+	bool bRawFiles = std::strcmp(vertExtension.c_str(), "spv") != 0 && std::strcmp(fragExtension.c_str(), "spv") != 0;
+
+	if (!bRawFiles)
+		Load(vertPath, fragPath);
+	else 
+	{
+		std::string vertContents = LoadRaw(vertPath);
+		std::string fragContents = LoadRaw(fragPath);
+	}
 }
 
 void Shader::Load(const char* vertPath, const char* fragPath) 
@@ -117,3 +150,126 @@ void Shader::Load(const char* vertPath, const char* fragPath)
 
 	// -----------------------------------------------------------------------------------------------
 }
+
+std::string Shader::LoadRaw(const char* path) 
+{
+	// Open files and seek to end.
+	std::ifstream file(path, std::ios::in);
+	std::stringstream inStream;
+	std::string contents;
+
+	// Ensure file was successfully opened, and is not empty.
+	if (file.good())
+	{
+		// Seek to beginning of the file.
+		file.seekg(0);
+
+		// Read contents.
+		inStream << file.rdbuf();
+
+		// Release file handle.
+		file.close();
+
+		// Copy contents to string.
+		contents = inStream.str();
+
+		return contents;
+
+		std::cout << "Successfully read GLSL source file at: " << path << "\n";
+	}
+	else
+		std::cout << "Failed to read GLSL source file at: " << path << "\n";
+
+	contents = "FAIL_STRING";
+
+	return contents;
+}
+
+/*
+void Shader::CompileGLSL(const char* contents, const char* path, EShaderStage eStage, const char** includeDirs, unsigned int nIncludeDirCount)
+{
+	// Initialize glslang.
+	glslang::InitializeProcess();
+
+	EShLanguage type;
+
+	switch (eStage) 
+	{
+	case SHADER_VERTEX:
+
+		type = EShLanguage::EShLangVertex;
+
+		break;
+
+	case SHADER_GEOMETRY:
+
+		type = EShLanguage::EShLangGeometry;
+
+		break;
+
+	case SHADER_FRAGMENT:
+
+		type = EShLanguage::EShLangFragment;
+
+		break;
+	}
+
+	// Create shader stage to compile.
+	glslang::TShader shader(type);
+
+	shader.setStrings(&contents, 1);
+
+	int nClientInputSemanticsVer = 100; // Effectively #define VULKAN 100 for Vulkan 1.0
+	glslang::EShTargetClientVersion vulkanClientVer = glslang::EShTargetVulkan_1_0;
+	glslang::EShTargetLanguageVersion langVersion = glslang::EShTargetSpv_1_0;
+
+	// Set Vulkan version, source code info & SPIR-V target details.
+	shader.setEnvInput(glslang::EShSourceGlsl, type, glslang::EShClientVulkan, nClientInputSemanticsVer);
+	shader.setEnvClient(glslang::EShClientVulkan, vulkanClientVer);
+	shader.setEnvTarget(glslang::EShTargetLanguage::EShTargetSpv, langVersion);
+
+	TBuiltInResource resources = {};
+	EShMessages messages = static_cast<EShMessages>(EShMessages::EShMsgSpvRules | EShMessages::EShMsgVulkanRules); // Output messages regarding SPIR-V & Vulkan.
+
+	// Can include external GLSL source files.
+	DirStackFileIncluder includer;
+
+	// Push include directories.
+	for(unsigned int i = 0; i < nIncludeDirCount; ++i) 
+	    includer.pushExternalLocalDirectory(includeDirs[i]);
+
+	std::string preprocessedGLSL;
+
+	// Preprocessing
+	if(!shader.preprocess(&resources, 100, EProfile::ENoProfile, false, false, messages, &preprocessedGLSL, includer)) 
+	{
+		// Output errors.
+		std::cout << "GLSL preproccessing failed for file: " << path << "\n";
+		std::cout << shader.getInfoLog() << "\n";
+		std::cout << shader.getInfoDebugLog() << "\n";
+	}
+
+	const char* preprocessedCString = preprocessedGLSL.c_str();
+
+	// Update strings.
+	shader.setStrings(&preprocessedCString, 1);
+
+	// Parse shader...
+	glslang::TProgram program;
+	program.addShader(&shader);
+
+	if (!program.link(messages)) 
+	{
+		std::cout << "GLSL linking failed for file: " << path << "\n";
+		std::cout << program.getInfoLog() << "\n";
+		std::cout << program.getInfoDebugLog() << "\n";
+	}
+
+	spv::SpvBuildLogger spvLogger;
+	glslang::SpvOptions spvOptions;
+
+	std::vector<unsigned int> spvContents;
+
+	glslang::GlslangToSpv(*program.getIntermediate(type), spvContents, &spvOptions);
+}
+*/

@@ -48,13 +48,15 @@ Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachm
 
 	m_format = format;
 
-	VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+	VkImageAspectFlags aspect;
 
 	switch (type)
 	{
 	case ATTACHMENT_COLOR:
 		m_nChannels = 4;
-		m_name = "COLOR_ATTACHMENT";
+		m_name = "COLOR_ATTACHMENT-" + std::to_string(m_nChannels) + "ch\n";
+
+		aspect = VK_IMAGE_ASPECT_COLOR_BIT;
 
 	    m_renderer->CreateImage(m_imageHandle, m_imageMemory, m_nWidth, m_nHeight, m_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
 		m_renderer->CreateImageView(m_imageHandle, m_imageView, m_format, aspect);
@@ -66,7 +68,7 @@ Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachm
 
 	case ATTACHMENT_DEPTH_STENCIL:
 		m_nChannels = 1;
-		m_name = "DEPTH_STENCIL_ATTACHMENT";
+		m_name = "DEPTH_STENCIL_ATTACHMENT-" + std::to_string(m_nChannels) + "ch\n";
 
 		m_renderer->CreateImage(m_imageHandle, m_imageMemory, m_nWidth, m_nHeight, m_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
 
