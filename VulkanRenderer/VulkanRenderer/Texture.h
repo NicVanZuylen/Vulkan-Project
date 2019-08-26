@@ -1,11 +1,16 @@
 #pragma once
 #include "Renderer.h"
 
+#ifndef ATTACHMENT_E
+#define ATTACHMENT_E
+
 enum EAttachmentType 
 {
 	ATTACHMENT_COLOR,
 	ATTACHMENT_DEPTH_STENCIL
 };
+
+#endif
 
 class Texture 
 {
@@ -61,6 +66,24 @@ public:
 	*/
 	const VkFormat& Format();
 
+	/*
+	Description: Get the attachment type of this image.
+	Return Type: const EAttachmentType&
+	*/
+	const EAttachmentType& GetAttachmentType();
+
+	/*
+	Description: Get whether or not this attachment has a stencil component.
+	Return Type: bool
+	*/
+	bool HasStencil();
+
+	/*
+	Description: Get whether or not this attachment is a presentable image.
+	Return Type: bool
+	*/
+	bool IsPresented();
+
 protected:
 
 	/*
@@ -69,17 +92,51 @@ protected:
 	void StageImage();
 
 	/*
-	Description: Record image memory barrier command buffer.
+	Description: Record image memory barrier (to transition image layout) command buffer.
+	Param:
+	    VkCommandBuffer cmdBuffer: The command buffer to record to.
+		VkImageLayout: oldLayout: The image layout to transition from.
+		VkImageLayout: newLayout: The target image layout to transition to.
+		bool bHasStencil: Whether or not the image has a stencil component (if it is a depth/stencil image).
 	*/
 	void RecordImageMemBarrierCmdBuffer(VkCommandBuffer cmdBuffer, VkImageLayout oldLayout, VkImageLayout newLayout, bool bHasStencil = false);
 
 	/*
+	Description: Create a VkImage object with the provided properties.
+	Param:
+	    VkImage& image: VkImage handle reference.
+		VkDeviceMemory& imageMemory: Image memory buffer handle reference.
+		const unsigned int& nWidth: The width of the image viewport.
+		const unsigned int& nHeight: The height of the image viewport.
+		VkFormat format: The format of the image.
+		VkImageTiling tiling: The tiling properties of the image.
+		VKImageUsageFlags usage: Flags detailing how the image will be used.
+	*/
+	void CreateImage(VkImage& image, VkDeviceMemory& imageMemory, const uint32_t& nWidth, const uint32_t& nHeight, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage);
+
+	/*
+	Description: Create an image view for the provided image, using the specified format and aspect flags.
+	Param:
+		const VkImage& image: VkImage handle reference.
+		VkImageView& view: The handle for the new image view.
+		VkFormat format: The format of the image.
+		VKImageAspectFlags aspectFlags: Flags to specify if this a color image, depth image, etc.
+	*/
+	void CreateImageView(const VkImage& image, VkImageView& view, VkFormat format, VkImageAspectFlags aspectFlags);
+
+	/*
 	Description: Transition the image layout of this texture.
+	Param:
+	    VkImageLayout oldLayout: The current layout to be transitioned from.
+		VkImageLayout newLayout: The target layout to transition to.
+		VkFormat format: The format of the image.
 	*/
 	void TransitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout, VkFormat format);
 
 	/*
 	Description: Record the command buffer to copy image data from the staging buffer to the image buffer.
+	Param:
+	    VkCommandBuffer cmdBuffer: The command buffer handle to record to.
 	*/
 	void RecordCopyCommandBuffer(VkCommandBuffer cmdBuffer);
 
@@ -97,6 +154,7 @@ protected:
 	VkBuffer m_stagingBuffer;
 	VkDeviceMemory m_stagingMemory;
 
+	EAttachmentType m_type;
 	VkFormat m_format;
 	VkImage m_imageHandle;
 	VkImageView m_imageView;
@@ -105,5 +163,7 @@ protected:
 	int m_nWidth;
 	int m_nHeight;
 	int m_nChannels;
+	bool m_bPresented;
+	bool m_bHasStencil;
 	bool m_bOwnsTexture;
 };

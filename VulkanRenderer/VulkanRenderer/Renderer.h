@@ -232,7 +232,10 @@ private:
 	// Record transfer command buffer.
 	inline void RecordTransferCommandBuffer(const unsigned int& bufferIndex);
 
-	// Record command buffer.
+	// Record main primary command buffer.
+	inline void RecordMainCommandBuffer(const unsigned int& bufferIndex);
+
+	// Record dynamic secondary command buffer.
 	inline void RecordDynamicCommandBuffer(const unsigned int& bufferIndex);
 
 	// Create semaphores & fences.
@@ -302,7 +305,7 @@ private:
 	// Commands
 	VkCommandPool m_graphicsCmdPool;
 	VkCommandPool m_transferCmdPool;
-	DynamicArray<VkCommandBuffer> m_staticPassCmdBufs; // Command buffers for the static render pass.
+	DynamicArray<VkCommandBuffer> m_mainPrimaryCmdBufs;
 	DynamicArray<VkCommandBuffer> m_dynamicPassCmdBufs; // Command buffers for the dynamic render pass.
 	DynamicArray<VkCommandBuffer> m_transferCmdBufs; // Command buffer for dedicated transfer operations.
 
@@ -319,8 +322,7 @@ private:
 	MVPUniformBuffer m_mvp;
 
 	// Rendering
-	VkRenderPass m_staticRenderPass;
-	VkRenderPass m_dynamicRenderPass;
+	VkRenderPass m_mainRenderPass;
 
 	DynamicArray<MeshRenderer*> m_dynamicObjects;
 	bool m_dynamicStateChange[3];

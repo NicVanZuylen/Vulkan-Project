@@ -154,8 +154,7 @@ Renderer::~Renderer()
 		vkDestroyFramebuffer(m_logicDevice, m_swapChainFramebuffers[i], nullptr);
 
 	// Destroy render passes.
-	vkDestroyRenderPass(m_logicDevice, m_staticRenderPass, nullptr);
-	vkDestroyRenderPass(m_logicDevice, m_dynamicRenderPass, nullptr);
+	vkDestroyRenderPass(m_logicDevice, m_mainRenderPass, nullptr);
 
 	delete[] m_extensions;
 
@@ -779,79 +778,17 @@ void Renderer::CreateDepthImages()
 void Renderer::CreateRenderPasses() 
 {
 	// ------------------------------------------------------------------------------------------------------------
-	// Static object pass
-
-	{
-		VkAttachmentDescription colorAttachment = {};
-		colorAttachment.format = m_swapChainImageFormat;
-		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // No multisampling.
-		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear on load.
-		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store for use in a future render pass.
-		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // Don't care.
-		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't care.
-		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Initial layout is unknown.
-		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Output optimal layout for the next render pass.
-
-		VkAttachmentReference colorAttachmentRef = {};
-		colorAttachmentRef.attachment = 0;
-		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Expected optimal color layout.
-
-		VkAttachmentDescription depthAttachment = {};
-		depthAttachment.format = m_depthImages[0]->Format();
-		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // No multisampling.
-		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear on load.
-		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store for next pass.
-		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // We are not using stencil for now, so we don't care.
-		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't care.
-		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Initial layout should have already been determined.
-		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Output optimal layout for the next render pass.
-
-		VkAttachmentReference depthAttachmentRef = {};
-		depthAttachmentRef.attachment = 1;
-		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Expected optimal depth/stencil layout.
-
-		VkSubpassDescription subpass = {};
-		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = 1; // One attachment.
-		subpass.pColorAttachments = &colorAttachmentRef;
-		subpass.pDepthStencilAttachment = &depthAttachmentRef;
-
-		VkAttachmentDescription attachments[2] = { colorAttachment, depthAttachment };
-
-		VkRenderPassCreateInfo renderPassInfo = {};
-		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInfo.attachmentCount = 2;
-		renderPassInfo.pAttachments = attachments;
-		renderPassInfo.subpassCount = 1;
-		renderPassInfo.pSubpasses = &subpass;
-
-		VkSubpassDependency dependency = {};
-		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-		dependency.dstSubpass = 0;
-		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; // Ensures color & depth/stencil output has completed.
-		dependency.srcAccessMask = 0;
-		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-			| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-		renderPassInfo.dependencyCount = 1;
-		renderPassInfo.pDependencies = &dependency;
-
-		RENDERER_SAFECALL(vkCreateRenderPass(m_logicDevice, &renderPassInfo, nullptr, &m_staticRenderPass), "Renderer Error: Failed to create render pass.");
-	}
-
-	// ------------------------------------------------------------------------------------------------------------
 	// Dynamic object pass
 
 	{
 		VkAttachmentDescription colorAttachment = {};
 		colorAttachment.format = m_swapChainImageFormat;
 		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // Not multisampling right now.
-		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; // Load attachment from store.
+		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear on load.
 		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store color attachment for presentation.
 		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // Don't care.
 		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't care.
-		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Expecting optimal color attachment layout.
+		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Layout could be undefined or VK_IMAGE_LAYOUT_PRESENT_SRC_KHR.
 		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // Output layout should be presentable to the screen.
 
 		VkAttachmentReference colorAttachmentRef = {};
@@ -861,24 +798,26 @@ void Renderer::CreateRenderPasses()
 		VkAttachmentDescription depthAttachment = {};
 		depthAttachment.format = m_depthImages[0]->Format();
 		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // No multisampling.
-		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; // // Load from previous pass.
+		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Load from previous pass.
 		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store.
 		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // We are not using stencil for now, so we don't care.
 		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't care.
-		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Initial layout should have already been determined.
+		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Initial layout should have already been determined.
 		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Output optimal layout for the next render pass.
 
 		VkAttachmentReference depthAttachmentRef = {};
 		depthAttachmentRef.attachment = 1;
 		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Expected optimal depth/stencil layout.
 
+		VkAttachmentReference colorAttachmentRefs[] = { colorAttachmentRef };
+
 		VkSubpassDescription subpass = {};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		subpass.colorAttachmentCount = 1; // One attachment.
-		subpass.pColorAttachments = &colorAttachmentRef;
+		subpass.pColorAttachments = colorAttachmentRefs;
 		subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
-		VkAttachmentDescription attachments[2] = { colorAttachment, depthAttachment };
+		VkAttachmentDescription attachments[] = { colorAttachment, depthAttachment };
 
 		VkRenderPassCreateInfo renderPassInfo = {};
 		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -899,7 +838,7 @@ void Renderer::CreateRenderPasses()
 		renderPassInfo.dependencyCount = 1;
 		renderPassInfo.pDependencies = &dependency;
 
-		RENDERER_SAFECALL(vkCreateRenderPass(m_logicDevice, &renderPassInfo, nullptr, &m_dynamicRenderPass), "Renderer Error: Failed to create render pass.");
+		RENDERER_SAFECALL(vkCreateRenderPass(m_logicDevice, &renderPassInfo, nullptr, &m_mainRenderPass), "Renderer Error: Failed to create render pass.");
 	}
 
 	// ------------------------------------------------------------------------------------------------------------
@@ -1005,11 +944,11 @@ void Renderer::CreateFramebuffers()
 
 	for (int i = 0; i < m_swapChainImageViews.Count(); ++i) 
 	{
-		VkImageView attachments[2] = { m_swapChainImageViews[i], m_depthImages[i]->ImageView() }; // Image used as the framebuffer attachment.
+		VkImageView attachments[3] = { m_swapChainImageViews[i], m_depthImages[i]->ImageView() }; // Image used as the framebuffer attachment.
 
 		VkFramebufferCreateInfo framebufferInfo = {};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebufferInfo.renderPass = m_dynamicRenderPass;
+		framebufferInfo.renderPass = m_mainRenderPass;
 		framebufferInfo.attachmentCount = 2;
 		framebufferInfo.pAttachments = attachments;
 		framebufferInfo.width = m_swapChainImageExtents.width;
@@ -1039,108 +978,33 @@ void Renderer::CreateCmdBuffers()
 	// ==================================================================================================================================================
 	// Graphics commands.
 
-	// Allocate memory for static pass command buffers...
-	m_staticPassCmdBufs.SetSize(m_swapChainFramebuffers.GetSize());
-	m_staticPassCmdBufs.SetCount(m_staticPassCmdBufs.GetSize());
+	// Allocate handle memory for main command buffers...
+	m_mainPrimaryCmdBufs.SetSize(m_swapChainFramebuffers.GetSize());
+	m_mainPrimaryCmdBufs.SetCount(m_mainPrimaryCmdBufs.GetSize());
+
+	// Allocate handle memory for dynamic command buffers...
+	m_dynamicPassCmdBufs.SetSize(m_swapChainFramebuffers.GetSize());
+	m_dynamicPassCmdBufs.SetCount(m_dynamicPassCmdBufs.GetSize());
 
 	// Allocation info.
 	VkCommandBufferAllocateInfo cmdBufAllocateInfo = {};
 	cmdBufAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	cmdBufAllocateInfo.commandPool = m_graphicsCmdPool;
-	cmdBufAllocateInfo.commandBufferCount = m_staticPassCmdBufs.GetSize();
+	cmdBufAllocateInfo.commandBufferCount = m_swapChainFramebuffers.GetSize();
 	cmdBufAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-	// Allocate static command buffers.
-	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_staticPassCmdBufs.Data()), "Renderer Error: Failed to allocate static command buffers.");
+	// Allocate main command buffers.
+	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_mainPrimaryCmdBufs.Data()), "Renderer Error: Failed to allocate dynamic command buffers.");
 
-	VkCommandBufferBeginInfo cmdBeginInfo = {};
-	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-	cmdBeginInfo.pInheritanceInfo = nullptr;
-
-	VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
-	VkClearValue depthClearVal = { 1.0f, 1.0f, 1.0f, 1.0f };
-
-	VkClearValue clearVals[2] = { clearVal, depthClearVal };
-
-	// Record static command buffers...
-	for (int i = 0; i < m_staticPassCmdBufs.Count(); ++i)
-	{
-		VkCommandBuffer& cmdBuffer = m_staticPassCmdBufs[i];
-
-		RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of static pass command buffer.");
-
-		// Begin render pass.
-		VkRenderPassBeginInfo passBeginInfo = {};
-		passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		passBeginInfo.renderPass = m_staticRenderPass;
-		passBeginInfo.framebuffer = m_swapChainFramebuffers[i];
-		passBeginInfo.renderArea.offset = { 0, 0 };
-		passBeginInfo.renderArea.extent = m_swapChainImageExtents;
-
-		passBeginInfo.clearValueCount = 2;
-		passBeginInfo.pClearValues = clearVals;
-
-		vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-		// Static objects in the scene will be drawn here...
-
-		vkCmdEndRenderPass(cmdBuffer);
-
-		RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of static pass command buffer.");
-	}
-
-	// Allocate memory for dynamic command buffers...
-	m_dynamicPassCmdBufs.SetSize(m_swapChainFramebuffers.GetSize());
-	m_dynamicPassCmdBufs.SetCount(m_dynamicPassCmdBufs.GetSize());
+	cmdBufAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
 
 	// Allocate dynamic command buffers...
 	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_dynamicPassCmdBufs.Data()), "Renderer Error: Failed to allocate dynamic command buffers.");
 
-	// Initial recording of dynamic command buffers...
-	for (int i = 0; i < m_dynamicPassCmdBufs.Count(); ++i)
-	{
-		VkCommandBuffer& cmdBuffer = m_dynamicPassCmdBufs[i];
-
-		RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of static pass command buffer.");
-
-		// Begin render pass.
-		VkRenderPassBeginInfo passBeginInfo = {};
-		passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		passBeginInfo.renderPass = m_dynamicRenderPass;
-		passBeginInfo.framebuffer = m_swapChainFramebuffers[i];
-		passBeginInfo.renderArea.offset = { 0, 0 };
-		passBeginInfo.renderArea.extent = m_swapChainImageExtents;
-		passBeginInfo.clearValueCount = 0;
-		passBeginInfo.pClearValues = nullptr;
-
-		vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-		DynamicArray<PipelineData*>& allPipelines = MeshRenderer::Pipelines();
-
-		// Iterate through all pipelines and draw their objects.
-		for (int i = 0; i < allPipelines.Count(); ++i)
-		{
-			// Bind pipelines...
-			vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, allPipelines[i]->m_handle);
-
-			// Draw objects using the pipeline.
-			DynamicArray<MeshRenderer*>& renderObjects = allPipelines[i]->m_renderObjects;
-			for (int j = 0; j < renderObjects.Count(); ++j)
-			{
-				renderObjects[j]->CommandDraw(cmdBuffer);
-			}
-		}
-
-		vkCmdEndRenderPass(cmdBuffer);
-
-		RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of static pass command buffer.");
-	}
-
-	// Flag that there is no need to re-record the dynamic command buffers.
-	m_dynamicStateChange[0] = false;
-	m_dynamicStateChange[1] = false;
-	m_dynamicStateChange[2] = false;
+	// These command buffers will need to be initially recorded.
+	m_dynamicStateChange[0] = true;
+	m_dynamicStateChange[1] = true;
+	m_dynamicStateChange[2] = true;
 
 	// ==================================================================================================================================================
 	// Transfer commands
@@ -1213,6 +1077,54 @@ void Renderer::RecordTransferCommandBuffer(const unsigned int& bufferIndex)
 	requests.Clear();
 }
 
+void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex)
+{
+	VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+	VkClearValue depthClearVal = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+	VkClearValue clearVals[2] = { clearVal, depthClearVal };
+
+	// Record primary command buffers...
+	VkCommandBufferBeginInfo beginInfo = {};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+
+	/*
+	VkCommandBufferInheritanceInfo inheritanceInfo = {};
+	inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+	inheritanceInfo.framebuffer = m_swapChainFramebuffers[i];
+	inheritanceInfo.renderPass = m_mainRenderPass;
+	inheritanceInfo.subpass = 0;
+	inheritanceInfo.occlusionQueryEnable = VK_FALSE;
+
+	beginInfo.pInheritanceInfo = &inheritanceInfo;
+	*/
+
+	vkBeginCommandBuffer(m_mainPrimaryCmdBufs[bufferIndex], &beginInfo);
+
+	// Begin render pass.
+	VkRenderPassBeginInfo mainPassBeginInfo = {};
+	mainPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	mainPassBeginInfo.renderPass = m_mainRenderPass;
+	mainPassBeginInfo.framebuffer = m_swapChainFramebuffers[bufferIndex];
+	mainPassBeginInfo.renderArea.offset = { 0, 0 };
+	mainPassBeginInfo.renderArea.extent = m_swapChainImageExtents;
+	mainPassBeginInfo.clearValueCount = 2;
+	mainPassBeginInfo.pClearValues = clearVals;
+
+	// Subpass commands are recorded in secondary command buffers.
+	vkCmdBeginRenderPass(m_mainPrimaryCmdBufs[bufferIndex], &mainPassBeginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+
+	VkCommandBuffer subpassCommands[] = { m_dynamicPassCmdBufs[bufferIndex] };
+
+	// Execute subpass secondary command buffers.
+	vkCmdExecuteCommands(m_mainPrimaryCmdBufs[bufferIndex], 1, subpassCommands);
+
+	vkCmdEndRenderPass(m_mainPrimaryCmdBufs[bufferIndex]);
+
+	vkEndCommandBuffer(m_mainPrimaryCmdBufs[bufferIndex]);
+}
+
 void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 {
 	// If there was no dynamic state change, no re-recording is necessary.
@@ -1221,25 +1133,39 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 
 	VkCommandBufferBeginInfo cmdBeginInfo = {};
 	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-	cmdBeginInfo.pInheritanceInfo = nullptr;
+	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+
+	// This command buffer is a secondary command buffer, executing draw commands for the first subpass.
+	VkCommandBufferInheritanceInfo inheritanceInfo = {};
+	inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+	inheritanceInfo.framebuffer = m_swapChainFramebuffers[bufferIndex];
+	inheritanceInfo.renderPass = m_mainRenderPass;
+	inheritanceInfo.subpass = 0;
+	inheritanceInfo.occlusionQueryEnable = VK_FALSE;
+
+	cmdBeginInfo.pInheritanceInfo = &inheritanceInfo;
 
 	// Initial recording of dynamic command buffers...
 	VkCommandBuffer& cmdBuffer = m_dynamicPassCmdBufs[bufferIndex];
 
 	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of static pass command buffer.");
 
-	// Begin render pass.
-	VkRenderPassBeginInfo passBeginInfo = {};
-	passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	passBeginInfo.renderPass = m_dynamicRenderPass;
-	passBeginInfo.framebuffer = m_swapChainFramebuffers[bufferIndex];
-	passBeginInfo.renderArea.offset = { 0, 0 };
-	passBeginInfo.renderArea.extent = m_swapChainImageExtents;
-	passBeginInfo.clearValueCount = 0;
-	passBeginInfo.pClearValues = nullptr;
-
-	vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+	//VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+	//VkClearValue depthClearVal = { 1.0f, 1.0f, 1.0f, 1.0f };
+	//
+	//VkClearValue clearVals[3] = { clearVal, depthClearVal };
+	//
+	//// Begin render pass.
+	//VkRenderPassBeginInfo passBeginInfo = {};
+	//passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	//passBeginInfo.renderPass = m_mainRenderPass;
+	//passBeginInfo.framebuffer = m_swapChainFramebuffers[bufferIndex];
+	//passBeginInfo.renderArea.offset = { 0, 0 };
+	//passBeginInfo.renderArea.extent = m_swapChainImageExtents;
+	//passBeginInfo.clearValueCount = 2;
+	//passBeginInfo.pClearValues = clearVals;
+	//
+	//vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 	DynamicArray<PipelineData*>& allPipelines = MeshRenderer::Pipelines();
 
@@ -1262,9 +1188,11 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 		}
 	}
 
-	vkCmdEndRenderPass(cmdBuffer);
+	//vkCmdEndRenderPass(cmdBuffer);
 
 	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of static pass command buffer.");
+
+	RecordMainCommandBuffer(bufferIndex);
 
 	// Flag that there is no further dynamic state changes yet.
 	m_dynamicStateChange[bufferIndex] = false;
@@ -1425,12 +1353,12 @@ void Renderer::End()
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-	VkCommandBuffer cmdBuffers[] = { m_staticPassCmdBufs[m_presentImageIndex], m_dynamicPassCmdBufs[m_presentImageIndex] };
+	VkCommandBuffer cmdBuffers[] = { m_mainPrimaryCmdBufs[m_presentImageIndex] };
 
 	submitInfo.waitSemaphoreCount = 1;
 	submitInfo.pWaitSemaphores = &m_imageAvailableSemaphores[m_currentFrameIndex];
 	submitInfo.pWaitDstStageMask = waitStages;
-	submitInfo.commandBufferCount = 2;
+	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = cmdBuffers;
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[m_currentFrameIndex];
@@ -1613,7 +1541,7 @@ VkCommandPool Renderer::GetCommandPool()
 
 VkRenderPass Renderer::DynamicRenderPass() 
 {
-	return m_dynamicRenderPass;
+	return m_mainRenderPass;
 }
 
 VkDescriptorSetLayout Renderer::MVPUBOSetLayout() 
