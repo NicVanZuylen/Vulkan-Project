@@ -22,6 +22,14 @@ const DynamicArray<const char*> Renderer::m_deviceExtensions =
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
+const RendererHelper::EQueueFamilyFlags Renderer::m_eDesiredQueueFamilies = static_cast<RendererHelper::EQueueFamilyFlags>
+(
+    RendererHelper::EQueueFamilyFlags::QUEUE_FAMILY_PRESENT |
+    RendererHelper::EQueueFamilyFlags::QUEUE_FAMILY_GRAPHICS |
+    RendererHelper::EQueueFamilyFlags::QUEUE_FAMILY_COMPUTE |
+    RendererHelper::EQueueFamilyFlags::QUEUE_FAMILY_TRANSFER
+);
+
 #ifndef RENDERER_DEBUG
 
 const bool Renderer::m_enableValidationLayers = false;
@@ -47,10 +55,10 @@ Renderer::Renderer(GLFWwindow* window)
 	m_instance = VK_NULL_HANDLE;
 	m_physDevice = VK_NULL_HANDLE;
 
-	m_graphicsQueueFamilyIndex = -1;
-	m_presentQueueFamilyIndex = -1;
-	m_transferQueueFamilyIndex = -1;
-	m_computeQueueFamilyIndex = -1;
+	m_nGraphicsQueueFamilyIndex = -1;
+	m_nPresentQueueFamilyIndex = -1;
+	m_nTransferQueueFamilyIndex = -1;
+	m_nComputeQueueFamilyIndex = -1;
 
 	m_transferBuffers.SetSize(MAX_CONCURRENT_COPIES);
 	m_transferBuffers.SetCount(MAX_CONCURRENT_COPIES);
@@ -78,15 +86,15 @@ Renderer::Renderer(GLFWwindow* window)
 	CreateCommandPool();
 
 	// Get queue handles...
-	vkGetDeviceQueue(m_logicDevice, m_presentQueueFamilyIndex, 0, &m_presentQueue);
-	vkGetDeviceQueue(m_logicDevice, m_graphicsQueueFamilyIndex, 0, &m_graphicsQueue);
-	vkGetDeviceQueue(m_logicDevice, m_transferQueueFamilyIndex, 0, &m_transferQueue);
-	vkGetDeviceQueue(m_logicDevice, m_computeQueueFamilyIndex, 0, &m_computeQueue); // May also be the graphics queue.
+	vkGetDeviceQueue(m_logicDevice, m_nPresentQueueFamilyIndex, 0, &m_presentQueue);
+	vkGetDeviceQueue(m_logicDevice, m_nGraphicsQueueFamilyIndex, 0, &m_graphicsQueue);
+	vkGetDeviceQueue(m_logicDevice, m_nTransferQueueFamilyIndex, 0, &m_transferQueue);
+	vkGetDeviceQueue(m_logicDevice, m_nComputeQueueFamilyIndex, 0, &m_computeQueue); // May also be the graphics queue.
 
 	// Images
 	CreateSwapChain();
 	CreateSwapChainImageViews();
-	CreateDepthImages();
+	CreateDepthImage();
 
 	// Render passes
 	CreateRenderPasses();
@@ -161,9 +169,7 @@ Renderer::~Renderer()
 	// Destroy debug messenger.
 	DestroyDebugUtilsMessengerEXT(m_instance, nullptr, &m_messenger);
 
-	// Destroy depth images.
-	for (int i = 0; i < m_depthImages.Count(); ++i) 
-		delete m_depthImages[i];
+	delete m_depthImage;
 
 	// Destroy image views.
 	for (int i = 0; i < m_swapChainImageViews.Count(); ++i)
@@ -262,6 +268,7 @@ void Renderer::CreateVKInstance()
 
 	// ----------------------------------------------------------------------------------------------------------
 	// Application info to give to Vulkan.
+
 	VkApplicationInfo appInfo = {};
 	appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 	appInfo.pApplicationName = "VulkanRenderer";
@@ -324,7 +331,7 @@ void Renderer::CreateVKInstance()
 	std::cout << "Renderer Info: Available extensions are: \n" << std::endl;
 
 	for (unsigned int i = 0; i < m_extensionCount; ++i)
-		std::cout << m_extensions[i].extensionName << std::endl;
+		std::cout << m_extensions[i].extensionName << "\n";
 
 	std::cout << "\n";
 }
@@ -339,8 +346,7 @@ void Renderer::CheckValidationLayerSupport()
 	vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
 
 	DynamicArray<VkLayerProperties> availableLayers(layerCount, 1);
-	for (int i = 0; i < availableLayers.GetSize(); ++i)
-		availableLayers.Push(VkLayerProperties());
+	availableLayers.SetCount(layerCount);
 
 	vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.Data());
 
@@ -362,69 +368,6 @@ void Renderer::CheckValidationLayerSupport()
 		std::cout << "Renderer Info: All necessary validation layers found." << std::endl;
 	else
 		std::cout << "Renderer Warning: Not all necessary validation layers were found!" << std::endl;
-}
-
-bool Renderer::CheckDeviceExtensionSupport(VkPhysicalDevice device) 
-{
-	unsigned int extensionCount = 0;
-	RENDERER_SAFECALL(vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr), "Renderer Error: Failed to obtain Vulkan extension count");
-
-	DynamicArray<VkExtensionProperties> extensions(extensionCount, 1);
-	for (unsigned int i = 0; i < extensionCount; ++i)
-		extensions.Push(VkExtensionProperties());
-
-	RENDERER_SAFECALL(vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, extensions.Data()), "Renderer Error: Failed to obtain Vulkan extension properties");
-
-	int requiredExtensionCount = 0;
-	for(int i = 0; i < m_deviceExtensions.Count(); ++i) 
-	{
-		for(int j = 0; j < extensions.Count(); ++j) 
-		{
-			if (strcmp(m_deviceExtensions[i], extensions[j].extensionName) == 0) 
-			{
-				++requiredExtensionCount;
-				break;
-			}
-		}
-	}
-
-	return requiredExtensionCount == m_deviceExtensions.Count();
-}
-
-Renderer::SwapChainDetails* Renderer::GetSwapChainSupportDetails(VkPhysicalDevice device) 
-{
-	SwapChainDetails* details = new SwapChainDetails;
-
-	// Get capabilities.
-	RENDERER_SAFECALL(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, m_windowSurface, &details->m_capabilities), "Renderer Error: Failed to obtain window surface capabilities.");
-
-	// Get formats...
-	unsigned int formatCount = 0;
-	RENDERER_SAFECALL(vkGetPhysicalDeviceSurfaceFormatsKHR(device, m_windowSurface, &formatCount, nullptr), "Renderer Error: Failed to obtain window surface format count.");
-
-	if(formatCount > 0) 
-	{
-		details->m_formats.SetSize(formatCount);
-		for (unsigned int i = 0; i < formatCount; ++i)
-			details->m_formats.Push(VkSurfaceFormatKHR());
-
-		RENDERER_SAFECALL(vkGetPhysicalDeviceSurfaceFormatsKHR(device, m_windowSurface, &formatCount, details->m_formats.Data()), "Renderer Error: Failed to obtain window surface formats.");
-	}
-
-	// Get present modes...
-	unsigned int presentModeCount = 0;
-	RENDERER_SAFECALL(vkGetPhysicalDeviceSurfacePresentModesKHR(device, m_windowSurface, &presentModeCount, nullptr), "Renderer Error: Failed to obtain window surface present mode count.");
-
-	if (presentModeCount > 0)
-	{
-		details->m_presentModes.SetSize(presentModeCount);
-		for (unsigned int i = 0; i < presentModeCount; ++i)
-			details->m_presentModes.Push(VkPresentModeKHR());
-
-		RENDERER_SAFECALL(vkGetPhysicalDeviceSurfacePresentModesKHR(device, m_windowSurface, &presentModeCount, details->m_presentModes.Data()), "Renderer Error: Failed to obtain window surface present modes.");
-	}
-
-	return details;
 }
 
 VkResult Renderer::CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* createInfo, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger) 
@@ -459,29 +402,6 @@ VkResult Renderer::DestroyDebugUtilsMessengerEXT(VkInstance instance, const VkAl
 		return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
-VkFormat Renderer::FindBestFormat(DynamicArray<VkFormat>& formats, VkImageTiling tiling, VkFormatFeatureFlags features)
-{
-	for (int i = 0; i < formats.Count(); ++i) 
-	{
-		VkFormatProperties properties;
-
-		// Get format properties.
-		vkGetPhysicalDeviceFormatProperties(m_physDevice, formats[i], &properties);
-
-		// Find matching format.
-		if (tiling == VK_IMAGE_TILING_LINEAR && (properties.linearTilingFeatures & features) == features)
-		{
-			return formats[i];
-		}
-		else if (tiling == VK_IMAGE_TILING_OPTIMAL && (properties.optimalTilingFeatures & features) == features)
-			return formats[i];
-	}
-
-	throw std::exception("Renderer Error: Failed to find correct depth buffer format.");
-
-	return formats[0];
-}
-
 void Renderer::SetupDebugMessenger() 
 {
 	if (!m_enableValidationLayers)
@@ -497,120 +417,43 @@ void Renderer::SetupDebugMessenger()
 	RENDERER_SAFECALL(CreateDebugUtilsMessengerEXT(m_instance, &createInfo, nullptr, &m_messenger), "Renderer Error: Failed to create debug messenger!");
 }
 
-int Renderer::DeviceSuitable(VkPhysicalDevice device) 
-{
-	if (device == VK_NULL_HANDLE)
-		throw std::runtime_error("Renderer Error: Cannot check suitability for a null device!");
-
-	VkPhysicalDeviceProperties properties = {};
-	vkGetPhysicalDeviceProperties(device, &properties);
-
-	VkPhysicalDeviceFeatures features = {};
-	vkGetPhysicalDeviceFeatures(device, &features);
-
-	bool extensionsSupported = CheckDeviceExtensionSupport(device);
-
-	if (!extensionsSupported)
-		return 0;
-
-	SwapChainDetails* swapChainDetails = GetSwapChainSupportDetails(device);
-	bool suitableSwapChain = swapChainDetails->m_formats.Count() > 0 && swapChainDetails->m_presentModes.Count() > 0;
-
-	delete swapChainDetails;
-
-	if (!suitableSwapChain)
-		return 0;
-
-	// A device is suitable if it is a GPU with geometry shader support.
-	int score = properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && FindQueueFamilies(device) && features.geometryShader;
-
-	if (score == 0)
-		return score;
-
-	score += properties.limits.maxImageDimension2D;
-	score += properties.limits.maxFramebufferWidth;
-	score += properties.limits.maxFramebufferHeight;
-	score += properties.limits.maxColorAttachments;
-	score += properties.limits.maxMemoryAllocationCount;
-
-	return score;
-}
-
 void Renderer::GetPhysicalDevice() 
 {
-	unsigned int deviceCount = 0;
-	RENDERER_SAFECALL(vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr), "Renderer Error: Failed to get physical device count.");
+	unsigned int nDeviceCount = 0;
+	RENDERER_SAFECALL(vkEnumeratePhysicalDevices(m_instance, &nDeviceCount, nullptr), "Renderer Error: Failed to get physical device count.");
 
-	DynamicArray<VkPhysicalDevice> devices(deviceCount, 1);
-	for (unsigned int i = 0; i < deviceCount; ++i)
-		devices.Push(VkPhysicalDevice());
+	DynamicArray<VkPhysicalDevice> devices(nDeviceCount, 1);
+	devices.SetCount(nDeviceCount);
 
-	RENDERER_SAFECALL(vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.Data()), "Renderer Error: Failed to obtain physical device data.");
+	RENDERER_SAFECALL(vkEnumeratePhysicalDevices(m_instance, &nDeviceCount, devices.Data()), "Renderer Error: Failed to obtain physical device data.");
 
 	// Check if devices are suitable and the first suitable device.
 	int bestScore = 0;
-	for(unsigned int i = 0; i < deviceCount; ++i) 
+	for(unsigned int i = 0; i < nDeviceCount; ++i)
 	{
-		int suitabilityScore = DeviceSuitable(devices[i]);
+		int suitabilityScore = RendererHelper::DeviceSuitable(m_windowSurface, devices[i], m_deviceExtensions, m_eDesiredQueueFamilies);
 		if (suitabilityScore > bestScore) 
 		{
 			m_physDevice = devices[i];
 		}
 	}
 
+	// Get queue family indices.
+	RendererHelper::QueueFamilyIndices indices = RendererHelper::FindQueueFamilies(m_windowSurface, m_physDevice, m_eDesiredQueueFamilies);
+
+	m_nPresentQueueFamilyIndex = indices.m_nPresentFamilyIndex;
+	m_nGraphicsQueueFamilyIndex = indices.m_nGraphicsFamilyIndex;
+	m_nComputeQueueFamilyIndex = indices.m_nComputeFamilyIndex;
+	m_nTransferQueueFamilyIndex = indices.m_nTransferFamilyIndex;
+
 	if (m_physDevice == VK_NULL_HANDLE)
 		throw std::runtime_error("Renderer Error: Failed to find suitable GPU!");
-}
-
-bool Renderer::FindQueueFamilies(VkPhysicalDevice device) 
-{
-	unsigned int queueFamilyCount = 0;
-	vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-
-	// Get queue family information...
-	DynamicArray<VkQueueFamilyProperties> queueFamilies(queueFamilyCount, 1);
-	queueFamilies.SetCount(queueFamilyCount);
-
-	vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.Data());
-
-	// Get queue indices.
-	for(unsigned int i = 0; i < queueFamilyCount; ++i) 
-	{
-		VkBool32 hasPresentSupport = VK_FALSE;
-		vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_windowSurface, &hasPresentSupport);
-
-		// Find present family index.
-		if (queueFamilies[i].queueCount > 0 && hasPresentSupport)
-		{
-			m_presentQueueFamilyIndex = i;
-		}
-
-		// Find graphics family index.
-		if (queueFamilies[i].queueCount > 0 && queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
-		{
-			m_graphicsQueueFamilyIndex = i;
-		}
-
-		// Find compute family index.
-		if (queueFamilies[i].queueCount > 0 && queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT)
-		{
-			m_computeQueueFamilyIndex = i;
-		}
-
-		// Find transfer queue family index, it should not be a graphics family.
-		if (queueFamilies[i].queueCount > 0 && queueFamilies[i].queueFlags & VK_QUEUE_TRANSFER_BIT && !(queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT))
-		{
-			m_transferQueueFamilyIndex = i;
-		}
-	}
-
-	return m_presentQueueFamilyIndex > -1 && m_graphicsQueueFamilyIndex > -1 && m_computeQueueFamilyIndex > -1 && m_transferQueueFamilyIndex > -1;
 }
 
 void Renderer::CreateLogicalDevice()
 {
 	DynamicArray<VkDeviceQueueCreateInfo> queueCreateInfos;
-	std::set<int> uniqueQueueFamilies = { m_presentQueueFamilyIndex, m_graphicsQueueFamilyIndex, m_computeQueueFamilyIndex, m_transferQueueFamilyIndex };
+	std::set<int> uniqueQueueFamilies = { m_nPresentQueueFamilyIndex, m_nGraphicsQueueFamilyIndex, m_nComputeQueueFamilyIndex, m_nTransferQueueFamilyIndex };
 
 	float queuePriority = QUEUE_PRIORITY;
 
@@ -657,8 +500,9 @@ void Renderer::CreateWindowSurface()
 
 void Renderer::CreateSwapChain() 
 {
-	SwapChainDetails* details = GetSwapChainSupportDetails(m_physDevice);
+	RendererHelper::SwapChainDetails* details = RendererHelper::GetSwapChainSupportDetails(m_windowSurface, m_physDevice);
 
+	// Find best format, present mode, and image extents for the swap chain images.
 	VkSurfaceFormatKHR format = ChooseSwapSurfaceFormat(details->m_formats);
 	VkPresentModeKHR presentMode = ChooseSwapPresentMode(details->m_presentModes);
 	m_swapChainImageExtents = ChooseSwapExtent(details->m_capabilities);
@@ -687,11 +531,11 @@ void Renderer::CreateSwapChain()
 
 	unsigned int queueFamilyIndices[2] = 
 	{ 
-		static_cast<unsigned int>(m_presentQueueFamilyIndex), 
-		static_cast<unsigned int>(m_graphicsQueueFamilyIndex) 
+		static_cast<unsigned int>(m_nPresentQueueFamilyIndex), 
+		static_cast<unsigned int>(m_nGraphicsQueueFamilyIndex) 
 	};
 
-	if(m_graphicsQueueFamilyIndex != m_presentQueueFamilyIndex) 
+	if(m_nGraphicsQueueFamilyIndex != m_nPresentQueueFamilyIndex) 
 	{
 		createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
 		createInfo.queueFamilyIndexCount = 2;
@@ -706,13 +550,15 @@ void Renderer::CreateSwapChain()
 
 	vkCreateSwapchainKHR(m_logicDevice, &createInfo, nullptr, &m_swapChain);
 
-	// Retrieve swap chain images.
+	// Retrieve swap chain image count.
 	unsigned int swapChainImageCount = 0;
 	RENDERER_SAFECALL(vkGetSwapchainImagesKHR(m_logicDevice, m_swapChain, &swapChainImageCount, nullptr), "Renderer Error: Failed to retrieve swap chain image count.");
 
+	// Resize handle array to match image count.
 	m_swapChainImages.SetSize(swapChainImageCount);
 	m_swapChainImages.SetCount(swapChainImageCount);
 
+	// Retrieve actual swap chain images.
 	RENDERER_SAFECALL(vkGetSwapchainImagesKHR(m_logicDevice, m_swapChain, &swapChainImageCount, m_swapChainImages.Data()), "Renderer Error: Failed to retieve swap chain images.");
 
 	delete details;
@@ -732,12 +578,12 @@ void Renderer::CreateSwapChainImageViews()
 		viewCreateInfo.image = m_swapChainImages[i];
 		viewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		viewCreateInfo.format = m_swapChainImageFormat;
-		viewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+		viewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY; // Components are independent.
 		viewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
 		viewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
 		viewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 
-		viewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		viewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // Swap chain images are of course color buffers.
 		viewCreateInfo.subresourceRange.baseMipLevel = 0;
 		viewCreateInfo.subresourceRange.levelCount = 1;
 		viewCreateInfo.subresourceRange.baseArrayLayer = 0;
@@ -749,30 +595,14 @@ void Renderer::CreateSwapChainImageViews()
 	}
 }
 
-void Renderer::CreateDepthImages() 
+void Renderer::CreateDepthImage() 
 {
-	// Resize arrays.
-	m_depthImages.SetSize(m_swapChainImageViews.GetSize());
-	m_depthImages.SetCount(m_depthImages.GetSize());
-
-	//m_depthImageMemories.SetSize(m_depthImages.GetSize());
-	//m_depthImageMemories.SetCount(m_depthImageMemories.GetSize());
-
-	//m_depthImageViews.SetSize(m_depthImages.GetSize());
-	//m_depthImageViews.SetCount(m_depthImageViews.GetSize());
-
+	// Specify pool of depth formats and find the best available format.
 	DynamicArray<VkFormat> formats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
+	VkFormat depthFormat = RendererHelper::FindBestDepthFormat(m_physDevice, formats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
 
-	VkFormat depthFormat = FindBestFormat(formats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-
-	for(int i = 0; i < m_depthImages.Count(); ++i) 
-	{
-		// Create depth images and views.
-		//CreateImage(m_depthImages[i], m_depthImageMemories[i], m_swapChainImageExtents.width, m_swapChainImageExtents.height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-		//CreateImageView(m_depthImages[i], m_depthImageViews[i], depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
-
-		m_depthImages[i] = new Texture(this, m_swapChainImageExtents.width, m_swapChainImageExtents.height, ATTACHMENT_DEPTH_STENCIL, depthFormat);
-	}
+	// Create the depth buffer image.
+	m_depthImage = new Texture(this, m_swapChainImageExtents.width, m_swapChainImageExtents.height, ATTACHMENT_DEPTH_STENCIL, depthFormat);
 }
 
 void Renderer::CreateRenderPasses() 
@@ -796,14 +626,14 @@ void Renderer::CreateRenderPasses()
 		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Expected optimal layout.
 
 		VkAttachmentDescription depthAttachment = {};
-		depthAttachment.format = m_depthImages[0]->Format();
+		depthAttachment.format = m_depthImage->Format();
 		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // No multisampling.
 		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Load from previous pass.
 		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store.
 		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // We are not using stencil for now, so we don't care.
 		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't care.
-		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Initial layout should have already been determined.
-		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Output optimal layout for the next render pass.
+		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Layout could be undefined or VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL.
+		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 		VkAttachmentReference depthAttachmentRef = {};
 		depthAttachmentRef.attachment = 1;
@@ -944,7 +774,7 @@ void Renderer::CreateFramebuffers()
 
 	for (int i = 0; i < m_swapChainImageViews.Count(); ++i) 
 	{
-		VkImageView attachments[3] = { m_swapChainImageViews[i], m_depthImages[i]->ImageView() }; // Image used as the framebuffer attachment.
+		VkImageView attachments[] = { m_swapChainImageViews[i], m_depthImage->ImageView() }; // Image used as the framebuffer attachment.
 
 		VkFramebufferCreateInfo framebufferInfo = {};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -966,7 +796,7 @@ void Renderer::CreateCommandPool()
 
 	VkCommandPoolCreateInfo poolCreateInfo = {};
 	poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	poolCreateInfo.queueFamilyIndex = m_graphicsQueueFamilyIndex;
+	poolCreateInfo.queueFamilyIndex = m_nGraphicsQueueFamilyIndex;
 	poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
 
 	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_graphicsCmdPool), "Renderer Error: Failed to create command pool.");
@@ -1011,7 +841,7 @@ void Renderer::CreateCmdBuffers()
 
 	VkCommandPoolCreateInfo transferPoolInfo = {};
 	transferPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	transferPoolInfo.queueFamilyIndex = m_transferQueueFamilyIndex;
+	transferPoolInfo.queueFamilyIndex = m_nTransferQueueFamilyIndex;
 	transferPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
 
 	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &transferPoolInfo, nullptr, &m_transferCmdPool), "Renderer Error: Failed to create dedicated transfer command pool.");
@@ -1569,7 +1399,7 @@ const unsigned int& Renderer::FrameHeight() const
 	return m_swapChainImageExtents.height;
 }
 
-const unsigned int Renderer::SwapChainImageCount() const
+const unsigned int& Renderer::SwapChainImageCount() const
 {
 	return m_swapChainImageViews.GetSize();
 }

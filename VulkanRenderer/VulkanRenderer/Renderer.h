@@ -5,22 +5,14 @@
 #include <iostream>
 #include <thread>
 
+#include "RendererHelper.h"
+
 #include "DynamicArray.h"
 #include "Queue.h"
 #include "Table.h"
 #include "glm.hpp"
 
 #define QUEUE_PRIORITY 1.0f
-
-#ifdef RENDERER_DEBUG
-
-#define RENDERER_SAFECALL(func, message) Renderer::m_safeCallResult = func; if(Renderer::m_safeCallResult) { throw std::runtime_error(message); }
-
-#else
-
-#define RENDERER_SAFECALL(func, message) Renderer::m_safeCallResult = func; //message
-
-#endif
 
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
@@ -127,7 +119,7 @@ public:
 
 	const unsigned int& FrameHeight() const;
 
-	const unsigned int SwapChainImageCount() const;
+	const unsigned int& SwapChainImageCount() const;
 
 	// Setters
 	void SetViewMatrix(glm::mat4& viewMat);
@@ -153,21 +145,12 @@ private:
 	// Check if the necessary validation layers are supported for debug.
 	inline void CheckValidationLayerSupport();
 
-	// Check if the device supports all the necessary extensions for this renderer.
-	inline bool CheckDeviceExtensionSupport(VkPhysicalDevice device);
-
 	struct SwapChainDetails
 	{
 		VkSurfaceCapabilitiesKHR m_capabilities;
 		DynamicArray<VkSurfaceFormatKHR> m_formats;
 		DynamicArray<VkPresentModeKHR> m_presentModes;
 	};
-
-	// Get information about the swap chain.
-	SwapChainDetails* GetSwapChainSupportDetails(VkPhysicalDevice device);
-
-	// Rate how suitable a device is for this renderer.
-	inline int DeviceSuitable(VkPhysicalDevice device);
 
 	// Get GPU to be used for rendering.
 	inline void GetPhysicalDevice();
@@ -178,14 +161,8 @@ private:
 	// Debug messenger destruction proxy function.
 	VkResult DestroyDebugUtilsMessengerEXT(VkInstance instance, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger);
 
-	// Find most suitable format for depth images.
-	inline VkFormat FindBestFormat(DynamicArray<VkFormat>& formats, VkImageTiling tiling, VkFormatFeatureFlags features);
-
 	// Create debug messenger.
 	inline void SetupDebugMessenger();
-
-	// Find supported queue families.
-	inline bool FindQueueFamilies(VkPhysicalDevice device);
 
 	// Create logical device to interface with the physical device.
 	inline void CreateLogicalDevice();
@@ -199,8 +176,8 @@ private:
 	// Create swapchain image views.
 	inline void CreateSwapChainImageViews();
 
-	// Create depth/stencil images.
-	inline void CreateDepthImages();
+	// Create depth/stencil image.
+	inline void CreateDepthImage();
 
 	// Create render pass.
 	inline void CreateRenderPasses();
@@ -277,20 +254,26 @@ private:
 	VkPhysicalDevice m_physDevice;
 	VkDevice m_logicDevice;
 
+	// -----------------------------------------------------------------------------------------------------
 	// Queue families.
+
+	static const RendererHelper::EQueueFamilyFlags m_eDesiredQueueFamilies;
+
 	VkQueue m_graphicsQueue;
 	VkQueue m_presentQueue;
 	VkQueue m_transferQueue;
 	VkQueue m_computeQueue;
 
-	int m_graphicsQueueFamilyIndex;
-	int m_presentQueueFamilyIndex;
-	int m_transferQueueFamilyIndex;
-	int m_computeQueueFamilyIndex;
+	int m_nGraphicsQueueFamilyIndex;
+	int m_nPresentQueueFamilyIndex;
+	int m_nTransferQueueFamilyIndex;
+	int m_nComputeQueueFamilyIndex;
 
+	// -----------------------------------------------------------------------------------------------------
 	// Window surface.
 	VkSurfaceKHR m_windowSurface;
 
+	// -----------------------------------------------------------------------------------------------------
 	// Swap chain and swap chain images & framebuffers.
 	VkFormat m_swapChainImageFormat;
 	VkExtent2D m_swapChainImageExtents;
@@ -299,9 +282,11 @@ private:
 	DynamicArray<VkImageView> m_swapChainImageViews;
 	DynamicArray<VkFramebuffer> m_swapChainFramebuffers;
 
+	// -----------------------------------------------------------------------------------------------------
 	// Images and framebuffers.
-	DynamicArray<Texture*> m_depthImages;
+	Texture* m_depthImage;
 
+	// -----------------------------------------------------------------------------------------------------
 	// Commands
 	VkCommandPool m_graphicsCmdPool;
 	VkCommandPool m_transferCmdPool;
@@ -309,18 +294,21 @@ private:
 	DynamicArray<VkCommandBuffer> m_dynamicPassCmdBufs; // Command buffers for the dynamic render pass.
 	DynamicArray<VkCommandBuffer> m_transferCmdBufs; // Command buffer for dedicated transfer operations.
 
+	// -----------------------------------------------------------------------------------------------------
 	// Descriptors
 	VkDescriptorSetLayout m_uboDescriptorSetLayout;
 
 	VkDescriptorPool m_uboDescriptorPool;
 	DynamicArray<VkDescriptorSet> m_uboDescriptorSets;
 
+	// -----------------------------------------------------------------------------------------------------
 	// Descriptor buffers
 	DynamicArray<VkBuffer> m_mvpBuffers;
 	DynamicArray<VkDeviceMemory> m_mvpBufferMemBlocks;
 
 	MVPUniformBuffer m_mvp;
 
+	// -----------------------------------------------------------------------------------------------------
 	// Rendering
 	VkRenderPass m_mainRenderPass;
 
