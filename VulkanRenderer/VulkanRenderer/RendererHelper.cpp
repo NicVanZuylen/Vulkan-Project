@@ -196,3 +196,59 @@ int RendererHelper::DeviceSuitable(VkSurfaceKHR windowSurface, VkPhysicalDevice 
 
 	return score;
 }
+
+VkResult RendererHelper::CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* createInfo, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger)
+{
+	auto func = GetExternalFunction<PFN_vkCreateDebugUtilsMessengerEXT>(instance, "vkCreateDebugUtilsMessengerEXT");
+
+	if (func)
+	{
+		return func(instance, createInfo, allocator, messenger);
+	}
+	else
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+}
+
+VkResult RendererHelper::DestroyDebugUtilsMessengerEXT(VkInstance instance, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger)
+{
+	auto func = GetExternalFunction<PFN_vkDestroyDebugUtilsMessengerEXT>(instance, "vkDestroyDebugUtilsMessengerEXT");
+
+	if (func)
+	{
+		func(instance, *messenger, allocator);
+
+		return VK_SUCCESS;
+	}
+	else
+		return VK_ERROR_EXTENSION_NOT_PRESENT;
+}
+
+VKAPI_ATTR VkBool32 VKAPI_CALL RendererHelper::ErrorCallback
+(
+	VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+	VkDebugUtilsMessageTypeFlagsEXT type,
+	const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
+	void* userData
+)
+{
+	if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+		std::cout << "Vulkan Validation Error: " << callbackData->pMessage << std::endl;
+	else if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+		std::cout << "Vulkan Validation Warning: " << callbackData->pMessage << std::endl;
+	else
+		std::cout << "Vulkan Validation Info: " << callbackData->pMessage << std::endl;
+
+	return VK_FALSE;
+}
+
+void RendererHelper::SetupDebugMessenger(const VkInstance& instance, VkDebugUtilsMessengerEXT& messenger)
+{
+	VkDebugUtilsMessengerCreateInfoEXT createInfo = {};
+	createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+	createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+	createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+	createInfo.pfnUserCallback = &ErrorCallback;
+	createInfo.pUserData = nullptr;
+
+	RENDERER_SAFECALL(CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &messenger), "Renderer Error: Failed to create debug messenger!");
+}

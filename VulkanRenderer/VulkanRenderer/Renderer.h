@@ -119,7 +119,7 @@ public:
 
 	const unsigned int& FrameHeight() const;
 
-	const unsigned int& SwapChainImageCount() const;
+	const unsigned int SwapChainImageCount() const;
 
 	// Setters
 	void SetViewMatrix(glm::mat4& viewMat);
@@ -128,14 +128,6 @@ public:
 	static VkResult m_safeCallResult;
 
 private:
-
-	static VKAPI_ATTR VkBool32 VKAPI_CALL ErrorCallback
-	(
-		VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-		VkDebugUtilsMessageTypeFlagsEXT type,
-		const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
-		void* userData
-	);
 
 	static DynamicArray<CopyRequest> m_newTransferRequests;
 
@@ -154,15 +146,6 @@ private:
 
 	// Get GPU to be used for rendering.
 	inline void GetPhysicalDevice();
-
-	// Debug messenger creation proxy function.
-	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* createInfo, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger);
-
-	// Debug messenger destruction proxy function.
-	VkResult DestroyDebugUtilsMessengerEXT(VkInstance instance, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger);
-
-	// Create debug messenger.
-	inline void SetupDebugMessenger();
 
 	// Create logical device to interface with the physical device.
 	inline void CreateLogicalDevice();
@@ -213,7 +196,7 @@ private:
 	inline void RecordMainCommandBuffer(const unsigned int& bufferIndex);
 
 	// Record dynamic secondary command buffer.
-	inline void RecordDynamicCommandBuffer(const unsigned int& bufferIndex);
+	inline void RecordDynamicCommandBuffer(const unsigned int& bufferIndex, const unsigned int& frameIndex);
 
 	// Create semaphores & fences.
 	inline void CreateSyncObjects();
@@ -240,7 +223,7 @@ private:
 	// -----------------------------------------------------------------------------------------------------
 	// Validation layers
 	static const DynamicArray<const char*> m_validationLayers;
-	static const bool m_enableValidationLayers;
+	static const bool m_bEnableValidationLayers;
 
 	VkDebugUtilsMessengerEXT m_messenger;
 
@@ -319,14 +302,14 @@ private:
 	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;
 	DynamicArray<VkFence> m_copyReadyFences;
 	DynamicArray<VkFence> m_inFlightFences;
-	unsigned long long m_currentFrame;
-	unsigned int m_currentFrameIndex;
-	unsigned int m_presentImageIndex;
+	unsigned long long m_nCurrentFrame;
+	unsigned int m_nCurrentFrameIndex;
+	unsigned int m_nPresentImageIndex;
 	
 	DynamicArray<DynamicArray<CopyRequest>> m_transferBuffers; // Arrays of transfer request buffer arrays for each concurrent transfer command buffer.
 	Queue<unsigned int> m_transferIndices;
 	std::thread* m_transferThread;
-	unsigned int m_transferFrameIndex;
+	unsigned int m_nTransferFrameIndex;
 	bool m_bTransferThread;
 	bool m_bTransferReady;
 

@@ -32,11 +32,11 @@ const RendererHelper::EQueueFamilyFlags Renderer::m_eDesiredQueueFamilies = stat
 
 #ifndef RENDERER_DEBUG
 
-const bool Renderer::m_enableValidationLayers = false;
+const bool Renderer::m_bEnableValidationLayers = false;
 
 #else
 
-const bool Renderer::m_enableValidationLayers = true;
+const bool Renderer::m_bEnableValidationLayers = true;
 
 #endif
 
@@ -73,7 +73,10 @@ Renderer::Renderer(GLFWwindow* window)
 	CreateVKInstance();
 
 	// Debug
-	SetupDebugMessenger();
+	if (m_bEnableValidationLayers) 
+	{
+		RendererHelper::SetupDebugMessenger(m_instance, m_messenger);
+	}
 
 	// Window
 	CreateWindowSurface();
@@ -167,7 +170,8 @@ Renderer::~Renderer()
 	delete[] m_extensions;
 
 	// Destroy debug messenger.
-	DestroyDebugUtilsMessengerEXT(m_instance, nullptr, &m_messenger);
+	if(m_bEnableValidationLayers)
+	    RendererHelper::DestroyDebugUtilsMessengerEXT(m_instance, nullptr, &m_messenger);
 
 	delete m_depthImage;
 
@@ -232,24 +236,6 @@ void Renderer::UnregisterShader(Shader* shader)
 		// Shader is no longer registered.
 		shader->m_registered = false;
 	}
-}
-
-VKAPI_ATTR VkBool32 VKAPI_CALL Renderer::ErrorCallback
-(
-	VkDebugUtilsMessageSeverityFlagBitsEXT severity,
-	VkDebugUtilsMessageTypeFlagsEXT type,
-	const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
-	void* userData
-) 
-{
-	if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
-		std::cout << "Vulkan Validation Error: " << callbackData->pMessage << std::endl;
-	else if(severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
-		std::cout << "Vulkan Validation Warning: " << callbackData->pMessage << std::endl;
-	else
-		std::cout << "Vulkan Validation Info: " << callbackData->pMessage << std::endl;
-
-	return VK_FALSE;
 }
 
 void Renderer::CreateVKInstance() 
@@ -338,7 +324,7 @@ void Renderer::CreateVKInstance()
 
 void Renderer::CheckValidationLayerSupport() 
 {
-	if (!m_enableValidationLayers)
+	if (!m_bEnableValidationLayers)
 		return;
 
 	// Get available validation layers...
@@ -368,53 +354,6 @@ void Renderer::CheckValidationLayerSupport()
 		std::cout << "Renderer Info: All necessary validation layers found." << std::endl;
 	else
 		std::cout << "Renderer Warning: Not all necessary validation layers were found!" << std::endl;
-}
-
-VkResult Renderer::CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* createInfo, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger) 
-{
-	if (!m_enableValidationLayers)
-		return VK_ERROR_NOT_PERMITTED_EXT;
-
-	auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-
-	if (func)
-	{
-		return func(instance, createInfo, allocator, messenger);
-	}
-	else
-		return VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-VkResult Renderer::DestroyDebugUtilsMessengerEXT(VkInstance instance, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger)
-{
-	if (!m_enableValidationLayers)
-		return VK_ERROR_NOT_PERMITTED_EXT;
-
-	auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-
-	if (func)
-	{
-		func(instance, *messenger, allocator);
-
-		return VK_SUCCESS;
-	}
-	else
-		return VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-void Renderer::SetupDebugMessenger() 
-{
-	if (!m_enableValidationLayers)
-		return;
-
-	VkDebugUtilsMessengerCreateInfoEXT createInfo = {};
-	createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-	createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-	createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-	createInfo.pfnUserCallback = &ErrorCallback;
-	createInfo.pUserData = nullptr;
-
-	RENDERER_SAFECALL(CreateDebugUtilsMessengerEXT(m_instance, &createInfo, nullptr, &m_messenger), "Renderer Error: Failed to create debug messenger!");
 }
 
 void Renderer::GetPhysicalDevice() 
@@ -482,7 +421,7 @@ void Renderer::CreateLogicalDevice()
 	logicDeviceCreateInfo.ppEnabledExtensionNames = m_deviceExtensions.Data();
 
 	// Logical device validation layers
-	if (m_enableValidationLayers)
+	if (m_bEnableValidationLayers)
 	{
 		logicDeviceCreateInfo.ppEnabledLayerNames = m_validationLayers.Data();
 		logicDeviceCreateInfo.enabledLayerCount = m_validationLayers.Count();
@@ -571,7 +510,7 @@ void Renderer::CreateSwapChainImageViews()
 
 	for (int i = 0; i < m_swapChainImages.Count(); ++i) 
 	{
-		VkImageView view;
+		VkImageView view = nullptr;
 		VkImageViewCreateInfo viewCreateInfo = {};
 
 		viewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -697,7 +636,7 @@ void Renderer::CreateMVPUniformBuffers()
 	unsigned int bufferSize = sizeof(MVPUniformBuffer);
 
 	// Resize arrays.
-	m_mvpBuffers.SetSize(m_swapChainImageViews.Count());
+	m_mvpBuffers.SetSize(MAX_FRAMES_IN_FLIGHT); // One buffer needs to exist for each "Frame in flight"/frame waiting on the queue.
 	m_mvpBuffers.SetCount(m_mvpBuffers.GetSize());
 
 	m_mvpBufferMemBlocks.SetSize(m_mvpBuffers.GetSize());
@@ -725,8 +664,8 @@ void Renderer::CreateUBOMVPDescriptorPool()
 void Renderer::CreateUBOMVPDescriptorSets() 
 {
 	// Descriptor layouts for each swap chain image
-	DynamicArray<VkDescriptorSetLayout> layouts;
-	for (int i = 0; i < m_swapChainImageViews.GetSize(); ++i)
+	DynamicArray<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, 1);
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
 		layouts.Push(m_uboDescriptorSetLayout);
 
 	// Allocation info for descriptor sets.
@@ -737,7 +676,7 @@ void Renderer::CreateUBOMVPDescriptorSets()
 	allocInfo.pSetLayouts = layouts.Data();
 
 	// Resize descriptor set array.
-	m_uboDescriptorSets.SetSize(m_swapChainImageViews.GetSize());
+	m_uboDescriptorSets.SetSize(MAX_FRAMES_IN_FLIGHT);
 	m_uboDescriptorSets.SetCount(m_uboDescriptorSets.GetSize());
 
 	// Allocate sets, like command pools destroying the descriptor pool destroys the sets,
@@ -919,17 +858,6 @@ void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex)
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 
-	/*
-	VkCommandBufferInheritanceInfo inheritanceInfo = {};
-	inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-	inheritanceInfo.framebuffer = m_swapChainFramebuffers[i];
-	inheritanceInfo.renderPass = m_mainRenderPass;
-	inheritanceInfo.subpass = 0;
-	inheritanceInfo.occlusionQueryEnable = VK_FALSE;
-
-	beginInfo.pInheritanceInfo = &inheritanceInfo;
-	*/
-
 	vkBeginCommandBuffer(m_mainPrimaryCmdBufs[bufferIndex], &beginInfo);
 
 	// Begin render pass.
@@ -955,7 +883,7 @@ void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex)
 	vkEndCommandBuffer(m_mainPrimaryCmdBufs[bufferIndex]);
 }
 
-void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
+void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex, const unsigned int& frameIndex)
 {
 	// If there was no dynamic state change, no re-recording is necessary.
 	if (!m_dynamicStateChange[bufferIndex])
@@ -978,24 +906,7 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 	// Initial recording of dynamic command buffers...
 	VkCommandBuffer& cmdBuffer = m_dynamicPassCmdBufs[bufferIndex];
 
-	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of static pass command buffer.");
-
-	//VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
-	//VkClearValue depthClearVal = { 1.0f, 1.0f, 1.0f, 1.0f };
-	//
-	//VkClearValue clearVals[3] = { clearVal, depthClearVal };
-	//
-	//// Begin render pass.
-	//VkRenderPassBeginInfo passBeginInfo = {};
-	//passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	//passBeginInfo.renderPass = m_mainRenderPass;
-	//passBeginInfo.framebuffer = m_swapChainFramebuffers[bufferIndex];
-	//passBeginInfo.renderArea.offset = { 0, 0 };
-	//passBeginInfo.renderArea.extent = m_swapChainImageExtents;
-	//passBeginInfo.clearValueCount = 2;
-	//passBeginInfo.pClearValues = clearVals;
-	//
-	//vkCmdBeginRenderPass(cmdBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of dynamic pass command buffer.");
 
 	DynamicArray<PipelineData*>& allPipelines = MeshRenderer::Pipelines();
 
@@ -1007,7 +918,7 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 		// Bind pipelines...
 		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline.m_handle);
 
-		currentPipeline.m_material->UseDescriptorSet(cmdBuffer, currentPipeline.m_layout, bufferIndex);
+		currentPipeline.m_material->UseDescriptorSet(cmdBuffer, currentPipeline.m_layout, frameIndex);
 
 		// Draw objects using the pipeline.
 		DynamicArray<MeshRenderer*>& renderObjects = currentPipeline.m_renderObjects;
@@ -1018,9 +929,7 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex)
 		}
 	}
 
-	//vkCmdEndRenderPass(cmdBuffer);
-
-	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of static pass command buffer.");
+	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of dynamic pass command buffer.");
 
 	RecordMainCommandBuffer(bufferIndex);
 
@@ -1100,14 +1009,14 @@ void Renderer::SubmitTransferOperations()
 
 void Renderer::Begin() 
 {
-	m_currentFrameIndex = ++m_currentFrame % MAX_FRAMES_IN_FLIGHT;
+	m_nCurrentFrameIndex = ++m_nCurrentFrame % MAX_FRAMES_IN_FLIGHT;
 
-	// Wait of frames-in-flight.
-	vkWaitForFences(m_logicDevice, 1, &m_inFlightFences[m_currentFrameIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
-	vkResetFences(m_logicDevice, 1, &m_inFlightFences[m_currentFrameIndex]);
+	// Wait for frames-in-flight.
+	vkWaitForFences(m_logicDevice, 1, &m_inFlightFences[m_nCurrentFrameIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
+	vkResetFences(m_logicDevice, 1, &m_inFlightFences[m_nCurrentFrameIndex]);
 
 	// Aquire next image from the swap chain.
-	RENDERER_SAFECALL(vkAcquireNextImageKHR(m_logicDevice, m_swapChain, std::numeric_limits<unsigned long long>::max(), m_imageAvailableSemaphores[m_currentFrameIndex], VK_NULL_HANDLE, &m_presentImageIndex),
+	RENDERER_SAFECALL(vkAcquireNextImageKHR(m_logicDevice, m_swapChain, std::numeric_limits<unsigned long long>::max(), m_imageAvailableSemaphores[m_nCurrentFrameIndex], VK_NULL_HANDLE, &m_nPresentImageIndex),
 		"Renderer Error: Failed to aquire next swap chain image.");
 }
 
@@ -1151,16 +1060,16 @@ void Renderer::ForceDynamicStateChange()
 
 void Renderer::End() 
 {
-	UpdateMVP(m_presentImageIndex);
+	UpdateMVP(m_nCurrentFrameIndex);
 
 	// Re-record the dynamic command buffer for this swap chain image if it has changed.
-    RecordDynamicCommandBuffer(m_presentImageIndex);
+    RecordDynamicCommandBuffer(m_nPresentImageIndex, m_nCurrentFrameIndex);
 
 	if (m_bTransferReady && m_newTransferRequests.Count() > 0) 
 	{
-		m_transferFrameIndex = m_currentFrame % MAX_CONCURRENT_COPIES;
+		m_nTransferFrameIndex = m_nCurrentFrame % MAX_CONCURRENT_COPIES;
 
-		DynamicArray<CopyRequest>& requests = m_transferBuffers[m_transferFrameIndex];
+		DynamicArray<CopyRequest>& requests = m_transferBuffers[m_nTransferFrameIndex];
 
 		// Ensure there is enough room for the new requests.
 		if(requests.GetSize() < m_newTransferRequests.GetSize())
@@ -1175,7 +1084,7 @@ void Renderer::End()
 		m_newTransferRequests.Clear();
 
 		// Enqueue index of these requests for command buffer recording and execution.
-		m_transferIndices.Enqueue(m_transferFrameIndex);
+		m_transferIndices.Enqueue(m_nTransferFrameIndex);
 		m_bTransferReady = false;
 	}
 
@@ -1183,25 +1092,25 @@ void Renderer::End()
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-	VkCommandBuffer cmdBuffers[] = { m_mainPrimaryCmdBufs[m_presentImageIndex] };
+	VkCommandBuffer cmdBuffers[] = { m_mainPrimaryCmdBufs[m_nPresentImageIndex] };
 
 	submitInfo.waitSemaphoreCount = 1;
-	submitInfo.pWaitSemaphores = &m_imageAvailableSemaphores[m_currentFrameIndex];
+	submitInfo.pWaitSemaphores = &m_imageAvailableSemaphores[m_nCurrentFrameIndex];
 	submitInfo.pWaitDstStageMask = waitStages;
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = cmdBuffers;
 	submitInfo.signalSemaphoreCount = 1;
-	submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[m_currentFrameIndex];
+	submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[m_nCurrentFrameIndex];
 
-	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_currentFrameIndex]), "Renderer Error: Failed to submit command buffer.");
+	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_nCurrentFrameIndex]), "Renderer Error: Failed to submit command buffer.");
 
 	VkPresentInfoKHR presentInfo = {};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pWaitSemaphores = &m_renderFinishedSemaphores[m_currentFrameIndex];
+	presentInfo.pWaitSemaphores = &m_renderFinishedSemaphores[m_nCurrentFrameIndex];
 	presentInfo.swapchainCount = 1;
 	presentInfo.pSwapchains = &m_swapChain;
-	presentInfo.pImageIndices = &m_presentImageIndex;
+	presentInfo.pImageIndices = &m_nPresentImageIndex;
 	presentInfo.pResults = nullptr;
 
 	RENDERER_SAFECALL(vkQueuePresentKHR(m_graphicsQueue, &presentInfo), "Renderer Error: Failed to present swap chain image.");
@@ -1399,7 +1308,7 @@ const unsigned int& Renderer::FrameHeight() const
 	return m_swapChainImageExtents.height;
 }
 
-const unsigned int& Renderer::SwapChainImageCount() const
+const unsigned int Renderer::SwapChainImageCount() const
 {
 	return m_swapChainImageViews.GetSize();
 }

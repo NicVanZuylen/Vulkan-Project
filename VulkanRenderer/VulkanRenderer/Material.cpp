@@ -161,9 +161,9 @@ void Material::CreateDescriptorSetLayouts()
 void Material::CreateDescriptorObjects() 
 {
 	VkDescriptorPoolSize poolSizes[2] = {};
-	poolSizes[0].descriptorCount = m_renderer->SwapChainImageCount();
+	poolSizes[0].descriptorCount = MAX_FRAMES_IN_FLIGHT;
 	poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSizes[1].descriptorCount = m_renderer->SwapChainImageCount() * m_textures.Count();
+	poolSizes[1].descriptorCount = MAX_FRAMES_IN_FLIGHT * m_textures.Count();
 	poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
 	int poolSizeCount = 1 + m_bUseMVPUBO;
@@ -171,30 +171,31 @@ void Material::CreateDescriptorObjects()
 	VkDescriptorPoolCreateInfo poolCreateInfo = {};
 	poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolCreateInfo.poolSizeCount = poolSizeCount;
-	//poolCreateInfo.pPoolSizes = &poolSizes[!m_bUseMVPUBO];
 
 	if (m_bUseMVPUBO)
 		poolCreateInfo.pPoolSizes = poolSizes;
 	else
 		poolCreateInfo.pPoolSizes = &poolSizes[1];
 
-	poolCreateInfo.maxSets = m_renderer->SwapChainImageCount();
+	poolCreateInfo.maxSets = MAX_FRAMES_IN_FLIGHT;
 	
 	RENDERER_SAFECALL(vkCreateDescriptorPool(m_renderer->GetDevice(), &poolCreateInfo, nullptr, &m_descriptorPool), "Material Error: Failed to create descriptor pool.");
 
 	CreateDescriptorSetLayouts();
 
-	VkDescriptorSetLayout setLayouts[3] = { m_descriptorSetLayout, m_descriptorSetLayout, m_descriptorSetLayout };
+	DynamicArray<VkDescriptorSetLayout> setLayouts(MAX_FRAMES_IN_FLIGHT, 1);
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+		setLayouts.Push(m_descriptorSetLayout);
 
 	VkDescriptorSetAllocateInfo allocInfo = {};
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocInfo.descriptorPool = m_descriptorPool;
-	allocInfo.descriptorSetCount = m_renderer->SwapChainImageCount();
-	allocInfo.pSetLayouts = setLayouts;
+	allocInfo.descriptorSetCount = setLayouts.Count();
+	allocInfo.pSetLayouts = setLayouts.Data();
 	allocInfo.pNext = nullptr;
 
-	// There should be a descriptor set for each swap chain image.
-	m_descriptorSets.SetSize(m_renderer->SwapChainImageCount());
+	// There should be a descriptor set for each frame-in-flight.
+	m_descriptorSets.SetSize(MAX_FRAMES_IN_FLIGHT);
 	m_descriptorSets.SetCount(m_descriptorSets.GetSize());
 
 	RENDERER_SAFECALL(vkAllocateDescriptorSets(m_renderer->GetDevice(), &allocInfo, m_descriptorSets.Data()), "Material Error: Failed to create descriptor sets.");
@@ -215,7 +216,7 @@ void Material::UpdateDescriptorSets()
 		imageInfos[i].sampler = m_sampler->GetHandle();
 	}
 
-	for(uint32_t i = 0; i < m_renderer->SwapChainImageCount(); ++i) 
+	for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
 	{
 		VkDescriptorBufferInfo uboInfo = {};
 		uboInfo.buffer = m_renderer->MVPUBOHandle(i);

@@ -14,7 +14,7 @@
 
 #else
 
-#define RENDERER_SAFECALL(func, message) RendererHelper::safeCallResult = func; //message
+#define RENDERER_SAFECALL(func, message) func; //message
 
 #endif
 
@@ -87,6 +87,8 @@ public:
 	*/
 	static SwapChainDetails* GetSwapChainSupportDetails(VkSurfaceKHR windowSurface, VkPhysicalDevice device);
 
+
+
 	/*
 	Description: Find the best supported image format out of the provided image formats.
 	Return Type: VkFormat
@@ -97,6 +99,36 @@ public:
 		VkFormatFeatureFlags features: Desired features formats should possess.
 	*/
 	static VkFormat FindBestDepthFormat(VkPhysicalDevice physDevice, DynamicArray<VkFormat>& formats, VkImageTiling tiling, VkFormatFeatureFlags features);
+
+	template<typename T>
+	static T GetExternalFunction(VkInstance instance, const char* funcName)
+	{
+		auto func = (T)vkGetInstanceProcAddr(instance, funcName);
+
+		return func;
+	}
+
+	// Debug messenger creation proxy function.
+	static VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* createInfo, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger);
+
+	// Debug messenger destruction proxy function.
+	static VkResult DestroyDebugUtilsMessengerEXT(VkInstance instance, const VkAllocationCallbacks* allocator, VkDebugUtilsMessengerEXT* messenger);
+
+	static VKAPI_ATTR VkBool32 VKAPI_CALL ErrorCallback
+	(
+		VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+		VkDebugUtilsMessageTypeFlagsEXT type,
+		const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
+		void* userData
+	);
+
+	/*
+	Description: Create validation layer messenger.
+	Param:
+	    const VkInstance& instance: The Vulkan instance to create the messenger for.
+		VkDebugUtilsMessengerEXT& messenger: Messenger handle to reference with.
+	*/
+	static void SetupDebugMessenger(const VkInstance& instance, VkDebugUtilsMessengerEXT& messenger);
 };
 
 #endif

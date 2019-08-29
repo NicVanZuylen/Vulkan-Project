@@ -102,8 +102,8 @@ void Application::Run()
 
 	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), 0.3f, 5.0f);
 
-	m_renderer->AddDynamicObject(testObject);
-	m_renderer->AddDynamicObject(testObject2);
+	//m_renderer->AddDynamicObject(testObject);
+	//m_renderer->AddDynamicObject(testObject2);
 	
 	Instance ins;
 	ins.m_modelMat = glm::translate(glm::vec3(1.0f, 0.0f, 0.0f));
