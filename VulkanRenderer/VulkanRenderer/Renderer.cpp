@@ -49,8 +49,8 @@ Renderer::Renderer(GLFWwindow* window)
 	m_extensions = nullptr;
 	m_extensionCount = 0;
 
-	m_windowWidth = WINDOW_WIDTH;
-	m_windowHeight = WINDOW_HEIGHT;
+	m_nWindowWidth = WINDOW_WIDTH;
+	m_nWindowHeight = WINDOW_HEIGHT;
 
 	m_instance = VK_NULL_HANDLE;
 	m_physDevice = VK_NULL_HANDLE;
@@ -65,6 +65,8 @@ Renderer::Renderer(GLFWwindow* window)
 	m_bTransferThread = true;
 	m_bTransferReady = true;
 	m_transferThread = new std::thread(&Renderer::SubmitTransferOperations, this);
+
+	m_bMinimized = false;
 
 	// Check for validation layer support.
 	CheckValidationLayerSupport();
@@ -142,7 +144,7 @@ Renderer::~Renderer()
 	// Destroy MVP UBO descriptor set layout.
 	vkDestroyDescriptorSetLayout(m_logicDevice, m_uboDescriptorSetLayout, nullptr);
 
-	// Destroy semaphores.
+	// Destroy sync objects.
 	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
 	{
 		vkDestroyFence(m_logicDevice, m_inFlightFences[i], nullptr);
@@ -236,6 +238,113 @@ void Renderer::UnregisterShader(Shader* shader)
 		// Shader is no longer registered.
 		shader->m_registered = false;
 	}
+}
+
+void Renderer::SetWindow(GLFWwindow* window, const unsigned int& nWidth, const unsigned int& nHeight) 
+{
+	// Set new window.
+	m_window = window;
+
+	// Resize window and flag a surface recreation.
+	ResizeWindow(nWidth, nHeight, true);
+
+	m_nCurrentFrame = 0;
+	m_nCurrentFrameIndex = 0;
+	m_nPresentImageIndex = 0;
+}
+
+void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHeight, bool bNewSurface) 
+{
+	// Set new desired dimensions.
+	m_nWindowWidth = nWidth;
+	m_nWindowHeight = nHeight;
+
+	// Window will not be resized if it is set to zero width or height, (minimization causes this)
+
+	if (!nWidth || !nHeight) 
+	{
+		m_bMinimized = true;
+		return;
+	}
+
+	m_bMinimized = false;
+
+	// ---------------------------------------------------------------------------------------------------------
+	// Deletion
+
+	// Wait for any operations to complete.
+	vkDeviceWaitIdle(m_logicDevice);
+
+	// Destroy old framebuffers.
+	for (int i = 0; i < m_swapChainFramebuffers.GetSize(); ++i) 
+	{
+		vkDestroyFramebuffer(m_logicDevice, m_swapChainFramebuffers[i], nullptr);
+		m_swapChainFramebuffers[i] = nullptr;
+	}
+
+	// Destroy framebuffer attachments.
+	delete m_depthImage;
+	m_depthImage = nullptr;
+
+	// Destroy swap chain image views.
+	for (int i = 0; i < m_swapChainImageViews.Count(); ++i) 
+	{
+		vkDestroyImageView(m_logicDevice, m_swapChainImageViews[i], nullptr);
+		m_swapChainImageViews[i] = nullptr;
+	}
+
+	// Destroy swap chain.
+	vkDestroySwapchainKHR(m_logicDevice, m_swapChain, nullptr);
+	m_swapChain = nullptr;
+
+	if(bNewSurface) 
+	{
+		// Destroy window surface.
+		vkDestroySurfaceKHR(m_instance, m_windowSurface, nullptr);
+	}
+
+	// ---------------------------------------------------------------------------------------------------------
+	// Recreation
+
+	if(bNewSurface) 
+	{
+		// Create new window surface.
+		CreateWindowSurface();
+
+		// Check for surface present suppport.
+		VkBool32 hasPresentSupport = VK_FALSE;
+	    RENDERER_SAFECALL(vkGetPhysicalDeviceSurfaceSupportKHR(m_physDevice, m_nPresentQueueFamilyIndex, m_windowSurface, &hasPresentSupport), "Renderer Error: Failed to get surface support confirmation on new window surface.");
+
+		if (!hasPresentSupport)
+			throw std::runtime_error("Renderer Error: Fullscreen window does not support new surface.");
+	}
+
+	// Recreate swap chain and swap chain images.
+	CreateSwapChain();
+	CreateSwapChainImageViews();
+	CreateDepthImage();
+
+	// Recreate framebuffers
+	CreateFramebuffers();
+
+	// ---------------------------------------------------------------------------------------------------------
+	// Pipeline recreation
+
+	DynamicArray<PipelineData*>& allPipelines = MeshRenderer::Pipelines();
+
+	for(int i = 0; i < allPipelines.Count(); ++i) 
+	{
+	    // Recreate pipelines using the first render object (as there should always be at-least one for the pipeline to exist.)
+		allPipelines[i]->m_renderObjects[0]->RecreatePipeline();
+	}
+
+	// ---------------------------------------------------------------------------------------------------------
+	// State changes
+
+	// Flag state changes, command buffers will be re-recorded before submitting.
+	m_dynamicStateChange[0] = true;
+	m_dynamicStateChange[1] = true;
+	m_dynamicStateChange[2] = true;
 }
 
 void Renderer::CreateVKInstance() 
@@ -487,7 +596,7 @@ void Renderer::CreateSwapChain()
 		createInfo.pQueueFamilyIndices = nullptr;
 	}
 
-	vkCreateSwapchainKHR(m_logicDevice, &createInfo, nullptr, &m_swapChain);
+	RENDERER_SAFECALL(vkCreateSwapchainKHR(m_logicDevice, &createInfo, nullptr, &m_swapChain), "Renderer Error: Failed to create swapchain!");
 
 	// Retrieve swap chain image count.
 	unsigned int swapChainImageCount = 0;
@@ -799,6 +908,10 @@ void Renderer::CreateCmdBuffers()
 
 void Renderer::UpdateMVP(const unsigned int& bufferIndex)
 {
+	// Do not attempt to update for a zero sized window.
+	if (m_bMinimized)
+		return;
+
 	// Set up matrices...
 	m_mvp.model = glm::mat4();
 	//m_mvp.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, -1.0f, 0.0f));
@@ -1009,6 +1122,10 @@ void Renderer::SubmitTransferOperations()
 
 void Renderer::Begin() 
 {
+	// Do not attempt to render to a zero sized window.
+	if (m_bMinimized)
+		return;
+
 	m_nCurrentFrameIndex = ++m_nCurrentFrame % MAX_FRAMES_IN_FLIGHT;
 
 	// Wait for frames-in-flight.
@@ -1016,6 +1133,9 @@ void Renderer::Begin()
 	vkResetFences(m_logicDevice, 1, &m_inFlightFences[m_nCurrentFrameIndex]);
 
 	// Aquire next image from the swap chain.
+
+	//VkResult result = vkAcquireNextImageKHR(m_logicDevice, m_swapChain, std::numeric_limits<unsigned long long>::max(), m_imageAvailableSemaphores[m_nCurrentFrameIndex], VK_NULL_HANDLE, &m_nPresentImageIndex);
+
 	RENDERER_SAFECALL(vkAcquireNextImageKHR(m_logicDevice, m_swapChain, std::numeric_limits<unsigned long long>::max(), m_imageAvailableSemaphores[m_nCurrentFrameIndex], VK_NULL_HANDLE, &m_nPresentImageIndex),
 		"Renderer Error: Failed to aquire next swap chain image.");
 }
@@ -1060,6 +1180,10 @@ void Renderer::ForceDynamicStateChange()
 
 void Renderer::End() 
 {
+	// Do not attempt to render to a zero sized window.
+	if (m_bMinimized)
+		return;
+
 	UpdateMVP(m_nCurrentFrameIndex);
 
 	// Re-record the dynamic command buffer for this swap chain image if it has changed.
@@ -1113,7 +1237,14 @@ void Renderer::End()
 	presentInfo.pImageIndices = &m_nPresentImageIndex;
 	presentInfo.pResults = nullptr;
 
-	RENDERER_SAFECALL(vkQueuePresentKHR(m_graphicsQueue, &presentInfo), "Renderer Error: Failed to present swap chain image.");
+	VkResult result = vkQueuePresentKHR(m_graphicsQueue, &presentInfo);
+
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) 
+	{
+		ResizeWindow(m_nWindowWidth, m_nWindowHeight, true);
+	}
+	else if(result)
+		throw std::runtime_error("Renderer Error: Failed to present swap chain image.");
 }
 
 void Renderer::WaitGraphicsIdle() 
@@ -1357,7 +1488,7 @@ VkExtent2D Renderer::ChooseSwapExtent(VkSurfaceCapabilitiesKHR capabilities)
 	if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
 		return capabilities.currentExtent; // Use provided extent since it is the only available one.
 
-	VkExtent2D desiredExtent = { m_windowWidth, m_windowHeight };
+	VkExtent2D desiredExtent = { m_nWindowWidth, m_nWindowHeight };
 
 	// Clamp to usable range.
 	desiredExtent.width = glm::clamp(desiredExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);

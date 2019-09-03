@@ -99,6 +99,13 @@ void Input::EndFrame()
 	memset(&m_currentMouseState->m_fMouseAxes[2], 0, sizeof(double) * 2);
 }
 
+void Input::ResetStates() 
+{
+	// Reset keyboard states.
+	memset(m_prevState, 0, sizeof(char) * 512);
+	memset(m_currentState, 0, sizeof(char) * 512);
+}
+
 void Input::Create() 
 {
 	if (!m_instance)

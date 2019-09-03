@@ -99,6 +99,11 @@ public:
 	*/
 	void EndFrame();
 
+	/*
+	Description: Resets all input states.
+	*/
+	void ResetStates();
+
 	// Singleton functions.
 
 	static void Create();

@@ -20,7 +20,11 @@
 
 #include "Camera.h"
 
+GLFWwindow* Application::m_window = nullptr;
+Renderer* Application::m_renderer = nullptr;
 Input* Application::m_input = nullptr;
+bool Application::m_bFullScreen = false;
+bool Application::m_bGLFWInit = false;
 
 Application::Application()
 {
@@ -54,21 +58,13 @@ int Application::Init()
 	m_bGLFWInit = true;
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
 	// Create window.
-	m_window = glfwCreateWindow(1280, 720, "Vulkan Test", 0, 0);
+	CreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, m_bFullScreen);
 
 	// Create renderer.
 	m_renderer = new Renderer(m_window);
-
-	// Set key callback...
-	glfwSetKeyCallback(m_window, &KeyCallBack);
-
-	// Set mouse callbacks...
-	glfwSetMouseButtonCallback(m_window, &MouseButtonCallBack);
-	glfwSetCursorPosCallback(m_window, &CursorPosCallBack);
-	glfwSetScrollCallback(m_window, &MouseScrollCallBack);
 
 	// Initialize input.
 	Input::Create();
@@ -134,9 +130,29 @@ void Application::Run()
 		// Poll events.
 		glfwPollEvents();
 
+		// Fullscreen
+		if (m_input->GetKey(GLFW_KEY_F11) && !m_input->GetKey(GLFW_KEY_F11, INPUTSTATE_PREVIOUS))
+		{
+			// Get window's monitor and video mode.
+			GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+			const GLFWvidmode* vidMode = glfwGetVideoMode(monitor);
+
+			m_bFullScreen = !m_bFullScreen;
+
+			// Recreate window.
+			if(m_bFullScreen)
+			    CreateWindow(vidMode->width, vidMode->height, true);
+			else
+				CreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, false);
+
+			// Set new window for the renderer, it will also re-create the swap chain and graphics pipelines to accomodate.
+			m_renderer->SetWindow(m_window, vidMode->width, vidMode->height);
+
+			m_input->ResetStates();
+		}
+
 		// Draw...
 		m_renderer->Begin();
-
 		
 		if (m_input->GetKey(GLFW_KEY_G) && !m_input->GetKey(GLFW_KEY_G, INPUTSTATE_PREVIOUS)) 
 		{
@@ -147,8 +163,7 @@ void Application::Run()
 			Instance newInstance = { instanceModelMat };
 			testObject->AddInstance(newInstance);
 		}
-		
-		
+
 		if (m_input->GetKey(GLFW_KEY_M))
 		{
 			moveModelMat = glm::translate(moveModelMat, glm::vec3(0.0f, 0.0f, -3.0f * fDeltaTime));
@@ -200,6 +215,33 @@ void Application::Run()
 	delete rectShader;
 }
 
+void Application::CreateWindow(const unsigned int& nWidth, const unsigned int& nHeight, bool bFullScreen)
+{
+	if (m_window)
+		glfwDestroyWindow(m_window);
+
+	// Create window.
+	if(bFullScreen) 
+	{
+		m_window = glfwCreateWindow(nWidth, nHeight, "Vulkan Test", glfwGetPrimaryMonitor(), 0);
+	}
+	else 
+	{
+		m_window = glfwCreateWindow(nWidth, nHeight, "Vulkan Test", 0, 0);
+	}
+
+	// Set key callback...
+	glfwSetKeyCallback(m_window, &KeyCallBack);
+
+	// Set mouse callbacks...
+	glfwSetMouseButtonCallback(m_window, &MouseButtonCallBack);
+	glfwSetCursorPosCallback(m_window, &CursorPosCallBack);
+	glfwSetScrollCallback(m_window, &MouseScrollCallBack);
+
+	// Set window resize callback.
+	glfwSetFramebufferSizeCallback(m_window, &WindowResizeCallback);
+}
+
 void Application::ErrorCallBack(int error, const char* desc)
 {
 	std::cout << "GLFW Error: " << desc << "\n";
@@ -229,4 +271,9 @@ void Application::MouseScrollCallBack(GLFWwindow* window, double dXOffset, doubl
 
 	currentState->m_fMouseAxes[2] = dXOffset;
 	currentState->m_fMouseAxes[3] = dYOffset;
+}
+
+void Application::WindowResizeCallback(GLFWwindow* window, int nWidth, int nHeight) 
+{
+	m_renderer->ResizeWindow(nWidth, nHeight, true);
 }

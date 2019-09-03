@@ -54,9 +54,15 @@ MeshRenderer::~MeshRenderer()
 		vkDestroyBuffer(m_renderer->GetDevice(), m_instanceStagingBuffer, nullptr);
 		vkFreeMemory(m_renderer->GetDevice(), m_instanceStagingMemory, nullptr);
 
+		m_instanceStagingBuffer = nullptr;
+		m_instanceStagingMemory = nullptr;
+
 		// Destroy instance buffer & memory.
 		vkDestroyBuffer(m_renderer->GetDevice(), m_instanceBuffer, nullptr);
 		vkFreeMemory(m_renderer->GetDevice(), m_instanceMemory, nullptr);
+
+		m_instanceBuffer = nullptr;
+		m_instanceMemory = nullptr;
 	}
 
 	// Remove this render object from the pipeline.
@@ -162,6 +168,11 @@ void MeshRenderer::UpdateInstanceData()
 	m_bInstancesModified = false;
 }
 
+void MeshRenderer::RecreatePipeline() 
+{
+	CreateGraphicsPipeline(&m_pipelineData->m_vertexAttributes, true);
+}
+
 const Shader* MeshRenderer::GetShader() const
 {
 	return m_material->GetShader();
@@ -172,31 +183,51 @@ const Material* MeshRenderer::GetMaterial() const
 	return m_material;
 }
 
-void MeshRenderer::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* instanceAttributes)
+void MeshRenderer::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertexAttributes, bool bRecreate)
 {
 	// -------------------------------------------------------------------------------------------------------------------
 	// Instance buffer
 
-	VertexInfo insVertInfo(*instanceAttributes, true, m_mesh->VertexFormat());
+	VertexInfo insVertInfo(*vertexAttributes, true, m_mesh->VertexFormat());
 
 	// Create instance staging buffer.
-	m_renderer->CreateBuffer(m_nInstanceArraySize * sizeof(Instance), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_instanceStagingBuffer, m_instanceStagingMemory);
+	if(!m_instanceStagingBuffer && !m_instanceStagingMemory)
+	    m_renderer->CreateBuffer(m_nInstanceArraySize * sizeof(Instance), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_instanceStagingBuffer, m_instanceStagingMemory);
 
 	// Create device local instance buffer.
-	m_renderer->CreateBuffer(m_nInstanceArraySize * sizeof(Instance), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_instanceBuffer, m_instanceMemory);
+	if(!m_instanceBuffer && !m_instanceMemory)
+	    m_renderer->CreateBuffer(m_nInstanceArraySize * sizeof(Instance), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_instanceBuffer, m_instanceMemory);
 
 	// -------------------------------------------------------------------------------------------------------------------
 	// Check for existing matching pipeline.
 
 	PipelineData*& pipelineData = m_pipelineTable[{ m_nameID.c_str() }].m_ptr;
 
-	if (pipelineData)
+	if (pipelineData && !bRecreate)
 	{
 		// Pipeline already exists. This class does not own it but can use it.
 		m_pipelineData = pipelineData;
 		m_pipelineData->m_renderObjects.Push(this);
 
 		return;
+	}
+	else if(bRecreate) 
+	{
+		// Destroy old pipelines, if they exist.
+
+		// Destroy old pipeline layouts.
+		if(pipelineData->m_layout) 
+		{
+		    vkDestroyPipelineLayout(m_renderer->GetDevice(), pipelineData->m_layout, nullptr);
+			pipelineData->m_layout = nullptr;
+		}
+
+		// Destory old pipelines.
+		if(pipelineData->m_handle) 
+		{
+		    vkDestroyPipeline(m_renderer->GetDevice(), pipelineData->m_handle, nullptr);
+			pipelineData->m_handle = nullptr;
+		}
 	}
 	
 	// -------------------------------------------------------------------------------------------------------------------
@@ -343,10 +374,27 @@ void MeshRenderer::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* instan
 	dynamicState.pDynamicStates = &dynState;
 	*/
 
-	m_pipelineData = new PipelineData;
-	m_pipelineData->m_renderObjects.Push(this);
-
 	//VkDescriptorSetLayout uboSetLayout = m_renderer->MVPUBOSetLayout();
+
+
+	// If being recreated, the pipeline data structure is not reallocated and objects inside it remain.
+	if (!pipelineData)
+	{
+		pipelineData = new PipelineData;
+		pipelineData->m_renderObjects.Push(this);
+
+		// Set pipeline material.
+		pipelineData->m_material = m_material;
+
+		// Copy vertex attributes.
+		pipelineData->m_vertexAttributes = *vertexAttributes;
+
+		// Set local pointer.
+		m_pipelineData = pipelineData;
+
+		// Add pipeline data to array of all pipelines.
+		m_allPipelines.Push(pipelineData);
+	}
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -379,13 +427,4 @@ void MeshRenderer::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* instan
 	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_renderer->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_pipelineData->m_handle), "Renderer Error: Failed to create graphics pipeline.");
 
 	delete[] attrDescriptions;
-
-	// Set pipeline material.
-	m_pipelineData->m_material = m_material;
-
-	// Set table pointer.
-	pipelineData = m_pipelineData;
-
-	// Add pipeline data to array of all pipelines.
-	m_allPipelines.Push(m_pipelineData);
 }

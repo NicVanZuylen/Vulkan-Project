@@ -21,6 +21,7 @@ struct PipelineData
 	Material* m_material;
 	VkPipeline m_handle;
 	VkPipelineLayout m_layout;
+	DynamicArray<EVertexAttribute> m_vertexAttributes;
 	DynamicArray<MeshRenderer*> m_renderObjects; // All objects using this pipeline.
 };
 
@@ -95,14 +96,24 @@ public:
 	*/
 	void UpdateInstanceData();
 
+	/*
+	Description: Recreate the graphics pipeline this object uses.
+	*/
+	void RecreatePipeline();
+
 	const Shader* GetShader() const;
 
 	const Material* GetMaterial() const;
 
 private:
 
-	// Create the graphics pipeline for this render object.
-	void CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* instanceAttributes);
+	/*
+	Description: Create a graphics pipeline or use an existing one for this object.
+	Param:
+	    DynamicArray<EVertexAttribute*> vertexAttributes: Vertex format for the pipeline & instance buffers.
+		bool bRecreate: If true, this will recreate the pipeline, replacing the old one.
+	*/
+	void CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertexAttributes, bool bRecreate = false);
 
 	std::string m_nameID;
 

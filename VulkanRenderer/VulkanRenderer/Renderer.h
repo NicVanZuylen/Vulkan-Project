@@ -52,6 +52,10 @@ public:
 
 	void UnregisterShader(Shader* shader);
 
+	void SetWindow(GLFWwindow* window, const unsigned int& nWidth, const unsigned int& nHeight);
+
+	void ResizeWindow(const unsigned int& nWidth, const unsigned int& nHeight, bool bNewSurface = false);
+
 	// Begin the main render pass.
 	void Begin();
 
@@ -214,11 +218,12 @@ private:
 	VkExtent2D ChooseSwapExtent(VkSurfaceCapabilitiesKHR capabilities);
 
 	// -----------------------------------------------------------------------------------------------------
+	// Window
 
 	GLFWwindow* m_window;
 
-	unsigned int m_windowWidth;
-	unsigned int m_windowHeight;
+	unsigned int m_nWindowWidth;
+	unsigned int m_nWindowHeight;
 
 	// -----------------------------------------------------------------------------------------------------
 	// Validation layers
@@ -293,6 +298,7 @@ private:
 
 	// -----------------------------------------------------------------------------------------------------
 	// Rendering
+
 	VkRenderPass m_mainRenderPass;
 
 	DynamicArray<MeshRenderer*> m_dynamicObjects;
@@ -312,6 +318,9 @@ private:
 	unsigned int m_nTransferFrameIndex;
 	bool m_bTransferThread;
 	bool m_bTransferReady;
+
+	// Misc
+	bool m_bMinimized;
 
 	// Extensions.
 	VkExtensionProperties* m_extensions;
