@@ -75,11 +75,8 @@ int Application::Init()
 
 void Application::Run() 
 {
-	Shader* modelShader = new Shader("Shaders/SPIR-V/vertModelIns.spv", "Shaders/SPIR-V/fragModel.spv");
-	m_renderer->RegisterShader(modelShader);
-
-	Shader* rectShader = new Shader("Shaders/SPIR-V/vertRect.spv", "Shaders/SPIR-V/fragRect.spv");
-	m_renderer->RegisterShader(rectShader);
+	Shader* modelShader = new Shader(m_renderer, "Shaders/SPIR-V/vertModelIns.spv", "Shaders/SPIR-V/fragModel.spv");
+	//m_renderer->RegisterShader(modelShader);
 
 	Texture* testTexture = new Texture(m_renderer, "Assets/Objects/Metal/diffuse.tga");
 	Texture* testTexture2 = new Texture(m_renderer, "Assets/Objects/Metal/normal.tga");
@@ -208,11 +205,8 @@ void Application::Run()
 
 	delete testMat;
 
-	m_renderer->UnregisterShader(modelShader);
+	//m_renderer->UnregisterShader(modelShader);
 	delete modelShader;
-
-	m_renderer->UnregisterShader(rectShader);
-	delete rectShader;
 }
 
 void Application::CreateWindow(const unsigned int& nWidth, const unsigned int& nHeight, bool bFullScreen)

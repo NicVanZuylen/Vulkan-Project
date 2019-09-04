@@ -48,9 +48,6 @@ public:
     ~Renderer();
 
 	// Functionality
-	void RegisterShader(Shader* shader);
-
-	void UnregisterShader(Shader* shader);
 
 	void SetWindow(GLFWwindow* window, const unsigned int& nWidth, const unsigned int& nHeight);
 
@@ -64,9 +61,6 @@ public:
 
 	// Request a dedicated transfer operation.
 	void RequestCopy(const CopyRequest& request);
-
-	// Schedule a render object to be drawn.
-	void AddDynamicObject(MeshRenderer* object);
 
 	// Force re-recording of the dynamic rendering commands.
 	void ForceDynamicStateChange();
@@ -128,18 +122,7 @@ public:
 	// Setters
 	void SetViewMatrix(glm::mat4& viewMat);
 
-	// Debug
-	static VkResult m_safeCallResult;
-
 private:
-
-	static DynamicArray<CopyRequest> m_newTransferRequests;
-
-	// Create Vulkan instance.
-	inline void CreateVKInstance();
-
-	// Check if the necessary validation layers are supported for debug.
-	inline void CheckValidationLayerSupport();
 
 	struct SwapChainDetails
 	{
@@ -147,6 +130,17 @@ private:
 		DynamicArray<VkSurfaceFormatKHR> m_formats;
 		DynamicArray<VkPresentModeKHR> m_presentModes;
 	};
+
+	static DynamicArray<CopyRequest> m_newCopyRequests;
+
+	// -----------------------------------------------------------------------------------------------------
+	// Initialization functions
+
+	// Create Vulkan instance.
+	inline void CreateVKInstance();
+
+	// Check if the necessary validation layers are supported for debug.
+	inline void CheckValidationLayerSupport();
 
 	// Get GPU to be used for rendering.
 	inline void GetPhysicalDevice();
@@ -190,6 +184,9 @@ private:
 	// Create main command buffers.
 	inline void CreateCmdBuffers();
 
+	// Create semaphores & fences.
+	inline void CreateSyncObjects();
+
     // Update MVP Uniform buffer contents associated with the provided swap chain image.
 	inline void UpdateMVP(const unsigned int& bufferIndex);
 
@@ -201,9 +198,6 @@ private:
 
 	// Record dynamic secondary command buffer.
 	inline void RecordDynamicCommandBuffer(const unsigned int& bufferIndex, const unsigned int& frameIndex);
-
-	// Create semaphores & fences.
-	inline void CreateSyncObjects();
 
 	// Submit transfer operations to the GPU.
 	void SubmitTransferOperations();
@@ -280,6 +274,9 @@ private:
 	VkCommandPool m_transferCmdPool;
 	DynamicArray<VkCommandBuffer> m_mainPrimaryCmdBufs;
 	DynamicArray<VkCommandBuffer> m_dynamicPassCmdBufs; // Command buffers for the dynamic render pass.
+
+	// Transfer queue submission info moved here to move it from the stack, where it would remain for as long as the thread lives.
+	VkSubmitInfo m_transSubmitInfo;
 	DynamicArray<VkCommandBuffer> m_transferCmdBufs; // Command buffer for dedicated transfer operations.
 
 	// -----------------------------------------------------------------------------------------------------

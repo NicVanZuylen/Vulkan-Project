@@ -16,8 +16,10 @@ Shader::Shader()
 	m_registered = false;
 }
 
-Shader::Shader(const char* vertPath, const char* fragPath) 
+Shader::Shader(Renderer* renderer, const char* vertPath, const char* fragPath)
 {
+	m_renderer = renderer;
+
 	m_vertModule = nullptr;
 	m_fragModule = nullptr;
 
@@ -39,8 +41,15 @@ Shader::Shader(const char* vertPath, const char* fragPath)
 	// Check if files are SPIR-V files.
 	bool bRawFiles = std::strcmp(vertExtension.c_str(), "spv") != 0 && std::strcmp(fragExtension.c_str(), "spv") != 0;
 
-	if (!bRawFiles)
-		Load(vertPath, fragPath);
+	if (!bRawFiles) 
+	{
+		DynamicArray<char> vertContents;
+		DynamicArray<char> fragContents;
+
+		Load(vertPath, fragPath, vertContents, fragContents);
+
+		CreateModules(vertContents, fragContents);
+	}
 	else
 	{
 		std::string vertContents = LoadRaw(vertPath);
@@ -48,8 +57,10 @@ Shader::Shader(const char* vertPath, const char* fragPath)
 	}
 }
 
-Shader::Shader(const char* name, const char* vertPath, const char* fragPath)
+Shader::Shader(Renderer* renderer, const char* name, const char* vertPath, const char* fragPath)
 {
+	m_renderer = renderer;
+
 	m_name = name;
 
 	m_vertModule = nullptr;
@@ -67,8 +78,15 @@ Shader::Shader(const char* name, const char* vertPath, const char* fragPath)
 	// Check if files are now SPIR-V files.
 	bool bRawFiles = std::strcmp(vertExtension.c_str(), "spv") != 0 && std::strcmp(fragExtension.c_str(), "spv") != 0;
 
-	if (!bRawFiles)
-		Load(vertPath, fragPath);
+	if (!bRawFiles) 
+	{
+		DynamicArray<char> vertContents;
+		DynamicArray<char> fragContents;
+
+		Load(vertPath, fragPath, vertContents, fragContents);
+
+		CreateModules(vertContents, fragContents);
+	}
 	else 
 	{
 		std::string vertContents = LoadRaw(vertPath);
@@ -76,7 +94,7 @@ Shader::Shader(const char* name, const char* vertPath, const char* fragPath)
 	}
 }
 
-void Shader::Load(const char* vertPath, const char* fragPath) 
+void Shader::Load(const char* vertPath, const char* fragPath, DynamicArray<char>& vertContents, DynamicArray<char>& fragContents)
 {
 	if (m_name == "UNNAMED_SHADER")
 	{
@@ -100,11 +118,11 @@ void Shader::Load(const char* vertPath, const char* fragPath)
 		const int fileSize = (const int)vertFile.tellg();
 
 		// Allocate space for the file contents.
-		m_vertContents.SetSize(fileSize);
+		vertContents.SetSize(fileSize);
 
 		// Return to the start of the file and read it.
 		vertFile.seekg(0);
-		vertFile.read(m_vertContents.Data(), fileSize);
+		vertFile.read(vertContents.Data(), fileSize);
 
 		// Close file.
 		vertFile.close();
@@ -131,11 +149,11 @@ void Shader::Load(const char* vertPath, const char* fragPath)
 		const int fileSize = (const int)fragFile.tellg();
 
 		// Allocate space for the file contents.
-		m_fragContents.SetSize(fileSize);
+		fragContents.SetSize(fileSize);
 
 		// Return to the start of the file and read it.
 		fragFile.seekg(0);
-		fragFile.read(m_fragContents.Data(), fileSize);
+		fragFile.read(fragContents.Data(), fileSize);
 
 		// Close file.
 		fragFile.close();
@@ -149,6 +167,19 @@ void Shader::Load(const char* vertPath, const char* fragPath)
 	}
 
 	// -----------------------------------------------------------------------------------------------
+}
+
+Shader::~Shader() 
+{
+	// Destroy shader modules if they exist.
+	if(m_vertModule) 
+	{
+		vkDestroyShaderModule(m_renderer->GetDevice(), m_vertModule, nullptr);
+	}
+	if(m_fragModule) 
+	{
+		vkDestroyShaderModule(m_renderer->GetDevice(), m_fragModule, nullptr);
+	}
 }
 
 std::string Shader::LoadRaw(const char* path) 
@@ -183,6 +214,22 @@ std::string Shader::LoadRaw(const char* path)
 	contents = "FAIL_STRING";
 
 	return contents;
+}
+
+void Shader::CreateModules(DynamicArray<char>& vertContents, DynamicArray<char>& fragContents) 
+{
+	// Create shader modules for the vertex and fragment shaders.
+	VkShaderModuleCreateInfo modCreateInfo = {};
+	modCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	modCreateInfo.codeSize = vertContents.GetSize();
+	modCreateInfo.pCode = reinterpret_cast<const uint32_t*>(vertContents.Data());
+
+	RENDERER_SAFECALL(vkCreateShaderModule(m_renderer->GetDevice(), &modCreateInfo, nullptr, &m_vertModule), "Shader Error: Failed to create vertex shader module.");
+
+	modCreateInfo.codeSize = fragContents.GetSize();
+	modCreateInfo.pCode = reinterpret_cast<const uint32_t*>(fragContents.Data());
+
+	RENDERER_SAFECALL(vkCreateShaderModule(m_renderer->GetDevice(), &modCreateInfo, nullptr, &m_fragModule), "Shader Error: Failed to create fragment shader module.");
 }
 
 /*
