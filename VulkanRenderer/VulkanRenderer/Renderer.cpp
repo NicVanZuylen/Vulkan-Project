@@ -98,7 +98,7 @@ Renderer::Renderer(GLFWwindow* window)
 	// Images
 	CreateSwapChain();
 	CreateSwapChainImageViews();
-	CreateDepthImage();
+	CreateFramebufferImages();
 
 	// Render passes
 	CreateRenderPasses();
@@ -174,7 +174,7 @@ Renderer::~Renderer()
 	if(m_bEnableValidationLayers)
 	    RendererHelper::DestroyDebugUtilsMessengerEXT(m_instance, nullptr, &m_messenger);
 
-	delete m_depthImage;
+	DestroyFramebufferImages();
 
 	// Destroy image views.
 	for (int i = 0; i < m_swapChainImageViews.Count(); ++i)
@@ -236,8 +236,7 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	}
 
 	// Destroy framebuffer attachments.
-	delete m_depthImage;
-	m_depthImage = nullptr;
+	DestroyFramebufferImages();
 
 	// Destroy swap chain image views.
 	for (int i = 0; i < m_swapChainImageViews.Count(); ++i) 
@@ -275,7 +274,7 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	// Recreate swap chain and swap chain images.
 	CreateSwapChain();
 	CreateSwapChainImageViews();
-	CreateDepthImage();
+	CreateFramebufferImages();
 
 	// Recreate framebuffers
 	CreateFramebuffers();
@@ -596,7 +595,7 @@ void Renderer::CreateSwapChainImageViews()
 	}
 }
 
-void Renderer::CreateDepthImage() 
+void Renderer::CreateFramebufferImages() 
 {
 	// Specify pool of depth formats and find the best available format.
 	DynamicArray<VkFormat> formats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
@@ -604,6 +603,22 @@ void Renderer::CreateDepthImage()
 
 	// Create the depth buffer image.
 	m_depthImage = new Texture(this, m_swapChainImageExtents.width, m_swapChainImageExtents.height, ATTACHMENT_DEPTH_STENCIL, depthFormat);
+
+	// Create G Buffer images.
+	m_posImage = new Texture(this, m_swapChainImageExtents.width, m_swapChainImageExtents.height, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT); // Signed 16-bit 4-channel float buffer.
+	m_normalImage = new Texture(this, m_swapChainImageExtents.width, m_swapChainImageExtents.height, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT); // Signed 16-bit 4-channel float buffer.
+}
+
+void Renderer::DestroyFramebufferImages() 
+{
+	delete m_normalImage;
+	m_normalImage = nullptr;
+
+	delete m_posImage;
+	m_posImage = nullptr;
+
+	delete m_depthImage;
+	m_depthImage = nullptr;
 }
 
 void Renderer::CreateRenderPasses() 
@@ -640,34 +655,92 @@ void Renderer::CreateRenderPasses()
 		depthAttachmentRef.attachment = 1;
 		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Expected optimal depth/stencil layout.
 
-		VkAttachmentReference colorAttachmentRefs[] = { colorAttachmentRef };
+		VkAttachmentDescription posAttachment = {};
+		posAttachment.format = m_posImage->Format();
+		posAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		posAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		posAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		posAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		posAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+		posAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		posAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		VkSubpassDescription subpass = {};
-		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = 1; // One attachment.
-		subpass.pColorAttachments = colorAttachmentRefs;
-		subpass.pDepthStencilAttachment = &depthAttachmentRef;
+		VkAttachmentReference posAttachmentRef = {};
+		posAttachmentRef.attachment = 2;
+		posAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		VkAttachmentDescription attachments[] = { colorAttachment, depthAttachment };
+		VkAttachmentReference posInputAttachmentRef = {};
+		posInputAttachmentRef.attachment = 2;
+		posInputAttachmentRef.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkAttachmentDescription normalAttachment = {};
+		normalAttachment.format = m_normalImage->Format();
+		normalAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		normalAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		normalAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		normalAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		normalAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+		normalAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		normalAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference normalAttachmentRef = {};
+		normalAttachmentRef.attachment = 3;
+		normalAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference normalInputAttachmentRef = {};
+		normalInputAttachmentRef.attachment = 3;
+		normalInputAttachmentRef.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkAttachmentReference colorAttachmentRefs[] = { colorAttachmentRef, posAttachmentRef, normalAttachmentRef };
+
+		VkSubpassDescription gBufferSubpass = {};
+		gBufferSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		gBufferSubpass.colorAttachmentCount = 3;
+		gBufferSubpass.pColorAttachments = colorAttachmentRefs;
+		gBufferSubpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+		VkAttachmentReference lightingInputs[] = { posInputAttachmentRef, normalInputAttachmentRef };
+
+		VkSubpassDescription lightingSubpass = {};
+		lightingSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		lightingSubpass.colorAttachmentCount = 1;
+		lightingSubpass.pColorAttachments = &colorAttachmentRef;
+		lightingSubpass.inputAttachmentCount = 2;
+		lightingSubpass.pInputAttachments = lightingInputs;
+		lightingSubpass.pDepthStencilAttachment = VK_NULL_HANDLE; // No depth needed.
+
+		VkAttachmentDescription attachments[] = { colorAttachment, depthAttachment, posAttachment, normalAttachment };
+		VkSubpassDescription subpasses[] = { gBufferSubpass, lightingSubpass };
 
 		VkRenderPassCreateInfo renderPassInfo = {};
 		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInfo.attachmentCount = 2;
+		renderPassInfo.attachmentCount = 4;
 		renderPassInfo.pAttachments = attachments;
-		renderPassInfo.subpassCount = 1;
-		renderPassInfo.pSubpasses = &subpass;
+		renderPassInfo.subpassCount = 2;
+		renderPassInfo.pSubpasses = subpasses;
 
-		VkSubpassDependency dependency = {};
-		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-		dependency.dstSubpass = 0;
-		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; // Ensures color & depth/stencil output has completed.
-		dependency.srcAccessMask = 0;
-		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+		VkSubpassDependency initialDependency = {};
+		initialDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		initialDependency.dstSubpass = 0;
+		initialDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; // Ensures color & depth/stencil output has completed.
+		initialDependency.srcAccessMask = 0;
+		initialDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		initialDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
 			| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-		renderPassInfo.dependencyCount = 1;
-		renderPassInfo.pDependencies = &dependency;
+		VkSubpassDependency lightingDependency = {};
+		lightingDependency.srcSubpass = 0;
+		lightingDependency.dstSubpass = 1;
+		lightingDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		lightingDependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+			| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		lightingDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		lightingDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+		VkSubpassDependency dependencies[] = { initialDependency, lightingDependency };
+
+		renderPassInfo.dependencyCount = 2;
+		renderPassInfo.pDependencies = dependencies;
 
 		RENDERER_SAFECALL(vkCreateRenderPass(m_logicDevice, &renderPassInfo, nullptr, &m_mainRenderPass), "Renderer Error: Failed to create render pass.");
 	}

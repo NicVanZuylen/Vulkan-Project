@@ -157,8 +157,11 @@ private:
 	// Create swapchain image views.
 	inline void CreateSwapChainImageViews();
 
-	// Create depth/stencil image.
-	inline void CreateDepthImage();
+	// Create basic framebuffers.
+	inline void CreateFramebufferImages();
+
+	// Destroy basic framebuffers.
+	inline void DestroyFramebufferImages();
 
 	// Create render pass.
 	inline void CreateRenderPasses();
@@ -267,6 +270,10 @@ private:
 	// -----------------------------------------------------------------------------------------------------
 	// Images and framebuffers.
 	Texture* m_depthImage;
+
+	// G-Buffers
+	Texture* m_posImage;
+	Texture* m_normalImage;
 
 	// -----------------------------------------------------------------------------------------------------
 	// Commands
