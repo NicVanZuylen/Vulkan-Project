@@ -41,7 +41,7 @@ Texture::Texture(Renderer* renderer, const char* szFilePath)
 	}
 }
 
-Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachmentType type, VkFormat format)
+Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachmentType type, VkFormat format, bool bInputAttachment)
 {
 	m_renderer = renderer;
 	m_nWidth = nWidth;
@@ -52,7 +52,12 @@ Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachm
 
 	m_format = format;
 
-	VkImageAspectFlags aspect;
+	VkImageAspectFlags aspect = 0;
+	VkImageUsageFlagBits usageFlags = static_cast<VkImageUsageFlagBits>(0);
+
+	// Begin with input attachment usage flag if it will be used as such.
+	if (bInputAttachment)
+		usageFlags = VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
 
 	switch (type)
 	{
@@ -61,11 +66,12 @@ Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachm
 		m_name = "COLOR_ATTACHMENT-" + std::to_string(m_nChannels) + "ch\n";
 
 		aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+		usageFlags = static_cast<VkImageUsageFlagBits>(usageFlags | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT); // Append color attachment flag.
 
-	    CreateImage(m_imageHandle, m_imageMemory, m_nWidth, m_nHeight, m_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+	    CreateImage(m_imageHandle, m_imageMemory, m_nWidth, m_nHeight, m_format, VK_IMAGE_TILING_OPTIMAL, usageFlags);
 		CreateImageView(m_imageHandle, m_imageView, m_format, aspect);
 
-		// Transition layout.
+		// Transition layout from undefined to optimal layout.
 		TransitionImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, m_format);
 
 		break;
@@ -74,9 +80,10 @@ Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachm
 		m_nChannels = 1;
 		m_name = "DEPTH_STENCIL_ATTACHMENT-" + std::to_string(m_nChannels) + "ch\n";
 
-		CreateImage(m_imageHandle, m_imageMemory, m_nWidth, m_nHeight, m_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-
 		aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
+		usageFlags = static_cast<VkImageUsageFlagBits>(usageFlags | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT); // Append depth/stencil attachment flag.
+
+		CreateImage(m_imageHandle, m_imageMemory, m_nWidth, m_nHeight, m_format, VK_IMAGE_TILING_OPTIMAL, usageFlags);
 
 		// Include stencil aspect if the format supports it.
 		if (format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT) 
@@ -87,7 +94,7 @@ Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachm
 
 		CreateImageView(m_imageHandle, m_imageView, m_format, aspect);
 
-		// Transition layout.
+		// Transition layout from undefined to optimal layout.
 		TransitionImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, m_format);
 
 		break;

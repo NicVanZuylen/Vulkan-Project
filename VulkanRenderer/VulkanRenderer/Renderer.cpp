@@ -87,7 +87,7 @@ Renderer::Renderer(GLFWwindow* window)
 
 	// Device & command pools
 	CreateLogicalDevice();
-	CreateCommandPool();
+	CreateCommandPools();
 
 	// Get queue handles...
 	vkGetDeviceQueue(m_logicDevice, m_nPresentQueueFamilyIndex, 0, &m_presentQueue);
@@ -105,13 +105,18 @@ Renderer::Renderer(GLFWwindow* window)
 
 	// Buffers & descriptors setup
 	CreateMVPDescriptorSetLayout();
+	CreateLightingDescriptorSetLayout();
 	CreateMVPUniformBuffers();
-	CreateUBOMVPDescriptorPool();
+	CreateDescriptorPool();
 	CreateUBOMVPDescriptorSets();
+	CreateLightingDescriptorSet();
 
 	// Framebuffers & main command buffers
 	CreateFramebuffers();
 	CreateCmdBuffers();
+
+	// Record post processing command buffer, it only needs to be recorded once.
+	RecordPostPassCommandBuffers();
 
 	// Syncronization
 	CreateSyncObjects();
@@ -131,7 +136,7 @@ Renderer::~Renderer()
 	vkDeviceWaitIdle(m_logicDevice);
 
 	// Destroy descriptor pool.
-	vkDestroyDescriptorPool(m_logicDevice, m_uboDescriptorPool, nullptr);
+	vkDestroyDescriptorPool(m_logicDevice, m_descriptorPool, nullptr);
 
 	// Destroy MVP Uniform buffers.
 	for (int i = 0; i < m_mvpBuffers.Count(); ++i)
@@ -140,8 +145,9 @@ Renderer::~Renderer()
 		vkFreeMemory(m_logicDevice, m_mvpBufferMemBlocks[i], nullptr);
 	}
 
-	// Destroy MVP UBO descriptor set layout.
+	// Destroy descriptor set layouts.
 	vkDestroyDescriptorSetLayout(m_logicDevice, m_uboDescriptorSetLayout, nullptr);
+	vkDestroyDescriptorSetLayout(m_logicDevice, m_lightingPassSetLayout, nullptr);
 
 	// Destroy sync objects.
 	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
@@ -158,7 +164,8 @@ Renderer::~Renderer()
 	}
 
 	// Destroy command pools.
-	vkDestroyCommandPool(m_logicDevice, m_graphicsCmdPool, nullptr);
+	vkDestroyCommandPool(m_logicDevice, m_mainGraphicsCommandPool, nullptr);
+	vkDestroyCommandPool(m_logicDevice, m_postPassGraphicsCmdPool, nullptr);
 	vkDestroyCommandPool(m_logicDevice, m_transferCmdPool, nullptr);
 
 	// Destroy framebuffers.
@@ -605,8 +612,9 @@ void Renderer::CreateFramebufferImages()
 	m_depthImage = new Texture(this, m_swapChainImageExtents.width, m_swapChainImageExtents.height, ATTACHMENT_DEPTH_STENCIL, depthFormat);
 
 	// Create G Buffer images.
-	m_posImage = new Texture(this, m_swapChainImageExtents.width, m_swapChainImageExtents.height, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT); // Signed 16-bit 4-channel float buffer.
-	m_normalImage = new Texture(this, m_swapChainImageExtents.width, m_swapChainImageExtents.height, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT); // Signed 16-bit 4-channel float buffer.
+	m_colorImage = new Texture(this, m_swapChainImageExtents.width, m_swapChainImageExtents.height, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_UNORM, true); // 8-bit 4 channel RGBA color buffer.
+	m_posImage = new Texture(this, m_swapChainImageExtents.width, m_swapChainImageExtents.height, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true); // Signed 16-bit 4-channel float buffer.
+	m_normalImage = new Texture(this, m_swapChainImageExtents.width, m_swapChainImageExtents.height, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true); // Signed 16-bit 4-channel float buffer.
 }
 
 void Renderer::DestroyFramebufferImages() 
@@ -616,6 +624,9 @@ void Renderer::DestroyFramebufferImages()
 
 	delete m_posImage;
 	m_posImage = nullptr;
+
+	delete m_colorImage;
+	m_colorImage = nullptr;
 
 	delete m_depthImage;
 	m_depthImage = nullptr;
@@ -627,19 +638,19 @@ void Renderer::CreateRenderPasses()
 	// Dynamic object pass
 
 	{
-		VkAttachmentDescription colorAttachment = {};
-		colorAttachment.format = m_swapChainImageFormat;
-		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // Not multisampling right now.
-		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear on load.
-		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store color attachment for presentation.
-		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // Don't care.
-		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't care.
-		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Layout could be undefined or VK_IMAGE_LAYOUT_PRESENT_SRC_KHR.
-		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // Output layout should be presentable to the screen.
+		VkAttachmentDescription swapChainAttachment = {};
+		swapChainAttachment.format = m_swapChainImageFormat;
+		swapChainAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // Not multisampling right now.
+		swapChainAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; // Clear on load.
+		swapChainAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; // Store color attachment for presentation.
+		swapChainAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // Don't care.
+		swapChainAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Don't care.
+		swapChainAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Layout could be undefined or VK_IMAGE_LAYOUT_PRESENT_SRC_KHR.
+		swapChainAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // Output layout should be presentable to the screen.
 
-		VkAttachmentReference colorAttachmentRef = {};
-		colorAttachmentRef.attachment = 0;
-		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Expected optimal layout.
+		VkAttachmentReference swapChainAttachRef = {};
+		swapChainAttachRef.attachment = 0;
+		swapChainAttachRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Expected optimal layout.
 
 		VkAttachmentDescription depthAttachment = {};
 		depthAttachment.format = m_depthImage->Format();
@@ -655,6 +666,24 @@ void Renderer::CreateRenderPasses()
 		depthAttachmentRef.attachment = 1;
 		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; // Expected optimal depth/stencil layout.
 
+		VkAttachmentDescription colorAttachment = {};
+		colorAttachment.format = m_colorImage->Format();
+		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference colorAttachRef = {};
+		colorAttachRef.attachment = 2;
+		colorAttachRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference colorInputAttachRef = {};
+		colorInputAttachRef.attachment = 2;
+		colorInputAttachRef.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
 		VkAttachmentDescription posAttachment = {};
 		posAttachment.format = m_posImage->Format();
 		posAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -666,11 +695,11 @@ void Renderer::CreateRenderPasses()
 		posAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 		VkAttachmentReference posAttachmentRef = {};
-		posAttachmentRef.attachment = 2;
+		posAttachmentRef.attachment = 3;
 		posAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 		VkAttachmentReference posInputAttachmentRef = {};
-		posInputAttachmentRef.attachment = 2;
+		posInputAttachmentRef.attachment = 3;
 		posInputAttachmentRef.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 		VkAttachmentDescription normalAttachment = {};
@@ -684,14 +713,14 @@ void Renderer::CreateRenderPasses()
 		normalAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 		VkAttachmentReference normalAttachmentRef = {};
-		normalAttachmentRef.attachment = 3;
+		normalAttachmentRef.attachment = 4;
 		normalAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 		VkAttachmentReference normalInputAttachmentRef = {};
-		normalInputAttachmentRef.attachment = 3;
+		normalInputAttachmentRef.attachment = 4;
 		normalInputAttachmentRef.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-		VkAttachmentReference colorAttachmentRefs[] = { colorAttachmentRef, posAttachmentRef, normalAttachmentRef };
+		VkAttachmentReference colorAttachmentRefs[] = { colorAttachRef, posAttachmentRef, normalAttachmentRef };
 
 		VkSubpassDescription gBufferSubpass = {};
 		gBufferSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -699,22 +728,22 @@ void Renderer::CreateRenderPasses()
 		gBufferSubpass.pColorAttachments = colorAttachmentRefs;
 		gBufferSubpass.pDepthStencilAttachment = &depthAttachmentRef;
 
-		VkAttachmentReference lightingInputs[] = { posInputAttachmentRef, normalInputAttachmentRef };
+		VkAttachmentReference lightingInputs[] = { colorInputAttachRef, posInputAttachmentRef, normalInputAttachmentRef };
 
 		VkSubpassDescription lightingSubpass = {};
 		lightingSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		lightingSubpass.colorAttachmentCount = 1;
-		lightingSubpass.pColorAttachments = &colorAttachmentRef;
-		lightingSubpass.inputAttachmentCount = 2;
+		lightingSubpass.pColorAttachments = &swapChainAttachRef;
+		lightingSubpass.inputAttachmentCount = 3;
 		lightingSubpass.pInputAttachments = lightingInputs;
 		lightingSubpass.pDepthStencilAttachment = VK_NULL_HANDLE; // No depth needed.
 
-		VkAttachmentDescription attachments[] = { colorAttachment, depthAttachment, posAttachment, normalAttachment };
+		VkAttachmentDescription attachments[] = { swapChainAttachment, depthAttachment, colorAttachment, posAttachment, normalAttachment };
 		VkSubpassDescription subpasses[] = { gBufferSubpass, lightingSubpass };
 
 		VkRenderPassCreateInfo renderPassInfo = {};
 		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInfo.attachmentCount = 4;
+		renderPassInfo.attachmentCount = 5;
 		renderPassInfo.pAttachments = attachments;
 		renderPassInfo.subpassCount = 2;
 		renderPassInfo.pSubpasses = subpasses;
@@ -728,16 +757,16 @@ void Renderer::CreateRenderPasses()
 		initialDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
 			| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-		VkSubpassDependency lightingDependency = {};
-		lightingDependency.srcSubpass = 0;
-		lightingDependency.dstSubpass = 1;
-		lightingDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		lightingDependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+		VkSubpassDependency postDependency = {};
+		postDependency.srcSubpass = DYNAMIC_SUBPASS_INDEX;
+		postDependency.dstSubpass = POST_SUBPASS_INDEX;
+		postDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		postDependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
 			| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-		lightingDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		lightingDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		postDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		postDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-		VkSubpassDependency dependencies[] = { initialDependency, lightingDependency };
+		VkSubpassDependency dependencies[] = { initialDependency, postDependency };
 
 		renderPassInfo.dependencyCount = 2;
 		renderPassInfo.pDependencies = dependencies;
@@ -746,6 +775,29 @@ void Renderer::CreateRenderPasses()
 	}
 
 	// ------------------------------------------------------------------------------------------------------------
+}
+
+void Renderer::CreateFramebuffers()
+{
+	m_swapChainFramebuffers.SetSize(m_swapChainImageViews.GetSize());
+	m_swapChainFramebuffers.SetCount(m_swapChainImageViews.GetSize());
+
+	for (int i = 0; i < m_swapChainImageViews.Count(); ++i)
+	{
+		// Provide basic buffers for deferred rendering: Depth, Colors, Positions, Normals.
+		VkImageView attachments[] = { m_swapChainImageViews[i], m_depthImage->ImageView(), m_colorImage->ImageView(), m_posImage->ImageView(), m_normalImage->ImageView() }; // Image used as the framebuffer attachment.
+
+		VkFramebufferCreateInfo framebufferInfo = {};
+		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		framebufferInfo.renderPass = m_mainRenderPass;
+		framebufferInfo.attachmentCount = 5;
+		framebufferInfo.pAttachments = attachments;
+		framebufferInfo.width = m_swapChainImageExtents.width;
+		framebufferInfo.height = m_swapChainImageExtents.height;
+		framebufferInfo.layers = 1;
+
+		RENDERER_SAFECALL(vkCreateFramebuffer(m_logicDevice, &framebufferInfo, nullptr, &m_swapChainFramebuffers[i]), "Renderer Error: Failed to create swap chain framebuffer.");
+	}
 }
 
 void Renderer::CreateMVPDescriptorSetLayout() 
@@ -766,6 +818,24 @@ void Renderer::CreateMVPDescriptorSetLayout()
 	RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_logicDevice, &layoutCreateInfo, nullptr, &m_uboDescriptorSetLayout), "Renderer Error: Failed to create MVP UBO descriptor set layout.");
 }
 
+void Renderer::CreateLightingDescriptorSetLayout() 
+{
+	VkDescriptorSetLayoutBinding lightingBinding = {};
+	lightingBinding.binding = 0;
+	lightingBinding.descriptorCount = 3; // Colors, Positions Normals.
+	lightingBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+	lightingBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	lightingBinding.pImmutableSamplers = nullptr;
+
+	VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
+	layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutCreateInfo.bindingCount = 1;
+	layoutCreateInfo.pBindings = &lightingBinding;
+	layoutCreateInfo.pNext = nullptr;
+
+	RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_logicDevice, &layoutCreateInfo, nullptr, &m_lightingPassSetLayout), "Renderer Error: Failed to create deferred lighting descriptor set layout.");
+}
+
 void Renderer::CreateMVPUniformBuffers() 
 {
 	unsigned int bufferSize = sizeof(MVPUniformBuffer);
@@ -781,19 +851,27 @@ void Renderer::CreateMVPUniformBuffers()
 		CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_mvpBuffers[i], m_mvpBufferMemBlocks[i]);
 }
 
-void Renderer::CreateUBOMVPDescriptorPool()
+void Renderer::CreateDescriptorPool()
 {
-	VkDescriptorPoolSize poolSize = {};
-	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSize.descriptorCount = static_cast<uint32_t>(m_swapChainImages.GetSize());
+	// Uniform buffer poolsize.
+	VkDescriptorPoolSize uboPoolSize = {};
+	uboPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	uboPoolSize.descriptorCount = static_cast<uint32_t>(m_swapChainImages.GetSize());
+
+	// Deferred Lighting pass poolsize.
+	VkDescriptorPoolSize lightingPoolSize = {};
+	lightingPoolSize.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+	lightingPoolSize.descriptorCount = 3; // Colors, Positions, Normals.
+
+	VkDescriptorPoolSize poolSizes[] = { uboPoolSize, lightingPoolSize };
 
 	VkDescriptorPoolCreateInfo poolCreateInfo = {};
 	poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	poolCreateInfo.poolSizeCount = 1;
-	poolCreateInfo.pPoolSizes = &poolSize;
-	poolCreateInfo.maxSets = static_cast<uint32_t>(m_swapChainImages.GetSize());
+	poolCreateInfo.poolSizeCount = 2;
+	poolCreateInfo.pPoolSizes = poolSizes;
+	poolCreateInfo.maxSets = uboPoolSize.descriptorCount + lightingPoolSize.descriptorCount;
 
-	RENDERER_SAFECALL(vkCreateDescriptorPool(m_logicDevice, &poolCreateInfo, nullptr, &m_uboDescriptorPool), "Renderer Error: Failed to create MVP UBO descriptor pool.");
+	RENDERER_SAFECALL(vkCreateDescriptorPool(m_logicDevice, &poolCreateInfo, nullptr, &m_descriptorPool), "Renderer Error: Failed to create descriptor pool.");
 }
 
 void Renderer::CreateUBOMVPDescriptorSets() 
@@ -806,7 +884,7 @@ void Renderer::CreateUBOMVPDescriptorSets()
 	// Allocation info for descriptor sets.
 	VkDescriptorSetAllocateInfo allocInfo = {};
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo.descriptorPool = m_uboDescriptorPool;
+	allocInfo.descriptorPool = m_descriptorPool;
 	allocInfo.descriptorSetCount = layouts.GetSize();
 	allocInfo.pSetLayouts = layouts.Data();
 
@@ -841,29 +919,51 @@ void Renderer::CreateUBOMVPDescriptorSets()
 	}
 }
 
-void Renderer::CreateFramebuffers() 
+void Renderer::CreateLightingDescriptorSet() 
 {
-	m_swapChainFramebuffers.SetSize(m_swapChainImageViews.GetSize());
-	m_swapChainFramebuffers.SetCount(m_swapChainImageViews.GetSize());
+	// Allocate one descriptor set for the lighting pass inputs.
+	VkDescriptorSetAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = m_descriptorPool;
+	allocInfo.descriptorSetCount = 1;
+	allocInfo.pSetLayouts = &m_lightingPassSetLayout;
+	allocInfo.pNext = nullptr;
 
-	for (int i = 0; i < m_swapChainImageViews.Count(); ++i) 
-	{
-		VkImageView attachments[] = { m_swapChainImageViews[i], m_depthImage->ImageView() }; // Image used as the framebuffer attachment.
+	RENDERER_SAFECALL(vkAllocateDescriptorSets(m_logicDevice, &allocInfo, &m_lightingDescriptorSet), "Renderer Error: Failed to allocate lighting descriptor set.");
 
-		VkFramebufferCreateInfo framebufferInfo = {};
-		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebufferInfo.renderPass = m_mainRenderPass;
-		framebufferInfo.attachmentCount = 2;
-		framebufferInfo.pAttachments = attachments;
-		framebufferInfo.width = m_swapChainImageExtents.width;
-		framebufferInfo.height = m_swapChainImageExtents.height;
-		framebufferInfo.layers = 1;
+	// Descriptor information
 
-		RENDERER_SAFECALL(vkCreateFramebuffer(m_logicDevice, &framebufferInfo, nullptr, &m_swapChainFramebuffers[i]), "Renderer Error: Failed to create swap chain framebuffer.");
-	}
+	// Image descriptor infos for deferred shading.
+	VkDescriptorImageInfo colorInfo = {};
+	colorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	colorInfo.imageView = m_colorImage->ImageView();
+	colorInfo.sampler = VK_NULL_HANDLE; // No sampler, framebuffer texel retreival should not be interfered with.
+
+	VkDescriptorImageInfo posInfo = {};
+	posInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	posInfo.imageView = m_posImage->ImageView();
+	posInfo.sampler = VK_NULL_HANDLE;
+
+	VkDescriptorImageInfo normalInfo = {};
+	normalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	normalInfo.imageView = m_normalImage->ImageView();
+	normalInfo.sampler = VK_NULL_HANDLE;
+
+	VkDescriptorImageInfo imageInfos[] = { colorInfo, posInfo, normalInfo };
+
+	// Write image information to descriptor set.
+	VkWriteDescriptorSet writeInfo = {};
+	writeInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	writeInfo.descriptorCount = 3; // Colors, Positions, Normals.
+	writeInfo.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+	writeInfo.dstSet = m_lightingDescriptorSet;
+	writeInfo.pImageInfo = imageInfos;
+	writeInfo.dstArrayElement = 0;
+
+	vkUpdateDescriptorSets(m_logicDevice, 1, &writeInfo, 0, nullptr);
 }
 
-void Renderer::CreateCommandPool() 
+void Renderer::CreateCommandPools() 
 {
 	// ==================================================================================================================================================
 	// Graphics command pool.
@@ -873,8 +973,14 @@ void Renderer::CreateCommandPool()
 	poolCreateInfo.queueFamilyIndex = m_nGraphicsQueueFamilyIndex;
 	poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
 
-	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_graphicsCmdPool), "Renderer Error: Failed to create command pool.");
+	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_mainGraphicsCommandPool), "Renderer Error: Failed to create main graphics command pool.");
 
+	// ==================================================================================================================================================
+	// Graphics post-pass command pool.
+
+	poolCreateInfo.flags = 0; // Command buffers will not need to be re-recorded, so the above flags don't apply.
+
+	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_postPassGraphicsCmdPool), "Renderer Error: Failed to create post-pass graphics command pool.");
 }
 
 void Renderer::CreateCmdBuffers() 
@@ -890,10 +996,14 @@ void Renderer::CreateCmdBuffers()
 	m_dynamicPassCmdBufs.SetSize(m_swapChainFramebuffers.GetSize());
 	m_dynamicPassCmdBufs.SetCount(m_dynamicPassCmdBufs.GetSize());
 
+	// Allocate handle memory for post-pass command buffers.
+	m_postPassCmdBufs.SetSize(m_swapChainFramebuffers.GetSize());
+	m_postPassCmdBufs.SetCount(m_postPassCmdBufs.GetSize());
+
 	// Allocation info.
 	VkCommandBufferAllocateInfo cmdBufAllocateInfo = {};
 	cmdBufAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	cmdBufAllocateInfo.commandPool = m_graphicsCmdPool;
+	cmdBufAllocateInfo.commandPool = m_mainGraphicsCommandPool;
 	cmdBufAllocateInfo.commandBufferCount = m_swapChainFramebuffers.GetSize();
 	cmdBufAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
@@ -904,6 +1014,12 @@ void Renderer::CreateCmdBuffers()
 
 	// Allocate dynamic command buffers...
 	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_dynamicPassCmdBufs.Data()), "Renderer Error: Failed to allocate dynamic command buffers.");
+
+	// Switch command pool for post-pass command buffers.
+	cmdBufAllocateInfo.commandPool = m_postPassGraphicsCmdPool;
+
+	// Allocate post-pass command buffers...
+	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_postPassCmdBufs.Data()), "Renderer Error: Failed to allocate post-pass command buffers.");
 
 	// These command buffers will need to be initially recorded.
 	m_dynamicStateChange[0] = true;
@@ -1028,10 +1144,16 @@ void Renderer::RecordTransferCommandBuffer(const unsigned int& bufferIndex)
 
 void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex)
 {
-	VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
-	VkClearValue depthClearVal = { 1.0f, 1.0f, 1.0f, 1.0f };
+	// Swap chain clear value
+	VkClearValue swapChainClearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-	VkClearValue clearVals[2] = { clearVal, depthClearVal };
+	// G Buffer clear values
+	VkClearValue depthClearVal = { 1.0f, 1.0f, 1.0f, 1.0f };
+	VkClearValue colorClearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+	VkClearValue posClearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+	VkClearValue normalClearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+	VkClearValue clearVals[5] = { swapChainClearVal, depthClearVal, colorClearVal, posClearVal, normalClearVal };
 
 	// Record primary command buffers...
 	VkCommandBufferBeginInfo beginInfo = {};
@@ -1047,7 +1169,7 @@ void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex)
 	mainPassBeginInfo.framebuffer = m_swapChainFramebuffers[bufferIndex];
 	mainPassBeginInfo.renderArea.offset = { 0, 0 };
 	mainPassBeginInfo.renderArea.extent = m_swapChainImageExtents;
-	mainPassBeginInfo.clearValueCount = 2;
+	mainPassBeginInfo.clearValueCount = 5;
 	mainPassBeginInfo.pClearValues = clearVals;
 
 	// Subpass commands are recorded in secondary command buffers.
@@ -1078,7 +1200,7 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex, const
 	inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
 	inheritanceInfo.framebuffer = m_swapChainFramebuffers[bufferIndex];
 	inheritanceInfo.renderPass = m_mainRenderPass;
-	inheritanceInfo.subpass = 0;
+	inheritanceInfo.subpass = DYNAMIC_SUBPASS_INDEX;
 	inheritanceInfo.occlusionQueryEnable = VK_FALSE;
 
 	cmdBeginInfo.pInheritanceInfo = &inheritanceInfo;
@@ -1115,6 +1237,42 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex, const
 
 	// Flag that there is no further dynamic state changes yet.
 	m_dynamicStateChange[bufferIndex] = false;
+}
+
+void Renderer::RecordPostPassCommandBuffers() 
+{
+	// This command buffer is a secondary command buffer, executing draw commands for the final post-pass subpass.
+	VkCommandBufferInheritanceInfo inheritanceInfo = {};
+	inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+	inheritanceInfo.renderPass = m_mainRenderPass;
+	inheritanceInfo.subpass = POST_SUBPASS_INDEX;
+	inheritanceInfo.occlusionQueryEnable = VK_FALSE;
+
+	VkCommandBufferBeginInfo cmdBeginInfo = {};
+	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+	cmdBeginInfo.pInheritanceInfo = &inheritanceInfo;
+
+	for (int i = 0; i < m_swapChainFramebuffers.Count(); ++i)
+	{
+		// Set command buffer framebuffer.
+		inheritanceInfo.framebuffer = m_swapChainFramebuffers[i];
+
+		// Record commands...
+		vkBeginCommandBuffer(m_postPassCmdBufs[i], &cmdBeginInfo);
+
+		// TODO: Replace NULL handle with actual pipeline.
+
+		// Bind deferred lighting pipeline and descriptor.
+		vkCmdBindPipeline(m_postPassCmdBufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, VK_NULL_HANDLE);
+		vkCmdBindDescriptorSets(m_postPassCmdBufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, VK_NULL_HANDLE, 0, 1, &m_lightingDescriptorSet, 0, 0);
+
+		// Run deferred lighting post pass.
+		vkCmdDraw(m_postPassCmdBufs[i], 6, 1, 0, 0);
+
+		// End recording.
+		vkEndCommandBuffer(m_postPassCmdBufs[i]);
+	}
 }
 
 void Renderer::SubmitTransferOperations() 
@@ -1381,7 +1539,7 @@ Renderer::TempCmdBuffer Renderer::CreateTempCommandBuffer()
 
 	VkCommandBufferAllocateInfo allocInfo = {};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool = m_graphicsCmdPool;
+	allocInfo.commandPool = m_mainGraphicsCommandPool;
 	allocInfo.commandBufferCount = 1;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	allocInfo.pNext = nullptr;
@@ -1413,7 +1571,7 @@ void Renderer::UseAndDestroyTempCommandBuffer(Renderer::TempCmdBuffer& buffer)
 	RENDERER_SAFECALL(vkWaitForFences(m_logicDevice, 1, &buffer.m_destroyFence, VK_TRUE, std::numeric_limits<unsigned long long>::max()), "Renderer Error: Failed to wait for temp command buffer fence.");
 
 	vkDestroyFence(m_logicDevice, buffer.m_destroyFence, nullptr);
-	vkFreeCommandBuffers(m_logicDevice, m_graphicsCmdPool, 1, &buffer.m_handle);
+	vkFreeCommandBuffers(m_logicDevice, m_mainGraphicsCommandPool, 1, &buffer.m_handle);
 }
 
 VkDevice Renderer::GetDevice() 
@@ -1428,7 +1586,7 @@ VkPhysicalDevice Renderer::GetPhysDevice()
 
 VkCommandPool Renderer::GetCommandPool() 
 {
-	return m_graphicsCmdPool;
+	return m_mainGraphicsCommandPool;
 }
 
 VkRenderPass Renderer::DynamicRenderPass() 

@@ -20,6 +20,9 @@
 #define MAX_FRAMES_IN_FLIGHT 2
 #define MAX_CONCURRENT_COPIES 16
 
+#define DYNAMIC_SUBPASS_INDEX 0
+#define POST_SUBPASS_INDEX 1
+
 class MeshRenderer;
 class Texture;
 
@@ -166,23 +169,29 @@ private:
 	// Create render pass.
 	inline void CreateRenderPasses();
 
+	// Create framebuffer.
+	inline void CreateFramebuffers();
+
 	// Create MVP descriptor set layout.
 	inline void CreateMVPDescriptorSetLayout();
+
+	// Deferred lighting set layout.
+	inline void CreateLightingDescriptorSetLayout();
 
 	// Create MVP uniform buffers.
 	inline void CreateMVPUniformBuffers();
 
-	// Create UBO MVP descriptor pool.
-	inline void CreateUBOMVPDescriptorPool();
+	// Create global descriptor pool, global descriptors are allocated from it.
+	inline void CreateDescriptorPool();
 
 	// Create UBO MVP descriptor sets.
 	inline void CreateUBOMVPDescriptorSets();
 
-	// Create framebuffer.
-	inline void CreateFramebuffers();
+	// Create Deferred lighting pass descriptor set.
+	inline void CreateLightingDescriptorSet();
 
-	// Create command pool.
-	inline void CreateCommandPool();
+	// Create command pools.
+	inline void CreateCommandPools();
 
 	// Create main command buffers.
 	inline void CreateCmdBuffers();
@@ -201,6 +210,9 @@ private:
 
 	// Record dynamic secondary command buffer.
 	inline void RecordDynamicCommandBuffer(const unsigned int& bufferIndex, const unsigned int& frameIndex);
+
+	// Record post-pass secondary command buffers.
+	inline void RecordPostPassCommandBuffers();
 
 	// Submit transfer operations to the GPU.
 	void SubmitTransferOperations();
@@ -272,15 +284,18 @@ private:
 	Texture* m_depthImage;
 
 	// G-Buffers
+	Texture* m_colorImage;
 	Texture* m_posImage;
 	Texture* m_normalImage;
 
 	// -----------------------------------------------------------------------------------------------------
 	// Commands
-	VkCommandPool m_graphicsCmdPool;
+	VkCommandPool m_mainGraphicsCommandPool;
+	VkCommandPool m_postPassGraphicsCmdPool;
 	VkCommandPool m_transferCmdPool;
 	DynamicArray<VkCommandBuffer> m_mainPrimaryCmdBufs;
 	DynamicArray<VkCommandBuffer> m_dynamicPassCmdBufs; // Command buffers for the dynamic render pass.
+	DynamicArray<VkCommandBuffer> m_postPassCmdBufs; // Post-pass command buffers.
 
 	// Transfer queue submission info moved here to move it from the stack, where it would remain for as long as the thread lives.
 	VkSubmitInfo m_transSubmitInfo;
@@ -289,9 +304,11 @@ private:
 	// -----------------------------------------------------------------------------------------------------
 	// Descriptors
 	VkDescriptorSetLayout m_uboDescriptorSetLayout;
+	VkDescriptorSetLayout m_lightingPassSetLayout;
 
-	VkDescriptorPool m_uboDescriptorPool;
+	VkDescriptorPool m_descriptorPool;
 	DynamicArray<VkDescriptorSet> m_uboDescriptorSets;
+	VkDescriptorSet m_lightingDescriptorSet;
 
 	// -----------------------------------------------------------------------------------------------------
 	// Descriptor buffers
