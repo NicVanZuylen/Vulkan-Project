@@ -122,7 +122,8 @@ Renderer::Renderer(GLFWwindow* window)
 	CreateCmdBuffers();
 
 	// Record post processing command buffer, it only needs to be recorded once.
-	RecordPostPassCommandBuffers();
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+		RecordPostPassCommandBuffers(i);
 
 	// Syncronization
 	CreateSyncObjects();
@@ -320,7 +321,8 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	CreateLightingPipeline();
 
 	// Record post pass command buffers.
-	RecordPostPassCommandBuffers();
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+  	    RecordPostPassCommandBuffers(i);
 
 	// ---------------------------------------------------------------------------------------------------------
 	// State changes
@@ -831,7 +833,7 @@ void Renderer::CreateMVPDescriptorSetLayout()
 	uboLayoutBinding.binding = 0;
 	uboLayoutBinding.descriptorCount = 1;
 	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT; // Can be used in vertex and fragment stages.
 	uboLayoutBinding.pImmutableSamplers = nullptr;
 
 	VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
@@ -1108,10 +1110,12 @@ void Renderer::CreateLightingPipeline()
 	colorBlending.blendConstants[2] = 0.0f;
 	colorBlending.blendConstants[3] = 0.0f;
 
+	VkDescriptorSetLayout setLayouts[] = { m_uboDescriptorSetLayout, m_lightingPassSetLayout };
+
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 1;
-	pipelineLayoutInfo.pSetLayouts = &m_lightingPassSetLayout; // Lighting pass descriptor sets...
+	pipelineLayoutInfo.setLayoutCount = 2;
+	pipelineLayoutInfo.pSetLayouts = setLayouts; // Lighting pass descriptor sets...
 	pipelineLayoutInfo.pushConstantRangeCount = 0;
 	pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
@@ -1173,8 +1177,11 @@ void Renderer::CreateCmdBuffers()
 	m_dynamicPassCmdBufs.SetCount(m_dynamicPassCmdBufs.GetSize());
 
 	// Allocate handle memory for post-pass command buffers.
-	m_postPassCmdBufs.SetSize(m_swapChainFramebuffers.GetSize());
-	m_postPassCmdBufs.SetCount(m_postPassCmdBufs.GetSize());
+	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
+	{
+		m_postPassCmdBufs[i].SetSize(m_swapChainFramebuffers.GetSize());
+		m_postPassCmdBufs[i].SetCount(m_postPassCmdBufs[i].GetSize());
+	}
 
 	// Allocation info.
 	VkCommandBufferAllocateInfo cmdBufAllocateInfo = {};
@@ -1195,7 +1202,8 @@ void Renderer::CreateCmdBuffers()
 	cmdBufAllocateInfo.commandPool = m_postPassGraphicsCmdPool;
 
 	// Allocate post-pass command buffers...
-	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_postPassCmdBufs.Data()), "Renderer Error: Failed to allocate post-pass command buffers.");
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+	     RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_postPassCmdBufs[i].Data()), "Renderer Error: Failed to allocate post-pass command buffers.");
 
 	// These command buffers will need to be initially recorded.
 	m_dynamicStateChange[0] = true;
@@ -1272,9 +1280,9 @@ void Renderer::UpdateMVP(const unsigned int& bufferIndex)
 		return;
 
 	// Set up matrices...
-	m_mvp.model = glm::mat4();
+	m_mvp.m_model = glm::mat4();
 	//m_mvp.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, -1.0f, 0.0f));
-	m_mvp.proj = glm::perspective(45.0f, (float)m_swapChainImageExtents.width / (float)m_swapChainImageExtents.height, 0.1f, 1000.0f);
+	m_mvp.m_proj = glm::perspective(45.0f, (float)m_swapChainImageExtents.width / (float)m_swapChainImageExtents.height, 0.1f, 1000.0f);
 
 	// Change coordinate system using this matrix.
 	glm::mat4 axisCorrection; // Inverts the Y axis to match the OpenGL coordinate system.
@@ -1282,7 +1290,7 @@ void Renderer::UpdateMVP(const unsigned int& bufferIndex)
 	axisCorrection[2][2] = 1.0f;
 	axisCorrection[3][3] = 1.0f;
 
-	m_mvp.proj = axisCorrection * m_mvp.proj;
+	m_mvp.m_proj = axisCorrection * m_mvp.m_proj;
 
 	unsigned int bufferSize = sizeof(m_mvp);
 
@@ -1311,14 +1319,14 @@ void Renderer::RecordTransferCommandBuffer(const unsigned int& bufferIndex)
 	// Issue commands for each requested copy operation.
 	for (int i = 0; i < requests.Count(); ++i)
 	{
-		vkCmdCopyBuffer(cmdBuffer, requests[i].srcBuffer, requests[i].dstBuffer, 1, &requests[i].copyRegion);
+		vkCmdCopyBuffer(cmdBuffer, requests[i].m_srcBuffer, requests[i].m_dstBuffer, 1, &requests[i].m_copyRegion);
 	}
 
 	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of transfer command buffer.");
 	requests.Clear();
 }
 
-void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex)
+void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex, const unsigned int& frameIndex)
 {
 	// Swap chain clear value
 	VkClearValue swapChainClearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -1361,7 +1369,7 @@ void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex)
 	vkCmdNextSubpass(m_mainPrimaryCmdBufs[bufferIndex], VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
 	// Execute post-processing commands...
-	vkCmdExecuteCommands(m_mainPrimaryCmdBufs[bufferIndex], 1, &m_postPassCmdBufs[bufferIndex]);
+	vkCmdExecuteCommands(m_mainPrimaryCmdBufs[bufferIndex], 1, &m_postPassCmdBufs[frameIndex][bufferIndex]);
 
 	// End render pass.
 	vkCmdEndRenderPass(m_mainPrimaryCmdBufs[bufferIndex]);
@@ -1418,13 +1426,13 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex, const
 
 	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of dynamic pass command buffer.");
 
-	RecordMainCommandBuffer(bufferIndex);
+	RecordMainCommandBuffer(bufferIndex, frameIndex);
 
 	// Flag that there is no further dynamic state changes yet.
 	m_dynamicStateChange[bufferIndex] = false;
 }
 
-void Renderer::RecordPostPassCommandBuffers() 
+void Renderer::RecordPostPassCommandBuffers(const unsigned int& frameIndex)
 {
 	// This command buffer is a secondary command buffer, executing draw commands for the final post-pass subpass.
 	VkCommandBufferInheritanceInfo inheritanceInfo = {};
@@ -1443,20 +1451,24 @@ void Renderer::RecordPostPassCommandBuffers()
 		// Set command buffer framebuffer.
 		inheritanceInfo.framebuffer = m_swapChainFramebuffers[i];
 
-		// Record commands...
-		vkBeginCommandBuffer(m_postPassCmdBufs[i], &cmdBeginInfo);
+		VkCommandBuffer cmdBuf = m_postPassCmdBufs[frameIndex][i];
 
-		// TODO: Replace NULL handle with actual pipeline.
+		// Record commands...
+		vkBeginCommandBuffer(cmdBuf, &cmdBeginInfo);
 
 		// Bind deferred lighting pipeline and descriptor.
-		vkCmdBindPipeline(m_postPassCmdBufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingPassPipeline);
-		vkCmdBindDescriptorSets(m_postPassCmdBufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingPipelineLayout, 0, 1, &m_lightingDescriptorSet, 0, 0);
+		vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingPassPipeline);
+
+		// Use MVP UBO and Lighting input attachment descriptor sets.
+		VkDescriptorSet lightingSets[] = { m_uboDescriptorSets[frameIndex], m_lightingDescriptorSet };
+
+		vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingPipelineLayout, 0, 2, lightingSets, 0, 0);
 
 		// Run deferred lighting post pass.
-		vkCmdDraw(m_postPassCmdBufs[i], 6, 1, 0, 0);
+		vkCmdDraw(cmdBuf, 6, 1, 0, 0);
 
 		// End recording.
-		vkEndCommandBuffer(m_postPassCmdBufs[i]);
+		vkEndCommandBuffer(cmdBuf);
 	}
 }
 
@@ -1809,9 +1821,10 @@ const unsigned int Renderer::SwapChainImageCount() const
 	return m_swapChainImageViews.GetSize();
 }
 
-void Renderer::SetViewMatrix(glm::mat4& viewMat) 
+void Renderer::SetViewMatrix(glm::mat4& viewMat, glm::vec3& v3ViewPos) 
 {
-	m_mvp.view = viewMat;
+	m_mvp.m_view = viewMat;
+	m_mvp.m_v4ViewPos = glm::vec4(v3ViewPos.x, v3ViewPos.y, v3ViewPos.z, 1.0f);
 }
 
 VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(DynamicArray<VkSurfaceFormatKHR>& availableFormats) 

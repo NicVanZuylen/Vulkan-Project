@@ -163,8 +163,9 @@ void Application::Run()
 		}
 
 		glm::mat4 viewMat = camera.GetViewMatrix();
+		glm::vec3 v4ViewPos = camera.GetPosition();
 
-		m_renderer->SetViewMatrix(viewMat);
+		m_renderer->SetViewMatrix(viewMat, v4ViewPos);
 
 		m_renderer->End();
 

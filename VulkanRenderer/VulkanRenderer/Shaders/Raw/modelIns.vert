@@ -6,6 +6,7 @@ layout (binding = 0) uniform UniformBuffer
     mat4 model;
 	mat4 view;
 	mat4 proj;
+	vec4 viewPos;
 } mvp;
 
 layout(location = 0) in vec4 position;

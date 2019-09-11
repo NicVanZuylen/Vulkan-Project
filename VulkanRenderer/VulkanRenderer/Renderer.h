@@ -30,16 +30,17 @@ struct Shader;
 
 struct MVPUniformBuffer 
 {
-	glm::mat4 model;
-	glm::mat4 view;
-	glm::mat4 proj;
+	glm::mat4 m_model;
+	glm::mat4 m_view;
+	glm::mat4 m_proj;
+	glm::vec4 m_v4ViewPos;
 };
 
 struct CopyRequest 
 {
-	VkBuffer srcBuffer;
-	VkBuffer dstBuffer;
-	VkBufferCopy copyRegion;
+	VkBuffer m_srcBuffer;
+	VkBuffer m_dstBuffer;
+	VkBufferCopy m_copyRegion;
 };
 
 class Renderer
@@ -123,7 +124,7 @@ public:
 	const unsigned int SwapChainImageCount() const;
 
 	// Setters
-	void SetViewMatrix(glm::mat4& viewMat);
+	void SetViewMatrix(glm::mat4& viewMat, glm::vec3& v3ViewPos);
 
 private:
 
@@ -209,13 +210,13 @@ private:
 	inline void RecordTransferCommandBuffer(const unsigned int& bufferIndex);
 
 	// Record main primary command buffer.
-	inline void RecordMainCommandBuffer(const unsigned int& bufferIndex);
+	inline void RecordMainCommandBuffer(const unsigned int& bufferIndex, const unsigned int& frameIndex);
 
 	// Record dynamic secondary command buffer.
 	inline void RecordDynamicCommandBuffer(const unsigned int& bufferIndex, const unsigned int& frameIndex);
 
 	// Record post-pass secondary command buffers.
-	inline void RecordPostPassCommandBuffers();
+	inline void RecordPostPassCommandBuffers(const unsigned int& frameIndex);
 
 	// Submit transfer operations to the GPU.
 	void SubmitTransferOperations();
@@ -298,7 +299,7 @@ private:
 	VkCommandPool m_transferCmdPool;
 	DynamicArray<VkCommandBuffer> m_mainPrimaryCmdBufs;
 	DynamicArray<VkCommandBuffer> m_dynamicPassCmdBufs; // Command buffers for the dynamic render pass.
-	DynamicArray<VkCommandBuffer> m_postPassCmdBufs; // Post-pass command buffers.
+	DynamicArray<VkCommandBuffer> m_postPassCmdBufs[MAX_FRAMES_IN_FLIGHT]; // Post-pass command buffers, there is a set for each frame in flight.
 
 	// Transfer queue submission info moved here to move it from the stack, where it would remain for as long as the thread lives.
 	VkSubmitInfo m_transSubmitInfo;
