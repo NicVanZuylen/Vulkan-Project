@@ -75,15 +75,13 @@ int Application::Init()
 
 void Application::Run() 
 {
-	Shader* modelShader = new Shader(m_renderer, "Shaders/SPIR-V/vertModelIns.spv", "Shaders/SPIR-V/fragModel.spv");
-	//m_renderer->RegisterShader(modelShader);
+	Shader* modelShader = new Shader(m_renderer, "Shaders/SPIR-V/vertModelInsG.spv", "Shaders/SPIR-V/fragModelG.spv");
 
 	Texture* testTexture = new Texture(m_renderer, "Assets/Objects/Metal/diffuse.tga");
 	Texture* testTexture2 = new Texture(m_renderer, "Assets/Objects/Metal/normal.tga");
 
 	Material* testMat = new Material(m_renderer, modelShader, { testTexture, testTexture2 });
 
-	//Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
 	Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Dragon.obj");
 	Mesh* testMesh2 = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 
@@ -94,16 +92,11 @@ void Application::Run()
 	float fDebugDisplayTime = DEBUG_DISPLAY_TIME;
 
 	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), 0.3f, 5.0f);
-
-	//m_renderer->AddDynamicObject(testObject);
-	//m_renderer->AddDynamicObject(testObject2);
 	
 	Instance ins;
 	ins.m_modelMat = glm::translate(glm::vec3(1.0f, 0.0f, 0.0f));
 
 	testObject2->AddInstance(ins);
-
-	//testObject2->SetInstance(0, ins);
 
 	glm::mat4 instanceModelMat;
 

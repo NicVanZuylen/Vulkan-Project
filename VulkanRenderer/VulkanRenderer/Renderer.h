@@ -190,6 +190,9 @@ private:
 	// Create Deferred lighting pass descriptor set.
 	inline void CreateLightingDescriptorSet();
 
+	// Create Deferred Shading pass pipeline.
+	inline void CreateLightingPipeline();
+
 	// Create command pools.
 	inline void CreateCommandPools();
 
@@ -316,6 +319,17 @@ private:
 	DynamicArray<VkDeviceMemory> m_mvpBufferMemBlocks;
 
 	MVPUniformBuffer m_mvp;
+
+	// -----------------------------------------------------------------------------------------------------
+	// Graphics Pipelines
+
+	VkPipelineLayout m_lightingPipelineLayout;
+	VkPipeline m_lightingPassPipeline;
+
+	// -----------------------------------------------------------------------------------------------------
+	// Lighting
+
+	Shader* m_lightingPassShader;
 
 	// -----------------------------------------------------------------------------------------------------
 	// Rendering

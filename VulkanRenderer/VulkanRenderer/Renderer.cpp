@@ -111,6 +111,12 @@ Renderer::Renderer(GLFWwindow* window)
 	CreateUBOMVPDescriptorSets();
 	CreateLightingDescriptorSet();
 
+	// Load deferred lighting shader.
+	m_lightingPassShader = new Shader(this, "Shaders/SPIR-V/Lighting/fs_quad_vert.spv", "Shaders/SPIR-V/Lighting/deferred_dir_light_frag.spv");
+
+	// Lighting render pipeline
+	CreateLightingPipeline();
+
 	// Framebuffers & main command buffers
 	CreateFramebuffers();
 	CreateCmdBuffers();
@@ -134,6 +140,13 @@ Renderer::~Renderer()
 	m_transferThread = nullptr;
 
 	vkDeviceWaitIdle(m_logicDevice);
+
+	// Destroy pipelines
+	vkDestroyPipeline(m_logicDevice, m_lightingPassPipeline, nullptr);
+	vkDestroyPipelineLayout(m_logicDevice, m_lightingPipelineLayout, nullptr);
+
+	// Delete lighting shader.
+	delete m_lightingPassShader;
 
 	// Destroy descriptor pool.
 	vkDestroyDescriptorPool(m_logicDevice, m_descriptorPool, nullptr);
@@ -232,6 +245,10 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	// ---------------------------------------------------------------------------------------------------------
 	// Deletion
 
+	// Destroy lighting pipeline.
+	vkDestroyPipeline(m_logicDevice, m_lightingPassPipeline, nullptr);
+	vkDestroyPipelineLayout(m_logicDevice, m_lightingPipelineLayout, nullptr);
+
 	// Wait for any graphics operations to complete.
 	WaitGraphicsIdle();
 
@@ -296,6 +313,8 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	    // Recreate pipelines using the first render object (as there should always be at-least one for the pipeline to exist.)
 		allPipelines[i]->m_renderObjects[0]->RecreatePipeline();
 	}
+
+	CreateLightingPipeline();
 
 	// ---------------------------------------------------------------------------------------------------------
 	// State changes
@@ -820,17 +839,17 @@ void Renderer::CreateMVPDescriptorSetLayout()
 
 void Renderer::CreateLightingDescriptorSetLayout() 
 {
-	VkDescriptorSetLayoutBinding lightingBinding = {};
-	lightingBinding.binding = 0;
-	lightingBinding.descriptorCount = 3; // Colors, Positions Normals.
-	lightingBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-	lightingBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-	lightingBinding.pImmutableSamplers = nullptr;
+	VkDescriptorSetLayoutBinding binding = {};
+	binding.binding = 0;
+	binding.descriptorCount = 3;
+	binding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+	binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	binding.pImmutableSamplers = nullptr;
 
 	VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
 	layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	layoutCreateInfo.bindingCount = 1;
-	layoutCreateInfo.pBindings = &lightingBinding;
+	layoutCreateInfo.pBindings = &binding;
 	layoutCreateInfo.pNext = nullptr;
 
 	RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_logicDevice, &layoutCreateInfo, nullptr, &m_lightingPassSetLayout), "Renderer Error: Failed to create deferred lighting descriptor set layout.");
@@ -961,6 +980,154 @@ void Renderer::CreateLightingDescriptorSet()
 	writeInfo.dstArrayElement = 0;
 
 	vkUpdateDescriptorSets(m_logicDevice, 1, &writeInfo, 0, nullptr);
+}
+
+void Renderer::CreateLightingPipeline() 
+{
+	// Vertex shader stage information.
+	VkPipelineShaderStageCreateInfo vertStageInfo = {};
+	vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	vertStageInfo.module = m_lightingPassShader->m_vertModule;
+	vertStageInfo.pName = "main";
+
+	// Fragment shader stage information.
+	VkPipelineShaderStageCreateInfo fragStageInfo = {};
+	fragStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	fragStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	fragStageInfo.module = m_lightingPassShader->m_fragModule;
+	fragStageInfo.pName = "main";
+
+	// Array of shader stage information.
+	VkPipelineShaderStageCreateInfo shaderStageInfos[] = { vertStageInfo, fragStageInfo };
+
+	VkPipelineVertexInputStateCreateInfo vertInputInfo = {};
+	vertInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	vertInputInfo.vertexBindingDescriptionCount = 0;
+	vertInputInfo.pVertexBindingDescriptions = nullptr;
+	vertInputInfo.vertexAttributeDescriptionCount = 0;
+	vertInputInfo.pVertexAttributeDescriptions = nullptr;
+
+	// Input assembly stage configuration.
+	VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
+	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+	inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+	// Viewport configuration.
+	VkViewport viewPort = {};
+	viewPort.x = 0.0f;
+	viewPort.y = 0.0f;
+	viewPort.width = (float)m_swapChainImageExtents.width;
+	viewPort.height = (float)m_swapChainImageExtents.height;
+	viewPort.minDepth = 0.0f;
+	viewPort.maxDepth = 1.0f;
+
+	// Scissor configuration.
+	VkRect2D scissor = {};
+	scissor.offset = { 0, 0 };
+	scissor.extent = m_swapChainImageExtents;
+
+	// Viewport state configuration.
+	VkPipelineViewportStateCreateInfo viewportState = {};
+	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewportState.viewportCount = 1;
+	viewportState.pViewports = &viewPort;
+	viewportState.scissorCount = 1;
+	viewportState.pScissors = &scissor;
+
+	// Primitive rasterization stage configuration.
+	VkPipelineRasterizationStateCreateInfo rasterizer = {};
+	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	rasterizer.depthClampEnable = VK_FALSE;
+	rasterizer.rasterizerDiscardEnable = VK_FALSE;
+	rasterizer.polygonMode = VK_POLYGON_MODE_FILL; // Fragment shader will be run on all rasterized fragments within each triangle.
+	rasterizer.lineWidth = 1.0f;
+	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; // Face culling
+	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+
+	// Used for shadow mapping...
+	rasterizer.depthBiasEnable = VK_FALSE;
+	rasterizer.depthBiasConstantFactor = 0.0f;
+	rasterizer.depthBiasClamp = 0.0f;
+	rasterizer.depthBiasSlopeFactor = 0.0f;
+
+	// Depth / Stencil state
+	VkPipelineDepthStencilStateCreateInfo depthStencilState = {};
+	depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+	depthStencilState.depthTestEnable = VK_FALSE; // No depth testing for deferred shading lighting pass.
+	depthStencilState.depthWriteEnable = VK_FALSE; // Also no writing to depth.
+	depthStencilState.stencilTestEnable = VK_FALSE; // Not needed.
+	depthStencilState.depthBoundsTestEnable = VK_FALSE; // We don't need the bounds test.
+	depthStencilState.minDepthBounds = 0.0f;
+	depthStencilState.maxDepthBounds = 1.0f;
+	depthStencilState.flags = 0;
+
+	// Multisampling stage configuration.
+	VkPipelineMultisampleStateCreateInfo multisampler = {};
+	multisampler.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	multisampler.sampleShadingEnable = VK_FALSE;
+	multisampler.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	multisampler.minSampleShading = 1.0f;
+	multisampler.pSampleMask = nullptr;
+	multisampler.alphaToCoverageEnable = VK_FALSE;
+	multisampler.alphaToOneEnable = VK_FALSE;
+
+	// TODO: Set this up for deferred shading, to allow blending of multiple lights.
+	// Color blending
+	VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
+	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	colorBlendAttachment.blendEnable = VK_FALSE; // Blending not required yet...
+	colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+	colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+	colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+	colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+	colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+	VkPipelineColorBlendAttachmentState colorBlendAttachments[] = { colorBlendAttachment };
+
+	VkPipelineColorBlendStateCreateInfo colorBlending = {};
+	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	colorBlending.logicOpEnable = VK_FALSE;
+	colorBlending.logicOp = VK_LOGIC_OP_COPY;
+	colorBlending.attachmentCount = 1; // Blending for color output.
+	colorBlending.pAttachments = colorBlendAttachments;
+	colorBlending.blendConstants[0] = 0.0f;
+	colorBlending.blendConstants[1] = 0.0f;
+	colorBlending.blendConstants[2] = 0.0f;
+	colorBlending.blendConstants[3] = 0.0f;
+
+	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipelineLayoutInfo.setLayoutCount = 1;
+	pipelineLayoutInfo.pSetLayouts = &m_lightingPassSetLayout; // Lighting pass descriptor sets...
+	pipelineLayoutInfo.pushConstantRangeCount = 0;
+	pipelineLayoutInfo.pPushConstantRanges = nullptr;
+
+	RENDERER_SAFECALL(vkCreatePipelineLayout(m_logicDevice, &pipelineLayoutInfo, nullptr, &m_lightingPipelineLayout), "Renderer Error: Failed to create lighting graphics pipeline layout.");
+
+	// Create pipeline.
+	VkGraphicsPipelineCreateInfo pipelineInfo = {};
+	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipelineInfo.stageCount = 2;
+	pipelineInfo.pStages = shaderStageInfos;
+	pipelineInfo.pVertexInputState = &vertInputInfo;
+	pipelineInfo.pInputAssemblyState = &inputAssembly;
+	pipelineInfo.pViewportState = &viewportState;
+	pipelineInfo.pRasterizationState = &rasterizer;
+	pipelineInfo.pMultisampleState = &multisampler;
+	pipelineInfo.pDepthStencilState = &depthStencilState;
+	pipelineInfo.pColorBlendState = &colorBlending;
+	pipelineInfo.pDynamicState = nullptr;
+	pipelineInfo.layout = m_lightingPipelineLayout;
+	pipelineInfo.renderPass = m_mainRenderPass;
+	pipelineInfo.subpass = POST_SUBPASS_INDEX;
+	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+	pipelineInfo.basePipelineIndex = -1;
+
+	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_logicDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_lightingPassPipeline), "Renderer Error: Failed to create lighting graphics pipeline.");
 }
 
 void Renderer::CreateCommandPools() 
@@ -1160,6 +1327,7 @@ void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex)
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 
+	// Begin recording...
 	vkBeginCommandBuffer(m_mainPrimaryCmdBufs[bufferIndex], &beginInfo);
 
 	// Begin render pass.
@@ -1180,8 +1348,16 @@ void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex)
 	// Execute subpass secondary command buffers.
 	vkCmdExecuteCommands(m_mainPrimaryCmdBufs[bufferIndex], 1, subpassCommands);
 
+	// Progress to next subpass.
+	vkCmdNextSubpass(m_mainPrimaryCmdBufs[bufferIndex], VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+
+	// Execute post-processing commands...
+	vkCmdExecuteCommands(m_mainPrimaryCmdBufs[bufferIndex], 1, &m_postPassCmdBufs[bufferIndex]);
+
+	// End render pass.
 	vkCmdEndRenderPass(m_mainPrimaryCmdBufs[bufferIndex]);
 
+	// End recording.
 	vkEndCommandBuffer(m_mainPrimaryCmdBufs[bufferIndex]);
 }
 
@@ -1264,8 +1440,8 @@ void Renderer::RecordPostPassCommandBuffers()
 		// TODO: Replace NULL handle with actual pipeline.
 
 		// Bind deferred lighting pipeline and descriptor.
-		vkCmdBindPipeline(m_postPassCmdBufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, VK_NULL_HANDLE);
-		vkCmdBindDescriptorSets(m_postPassCmdBufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, VK_NULL_HANDLE, 0, 1, &m_lightingDescriptorSet, 0, 0);
+		vkCmdBindPipeline(m_postPassCmdBufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingPassPipeline);
+		vkCmdBindDescriptorSets(m_postPassCmdBufs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingPipelineLayout, 0, 1, &m_lightingDescriptorSet, 0, 0);
 
 		// Run deferred lighting post pass.
 		vkCmdDraw(m_postPassCmdBufs[i], 6, 1, 0, 0);
