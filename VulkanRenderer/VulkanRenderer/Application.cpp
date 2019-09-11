@@ -94,9 +94,9 @@ void Application::Run()
 	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), 0.3f, 5.0f);
 	
 	Instance ins;
-	ins.m_modelMat = glm::translate(glm::vec3(1.0f, 0.0f, 0.0f));
+	ins.m_modelMat = glm::translate(glm::vec3(0.0f, 0.0f, 5.0f));
 
-	testObject2->AddInstance(ins);
+	testObject2->SetInstance(0, ins);
 
 	glm::mat4 instanceModelMat;
 

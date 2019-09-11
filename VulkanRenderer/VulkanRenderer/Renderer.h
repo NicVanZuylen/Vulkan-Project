@@ -188,7 +188,7 @@ private:
 	inline void CreateUBOMVPDescriptorSets();
 
 	// Create Deferred lighting pass descriptor set.
-	inline void CreateLightingDescriptorSet();
+	inline void CreateLightingDescriptorSet(bool bAllocNew = true);
 
 	// Create Deferred Shading pass pipeline.
 	inline void CreateLightingPipeline();

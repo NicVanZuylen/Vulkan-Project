@@ -18,11 +18,11 @@ void main()
     vec4 color = subpassLoad(inputs[0]).rgba;
     vec4 normal = subpassLoad(inputs[2]).xyzw;
 
-    float normalDotLight = -dot(lightDir, normal);
+    float normalDotLight = max(-dot(lightDir, normal), 0.0f);
 
-    vec4 lighting = vec4(0.1f, 0.1f, 0.1f, 1.0f); // Ambient component.
-    lighting += normalDotLight * lightColor * BRIGHTNESS_MULT; // Lighting component.
+    vec3 lighting = vec3(0.3f); // Ambient component.
+    lighting += normalDotLight * lightColor.rgb * BRIGHTNESS_MULT; // Lighting component.
 
-    outColor = color * lighting; // Multiply color by lighting level as output.
+    outColor = vec4(color.rgb * lighting, 1.0f); // Multiply color by lighting level as output.
 }
 

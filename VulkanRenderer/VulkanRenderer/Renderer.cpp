@@ -245,12 +245,12 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	// ---------------------------------------------------------------------------------------------------------
 	// Deletion
 
+	// Wait for any graphics operations to complete.
+	WaitGraphicsIdle();
+
 	// Destroy lighting pipeline.
 	vkDestroyPipeline(m_logicDevice, m_lightingPassPipeline, nullptr);
 	vkDestroyPipelineLayout(m_logicDevice, m_lightingPipelineLayout, nullptr);
-
-	// Wait for any graphics operations to complete.
-	WaitGraphicsIdle();
 
 	// Destroy old framebuffers.
 	for (int i = 0; i < m_swapChainFramebuffers.GetSize(); ++i) 
@@ -303,6 +303,9 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	// Recreate framebuffers
 	CreateFramebuffers();
 
+	// Update lighting descriptors.
+	CreateLightingDescriptorSet(false);
+
 	// ---------------------------------------------------------------------------------------------------------
 	// Pipeline recreation
 
@@ -315,6 +318,9 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	}
 
 	CreateLightingPipeline();
+
+	// Record post pass command buffers.
+	RecordPostPassCommandBuffers();
 
 	// ---------------------------------------------------------------------------------------------------------
 	// State changes
@@ -938,17 +944,20 @@ void Renderer::CreateUBOMVPDescriptorSets()
 	}
 }
 
-void Renderer::CreateLightingDescriptorSet() 
+void Renderer::CreateLightingDescriptorSet(bool bAllocNew) 
 {
-	// Allocate one descriptor set for the lighting pass inputs.
-	VkDescriptorSetAllocateInfo allocInfo = {};
-	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo.descriptorPool = m_descriptorPool;
-	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &m_lightingPassSetLayout;
-	allocInfo.pNext = nullptr;
+	if(bAllocNew) 
+	{
+		// Allocate one descriptor set for the lighting pass inputs.
+		VkDescriptorSetAllocateInfo allocInfo = {};
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.descriptorPool = m_descriptorPool;
+		allocInfo.descriptorSetCount = 1;
+		allocInfo.pSetLayouts = &m_lightingPassSetLayout;
+		allocInfo.pNext = nullptr;
 
-	RENDERER_SAFECALL(vkAllocateDescriptorSets(m_logicDevice, &allocInfo, &m_lightingDescriptorSet), "Renderer Error: Failed to allocate lighting descriptor set.");
+		RENDERER_SAFECALL(vkAllocateDescriptorSets(m_logicDevice, &allocInfo, &m_lightingDescriptorSet), "Renderer Error: Failed to allocate lighting descriptor set.");
+	}
 
 	// Descriptor information
 
@@ -1145,7 +1154,7 @@ void Renderer::CreateCommandPools()
 	// ==================================================================================================================================================
 	// Graphics post-pass command pool.
 
-	poolCreateInfo.flags = 0; // Command buffers will not need to be re-recorded, so the above flags don't apply.
+	poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // Same as before, but transient isn't needed because this command buffer will not be recorded often.
 
 	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_postPassGraphicsCmdPool), "Renderer Error: Failed to create post-pass graphics command pool.");
 }
