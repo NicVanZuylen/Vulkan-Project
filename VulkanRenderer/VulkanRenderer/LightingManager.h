@@ -12,7 +12,7 @@ struct DirectionalLight
 	glm::vec4 m_v4Color;
 };
 
-#define DIRECTIONAL_LIGHT_COUNT 1
+#define DIRECTIONAL_LIGHT_COUNT 2
 
 class LightingManager
 {

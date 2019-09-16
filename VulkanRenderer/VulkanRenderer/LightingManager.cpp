@@ -6,6 +6,9 @@ LightingManager::LightingManager(Renderer* renderer, Shader* dirLightShader, con
 {
 	m_renderer = renderer;
 
+	m_dirLights.SetSize(DIRECTIONAL_LIGHT_COUNT);
+	m_dirLights.SetCount(DIRECTIONAL_LIGHT_COUNT);
+
 	for(int i = 0; i < DIRECTIONAL_LIGHT_COUNT; ++i) 
 	{
 		m_dirLights[i].m_v4Direction = glm::vec4(0.0f, -1.0f, 0.0f, 1.0f); // Point directly down.

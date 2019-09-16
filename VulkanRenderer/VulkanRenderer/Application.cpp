@@ -103,6 +103,7 @@ void Application::Run()
 	glm::mat4 moveModelMat;
 
 	m_renderer->UpdateDirectionalLight(glm::vec4(0.0f, 0.0f, -1.0f, 1.0f), glm::vec4(1.0f), 0);
+	m_renderer->UpdateDirectionalLight(glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f), 1);
 
 	while(!glfwWindowShouldClose(m_window)) 
 	{
