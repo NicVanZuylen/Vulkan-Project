@@ -1,8 +1,8 @@
 #include "Renderer.h"
-#include <algorithm>
 #include <set>
 #include <thread>
 
+#include "LightingManager.h"
 #include "Shader.h"
 #include "Material.h"
 #include "MeshRenderer.h"
@@ -105,17 +105,17 @@ Renderer::Renderer(GLFWwindow* window)
 
 	// Buffers & descriptors setup
 	CreateMVPDescriptorSetLayout();
-	CreateLightingDescriptorSetLayout();
+	CreateGBufferInputSetLayout();
 	CreateMVPUniformBuffers();
 	CreateDescriptorPool();
 	CreateUBOMVPDescriptorSets();
-	CreateLightingDescriptorSet();
+	CreateGBufferInputDescriptorSet();
 
-	// Load deferred lighting shader.
-	m_lightingPassShader = new Shader(this, "Shaders/SPIR-V/Lighting/fs_quad_vert.spv", "Shaders/SPIR-V/Lighting/deferred_dir_light_frag.spv");
+	// Load deferred directional lighting shader.
+	m_dirLightingShader = new Shader(this, "Shaders/SPIR-V/Lighting/fs_quad_vert.spv", "Shaders/SPIR-V/Lighting/deferred_dir_light_frag.spv");
 
-	// Lighting render pipeline
-	CreateLightingPipeline();
+	// Create lighting manager.
+	m_lightingManager = new LightingManager(this, m_dirLightingShader, m_nWindowWidth, m_nWindowHeight);
 
 	// Framebuffers & main command buffers
 	CreateFramebuffers();
@@ -142,12 +142,9 @@ Renderer::~Renderer()
 
 	vkDeviceWaitIdle(m_logicDevice);
 
-	// Destroy pipelines
-	vkDestroyPipeline(m_logicDevice, m_lightingPassPipeline, nullptr);
-	vkDestroyPipelineLayout(m_logicDevice, m_lightingPipelineLayout, nullptr);
-
 	// Delete lighting shader.
-	delete m_lightingPassShader;
+	delete m_dirLightingShader;
+	m_dirLightingShader = nullptr;
 
 	// Destroy descriptor pool.
 	vkDestroyDescriptorPool(m_logicDevice, m_descriptorPool, nullptr);
@@ -161,7 +158,7 @@ Renderer::~Renderer()
 
 	// Destroy descriptor set layouts.
 	vkDestroyDescriptorSetLayout(m_logicDevice, m_uboDescriptorSetLayout, nullptr);
-	vkDestroyDescriptorSetLayout(m_logicDevice, m_lightingPassSetLayout, nullptr);
+	vkDestroyDescriptorSetLayout(m_logicDevice, m_gBufferInputSetLayout, nullptr);
 
 	// Destroy sync objects.
 	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
@@ -177,6 +174,10 @@ Renderer::~Renderer()
 		vkDestroyFence(m_logicDevice, m_copyReadyFences[i], nullptr);
 	}
 
+	// Destroy lighting manager.
+	delete m_lightingManager;
+	m_lightingManager = nullptr;
+
 	// Destroy command pools.
 	vkDestroyCommandPool(m_logicDevice, m_mainGraphicsCommandPool, nullptr);
 	vkDestroyCommandPool(m_logicDevice, m_postPassGraphicsCmdPool, nullptr);
@@ -190,6 +191,7 @@ Renderer::~Renderer()
 	vkDestroyRenderPass(m_logicDevice, m_mainRenderPass, nullptr);
 
 	delete[] m_extensions;
+	m_extensions = nullptr;
 
 	// Destroy debug messenger.
 	if(m_bEnableValidationLayers)
@@ -249,10 +251,6 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	// Wait for any graphics operations to complete.
 	WaitGraphicsIdle();
 
-	// Destroy lighting pipeline.
-	vkDestroyPipeline(m_logicDevice, m_lightingPassPipeline, nullptr);
-	vkDestroyPipelineLayout(m_logicDevice, m_lightingPipelineLayout, nullptr);
-
 	// Destroy old framebuffers.
 	for (int i = 0; i < m_swapChainFramebuffers.GetSize(); ++i) 
 	{
@@ -305,10 +303,13 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	CreateFramebuffers();
 
 	// Update lighting descriptors.
-	CreateLightingDescriptorSet(false);
+	CreateGBufferInputDescriptorSet(false);
 
 	// ---------------------------------------------------------------------------------------------------------
 	// Pipeline recreation
+
+	// Lighting pipeline recreation.
+	m_lightingManager->RecreatePipelines(m_dirLightingShader, m_nWindowWidth, m_nWindowHeight);
 
 	DynamicArray<PipelineData*>& allPipelines = MeshRenderer::Pipelines();
 
@@ -317,8 +318,6 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	    // Recreate pipelines using the first render object (as there should always be at-least one for the pipeline to exist.)
 		allPipelines[i]->m_renderObjects[0]->RecreatePipeline();
 	}
-
-	CreateLightingPipeline();
 
 	// Record post pass command buffers.
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
@@ -845,7 +844,7 @@ void Renderer::CreateMVPDescriptorSetLayout()
 	RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_logicDevice, &layoutCreateInfo, nullptr, &m_uboDescriptorSetLayout), "Renderer Error: Failed to create MVP UBO descriptor set layout.");
 }
 
-void Renderer::CreateLightingDescriptorSetLayout() 
+void Renderer::CreateGBufferInputSetLayout() 
 {
 	VkDescriptorSetLayoutBinding binding = {};
 	binding.binding = 0;
@@ -860,7 +859,7 @@ void Renderer::CreateLightingDescriptorSetLayout()
 	layoutCreateInfo.pBindings = &binding;
 	layoutCreateInfo.pNext = nullptr;
 
-	RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_logicDevice, &layoutCreateInfo, nullptr, &m_lightingPassSetLayout), "Renderer Error: Failed to create deferred lighting descriptor set layout.");
+	RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_logicDevice, &layoutCreateInfo, nullptr, &m_gBufferInputSetLayout), "Renderer Error: Failed to create deferred lighting descriptor set layout.");
 }
 
 void Renderer::CreateMVPUniformBuffers() 
@@ -946,7 +945,7 @@ void Renderer::CreateUBOMVPDescriptorSets()
 	}
 }
 
-void Renderer::CreateLightingDescriptorSet(bool bAllocNew) 
+void Renderer::CreateGBufferInputDescriptorSet(bool bAllocNew) 
 {
 	if(bAllocNew) 
 	{
@@ -955,10 +954,10 @@ void Renderer::CreateLightingDescriptorSet(bool bAllocNew)
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorPool = m_descriptorPool;
 		allocInfo.descriptorSetCount = 1;
-		allocInfo.pSetLayouts = &m_lightingPassSetLayout;
+		allocInfo.pSetLayouts = &m_gBufferInputSetLayout;
 		allocInfo.pNext = nullptr;
 
-		RENDERER_SAFECALL(vkAllocateDescriptorSets(m_logicDevice, &allocInfo, &m_lightingDescriptorSet), "Renderer Error: Failed to allocate lighting descriptor set.");
+		RENDERER_SAFECALL(vkAllocateDescriptorSets(m_logicDevice, &allocInfo, &m_gBufferInputSet), "Renderer Error: Failed to allocate lighting descriptor set.");
 	}
 
 	// Descriptor information
@@ -986,161 +985,11 @@ void Renderer::CreateLightingDescriptorSet(bool bAllocNew)
 	writeInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	writeInfo.descriptorCount = 3; // Colors, Positions, Normals.
 	writeInfo.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-	writeInfo.dstSet = m_lightingDescriptorSet;
+	writeInfo.dstSet = m_gBufferInputSet;
 	writeInfo.pImageInfo = imageInfos;
 	writeInfo.dstArrayElement = 0;
 
 	vkUpdateDescriptorSets(m_logicDevice, 1, &writeInfo, 0, nullptr);
-}
-
-void Renderer::CreateLightingPipeline() 
-{
-	// Vertex shader stage information.
-	VkPipelineShaderStageCreateInfo vertStageInfo = {};
-	vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-	vertStageInfo.module = m_lightingPassShader->m_vertModule;
-	vertStageInfo.pName = "main";
-
-	// Fragment shader stage information.
-	VkPipelineShaderStageCreateInfo fragStageInfo = {};
-	fragStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-	fragStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-	fragStageInfo.module = m_lightingPassShader->m_fragModule;
-	fragStageInfo.pName = "main";
-
-	// Array of shader stage information.
-	VkPipelineShaderStageCreateInfo shaderStageInfos[] = { vertStageInfo, fragStageInfo };
-
-	VkPipelineVertexInputStateCreateInfo vertInputInfo = {};
-	vertInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertInputInfo.vertexBindingDescriptionCount = 0;
-	vertInputInfo.pVertexBindingDescriptions = nullptr;
-	vertInputInfo.vertexAttributeDescriptionCount = 0;
-	vertInputInfo.pVertexAttributeDescriptions = nullptr;
-
-	// Input assembly stage configuration.
-	VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
-	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-	inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	inputAssembly.primitiveRestartEnable = VK_FALSE;
-
-	// Viewport configuration.
-	VkViewport viewPort = {};
-	viewPort.x = 0.0f;
-	viewPort.y = 0.0f;
-	viewPort.width = (float)m_swapChainImageExtents.width;
-	viewPort.height = (float)m_swapChainImageExtents.height;
-	viewPort.minDepth = 0.0f;
-	viewPort.maxDepth = 1.0f;
-
-	// Scissor configuration.
-	VkRect2D scissor = {};
-	scissor.offset = { 0, 0 };
-	scissor.extent = m_swapChainImageExtents;
-
-	// Viewport state configuration.
-	VkPipelineViewportStateCreateInfo viewportState = {};
-	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-	viewportState.viewportCount = 1;
-	viewportState.pViewports = &viewPort;
-	viewportState.scissorCount = 1;
-	viewportState.pScissors = &scissor;
-
-	// Primitive rasterization stage configuration.
-	VkPipelineRasterizationStateCreateInfo rasterizer = {};
-	rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-	rasterizer.depthClampEnable = VK_FALSE;
-	rasterizer.rasterizerDiscardEnable = VK_FALSE;
-	rasterizer.polygonMode = VK_POLYGON_MODE_FILL; // Fragment shader will be run on all rasterized fragments within each triangle.
-	rasterizer.lineWidth = 1.0f;
-	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; // Face culling
-	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-
-	// Used for shadow mapping...
-	rasterizer.depthBiasEnable = VK_FALSE;
-	rasterizer.depthBiasConstantFactor = 0.0f;
-	rasterizer.depthBiasClamp = 0.0f;
-	rasterizer.depthBiasSlopeFactor = 0.0f;
-
-	// Depth / Stencil state
-	VkPipelineDepthStencilStateCreateInfo depthStencilState = {};
-	depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-	depthStencilState.depthTestEnable = VK_FALSE; // No depth testing for deferred shading lighting pass.
-	depthStencilState.depthWriteEnable = VK_FALSE; // Also no writing to depth.
-	depthStencilState.stencilTestEnable = VK_FALSE; // Not needed.
-	depthStencilState.depthBoundsTestEnable = VK_FALSE; // We don't need the bounds test.
-	depthStencilState.minDepthBounds = 0.0f;
-	depthStencilState.maxDepthBounds = 1.0f;
-	depthStencilState.flags = 0;
-
-	// Multisampling stage configuration.
-	VkPipelineMultisampleStateCreateInfo multisampler = {};
-	multisampler.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-	multisampler.sampleShadingEnable = VK_FALSE;
-	multisampler.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-	multisampler.minSampleShading = 1.0f;
-	multisampler.pSampleMask = nullptr;
-	multisampler.alphaToCoverageEnable = VK_FALSE;
-	multisampler.alphaToOneEnable = VK_FALSE;
-
-	// TODO: Set this up for deferred shading, to allow blending of multiple lights.
-	// Color blending
-	VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachment.blendEnable = VK_FALSE; // Blending not required yet...
-	colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-	colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-	colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-	colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-	colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-	colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-
-	VkPipelineColorBlendAttachmentState colorBlendAttachments[] = { colorBlendAttachment };
-
-	VkPipelineColorBlendStateCreateInfo colorBlending = {};
-	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-	colorBlending.logicOpEnable = VK_FALSE;
-	colorBlending.logicOp = VK_LOGIC_OP_COPY;
-	colorBlending.attachmentCount = 1; // Blending for color output.
-	colorBlending.pAttachments = colorBlendAttachments;
-	colorBlending.blendConstants[0] = 0.0f;
-	colorBlending.blendConstants[1] = 0.0f;
-	colorBlending.blendConstants[2] = 0.0f;
-	colorBlending.blendConstants[3] = 0.0f;
-
-	VkDescriptorSetLayout setLayouts[] = { m_uboDescriptorSetLayout, m_lightingPassSetLayout };
-
-	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 2;
-	pipelineLayoutInfo.pSetLayouts = setLayouts; // Lighting pass descriptor sets...
-	pipelineLayoutInfo.pushConstantRangeCount = 0;
-	pipelineLayoutInfo.pPushConstantRanges = nullptr;
-
-	RENDERER_SAFECALL(vkCreatePipelineLayout(m_logicDevice, &pipelineLayoutInfo, nullptr, &m_lightingPipelineLayout), "Renderer Error: Failed to create lighting graphics pipeline layout.");
-
-	// Create pipeline.
-	VkGraphicsPipelineCreateInfo pipelineInfo = {};
-	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipelineInfo.stageCount = 2;
-	pipelineInfo.pStages = shaderStageInfos;
-	pipelineInfo.pVertexInputState = &vertInputInfo;
-	pipelineInfo.pInputAssemblyState = &inputAssembly;
-	pipelineInfo.pViewportState = &viewportState;
-	pipelineInfo.pRasterizationState = &rasterizer;
-	pipelineInfo.pMultisampleState = &multisampler;
-	pipelineInfo.pDepthStencilState = &depthStencilState;
-	pipelineInfo.pColorBlendState = &colorBlending;
-	pipelineInfo.pDynamicState = nullptr;
-	pipelineInfo.layout = m_lightingPipelineLayout;
-	pipelineInfo.renderPass = m_mainRenderPass;
-	pipelineInfo.subpass = POST_SUBPASS_INDEX;
-	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
-	pipelineInfo.basePipelineIndex = -1;
-
-	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_logicDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_lightingPassPipeline), "Renderer Error: Failed to create lighting graphics pipeline.");
 }
 
 void Renderer::CreateCommandPools() 
@@ -1457,12 +1306,12 @@ void Renderer::RecordPostPassCommandBuffers(const unsigned int& frameIndex)
 		vkBeginCommandBuffer(cmdBuf, &cmdBeginInfo);
 
 		// Bind deferred lighting pipeline and descriptor.
-		vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingPassPipeline);
+		vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->DirLightPipeline());
 
 		// Use MVP UBO and Lighting input attachment descriptor sets.
-		VkDescriptorSet lightingSets[] = { m_uboDescriptorSets[frameIndex], m_lightingDescriptorSet };
+		VkDescriptorSet lightingSets[] = { m_uboDescriptorSets[frameIndex], m_gBufferInputSet, m_lightingManager->DirLightUBOSet() };
 
-		vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingPipelineLayout, 0, 2, lightingSets, 0, 0);
+		vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->DirLightPipelineLayout(), 0, 3, lightingSets, 0, 0);
 
 		// Run deferred lighting post pass.
 		vkCmdDraw(cmdBuf, 6, 1, 0, 0);
@@ -1586,6 +1435,10 @@ void Renderer::End()
 		m_transferIndices.Enqueue(m_nTransferFrameIndex);
 		m_bTransferReady = false;
 	}
+
+	// Update lighting if necessary.
+	if (m_lightingManager->DirLightingChanged())
+		m_lightingManager->UpdateDirLights();
 
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1730,6 +1583,13 @@ void Renderer::CreateImageView(const VkImage& image, VkImageView& view, VkFormat
 	RENDERER_SAFECALL(vkCreateImageView(m_logicDevice, &viewCreateInfo, nullptr, &view), "Renderer Error: Failed to create image view.");
 }
 
+void Renderer::UpdateDirectionalLight(const glm::vec4& v4Direction, const glm::vec4& v4Color, const unsigned int& nIndex)
+{
+	DirectionalLight dirLight = { v4Direction, v4Color };
+
+	m_lightingManager->UpdateDirLight(dirLight, nIndex);
+}
+
 Renderer::TempCmdBuffer Renderer::CreateTempCommandBuffer()
 {
 	TempCmdBuffer tempBuffer;
@@ -1786,7 +1646,7 @@ VkCommandPool Renderer::GetCommandPool()
 	return m_mainGraphicsCommandPool;
 }
 
-VkRenderPass Renderer::DynamicRenderPass() 
+VkRenderPass Renderer::MainRenderPass() 
 {
 	return m_mainRenderPass;
 }
@@ -1794,6 +1654,11 @@ VkRenderPass Renderer::DynamicRenderPass()
 VkDescriptorSetLayout Renderer::MVPUBOSetLayout() 
 {
 	return m_uboDescriptorSetLayout;
+}
+
+VkDescriptorSetLayout Renderer::GBufferInputSetLayout()
+{
+	return m_gBufferInputSetLayout;
 }
 
 VkBuffer Renderer::MVPUBOHandle(const unsigned int& nSwapChainImageIndex)

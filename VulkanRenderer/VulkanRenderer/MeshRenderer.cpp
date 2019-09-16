@@ -419,7 +419,7 @@ void MeshRenderer::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertex
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = nullptr;
 	pipelineInfo.layout = m_pipelineData->m_layout;
-	pipelineInfo.renderPass = m_renderer->DynamicRenderPass();
+	pipelineInfo.renderPass = m_renderer->MainRenderPass();
 	pipelineInfo.subpass = 0;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 	pipelineInfo.basePipelineIndex = -1;

@@ -23,6 +23,7 @@
 #define DYNAMIC_SUBPASS_INDEX 0
 #define POST_SUBPASS_INDEX 1
 
+class LightingManager;
 class MeshRenderer;
 class Texture;
 
@@ -90,6 +91,9 @@ public:
 	// Create an image view for the specified image.
 	void CreateImageView(const VkImage& image, VkImageView& view, VkFormat format, VkImageAspectFlags aspectFlags);
 
+	// Update information on a directional light.
+	void UpdateDirectionalLight(const glm::vec4& v4Direction, const glm::vec4& v4Color, const unsigned int& nIndex);
+
 	struct TempCmdBuffer 
 	{
 		VkCommandBuffer m_handle;
@@ -109,9 +113,11 @@ public:
 
 	VkCommandPool GetCommandPool();
 
-	VkRenderPass DynamicRenderPass();
+	VkRenderPass MainRenderPass();
 
 	VkDescriptorSetLayout MVPUBOSetLayout();
+
+	VkDescriptorSetLayout GBufferInputSetLayout();
 
 	VkBuffer MVPUBOHandle(const unsigned int& nSwapChainImageIndex);
 
@@ -177,7 +183,7 @@ private:
 	inline void CreateMVPDescriptorSetLayout();
 
 	// Deferred lighting set layout.
-	inline void CreateLightingDescriptorSetLayout();
+	inline void CreateGBufferInputSetLayout();
 
 	// Create MVP uniform buffers.
 	inline void CreateMVPUniformBuffers();
@@ -189,10 +195,7 @@ private:
 	inline void CreateUBOMVPDescriptorSets();
 
 	// Create Deferred lighting pass descriptor set.
-	inline void CreateLightingDescriptorSet(bool bAllocNew = true);
-
-	// Create Deferred Shading pass pipeline.
-	inline void CreateLightingPipeline();
+	inline void CreateGBufferInputDescriptorSet(bool bAllocNew = true);
 
 	// Create command pools.
 	inline void CreateCommandPools();
@@ -285,6 +288,7 @@ private:
 
 	// -----------------------------------------------------------------------------------------------------
 	// Images and framebuffers.
+
 	Texture* m_depthImage;
 
 	// G-Buffers
@@ -308,11 +312,11 @@ private:
 	// -----------------------------------------------------------------------------------------------------
 	// Descriptors
 	VkDescriptorSetLayout m_uboDescriptorSetLayout;
-	VkDescriptorSetLayout m_lightingPassSetLayout;
+	VkDescriptorSetLayout m_gBufferInputSetLayout;
 
 	VkDescriptorPool m_descriptorPool;
 	DynamicArray<VkDescriptorSet> m_uboDescriptorSets;
-	VkDescriptorSet m_lightingDescriptorSet;
+	VkDescriptorSet m_gBufferInputSet;
 
 	// -----------------------------------------------------------------------------------------------------
 	// Descriptor buffers
@@ -322,15 +326,11 @@ private:
 	MVPUniformBuffer m_mvp;
 
 	// -----------------------------------------------------------------------------------------------------
-	// Graphics Pipelines
-
-	VkPipelineLayout m_lightingPipelineLayout;
-	VkPipeline m_lightingPassPipeline;
-
-	// -----------------------------------------------------------------------------------------------------
 	// Lighting
 
-	Shader* m_lightingPassShader;
+	Shader* m_dirLightingShader;
+
+	LightingManager* m_lightingManager;
 
 	// -----------------------------------------------------------------------------------------------------
 	// Rendering
