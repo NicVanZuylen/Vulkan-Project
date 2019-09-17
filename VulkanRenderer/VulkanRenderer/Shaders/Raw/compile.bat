@@ -1,3 +1,3 @@
-glslangValidator.exe -V Lighting/fs_quad_vert.vert
-glslangValidator.exe -V Lighting/deferred_dir_light_frag.frag
+glslangValidator.exe -V Lighting/deferred_point_light_vert.vert
+glslangValidator.exe -V Lighting/deferred_point_light_frag.frag
 pause

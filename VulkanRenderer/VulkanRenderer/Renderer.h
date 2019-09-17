@@ -94,6 +94,12 @@ public:
 	// Update information on a directional light.
 	void UpdateDirectionalLight(const glm::vec4& v4Direction, const glm::vec4& v4Color, const unsigned int& nIndex);
 
+	// Add a point light to the scene.
+	void AddPointLight(const glm::vec4& v4Position, const glm::vec3& v3Color, const float& fRadius);
+
+	// Update information on a directional light.
+	void UpdatePointLight(const glm::vec4& v4Position, const glm::vec3& v3Color, const float& fRadius, const unsigned int& nIndex);
+
 	struct TempCmdBuffer 
 	{
 		VkCommandBuffer m_handle;
@@ -329,6 +335,7 @@ private:
 	// Lighting
 
 	Shader* m_dirLightingShader;
+	Shader* m_pointLightingShader;
 
 	LightingManager* m_lightingManager;
 

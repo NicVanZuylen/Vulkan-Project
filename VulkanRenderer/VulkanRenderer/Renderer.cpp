@@ -111,11 +111,12 @@ Renderer::Renderer(GLFWwindow* window)
 	CreateUBOMVPDescriptorSets();
 	CreateGBufferInputDescriptorSet();
 
-	// Load deferred directional lighting shader.
+	// Load deferred lighting shaders.
 	m_dirLightingShader = new Shader(this, "Shaders/SPIR-V/Lighting/fs_quad_vert.spv", "Shaders/SPIR-V/Lighting/deferred_dir_light_frag.spv");
+	m_pointLightingShader = new Shader(this, "Shaders/SPIR-V/Lighting/deferred_point_light_vert.spv", "Shaders/SPIR-V/Lighting/deferred_point_light_frag.spv");
 
 	// Create lighting manager.
-	m_lightingManager = new LightingManager(this, m_dirLightingShader, m_nWindowWidth, m_nWindowHeight);
+	m_lightingManager = new LightingManager(this, m_dirLightingShader, m_pointLightingShader, m_nWindowWidth, m_nWindowHeight);
 
 	// Framebuffers & main command buffers
 	CreateFramebuffers();
@@ -142,7 +143,10 @@ Renderer::~Renderer()
 
 	vkDeviceWaitIdle(m_logicDevice);
 
-	// Delete lighting shader.
+	// Delete deferred lighting shaders.
+	delete m_pointLightingShader;
+	m_pointLightingShader = nullptr;
+
 	delete m_dirLightingShader;
 	m_dirLightingShader = nullptr;
 
@@ -309,7 +313,7 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	// Pipeline recreation
 
 	// Lighting pipeline recreation.
-	m_lightingManager->RecreatePipelines(m_dirLightingShader, m_nWindowWidth, m_nWindowHeight);
+	m_lightingManager->RecreatePipelines(m_dirLightingShader, m_pointLightingShader, m_nWindowWidth, m_nWindowHeight);
 
 	DynamicArray<PipelineData*>& allPipelines = MeshRenderer::Pipelines();
 
@@ -1305,6 +1309,9 @@ void Renderer::RecordPostPassCommandBuffers(const unsigned int& frameIndex)
 		// Record commands...
 		vkBeginCommandBuffer(cmdBuf, &cmdBeginInfo);
 
+		// ----------------------------------------------------------------------------------------------
+		// Directional lighting
+
 		// Bind deferred lighting pipeline and descriptor.
 		vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->DirLightPipeline());
 
@@ -1313,8 +1320,21 @@ void Renderer::RecordPostPassCommandBuffers(const unsigned int& frameIndex)
 
 		vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->DirLightPipelineLayout(), 0, 3, lightingSets, 0, 0);
 
-		// Run deferred lighting post pass.
+		// Run deferred directional lighting post pass.
 		vkCmdDraw(cmdBuf, 6, 1, 0, 0);
+
+		// ----------------------------------------------------------------------------------------------
+		// Point lighting
+
+		// Bind point light pipeline
+		vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->PointLightPipeline());
+
+		vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->PointLightPipelineLayout(), 0, 2, lightingSets, 0, 0);
+
+		// Run deferred point lighting post pass.
+		m_lightingManager->DrawPointLights(cmdBuf);
+
+		// ----------------------------------------------------------------------------------------------
 
 		// End recording.
 		vkEndCommandBuffer(cmdBuf);
@@ -1439,6 +1459,9 @@ void Renderer::End()
 	// Update lighting if necessary.
 	if (m_lightingManager->DirLightingChanged())
 		m_lightingManager->UpdateDirLights();
+
+	if (m_lightingManager->PointLightingChanged())
+		m_lightingManager->UpdatePointLights();
 
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1588,6 +1611,20 @@ void Renderer::UpdateDirectionalLight(const glm::vec4& v4Direction, const glm::v
 	DirectionalLight dirLight = { v4Direction, v4Color };
 
 	m_lightingManager->UpdateDirLight(dirLight, nIndex);
+}
+
+void Renderer::AddPointLight(const glm::vec4& v4Position, const glm::vec3& v3Color, const float& fRadius) 
+{
+	PointLight pointLight = { v4Position, v3Color, fRadius };
+
+	m_lightingManager->AddPointLight(pointLight);
+}
+
+void Renderer::UpdatePointLight(const glm::vec4& v4Position, const glm::vec3& v3Color, const float& fRadius, const unsigned int& nIndex) 
+{
+	PointLight pointLight = { v4Position, v3Color, fRadius };
+
+	m_lightingManager->UpdatePointLight(pointLight, nIndex);
 }
 
 Renderer::TempCmdBuffer Renderer::CreateTempCommandBuffer()

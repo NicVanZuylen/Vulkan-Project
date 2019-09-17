@@ -105,6 +105,9 @@ void Application::Run()
 	m_renderer->UpdateDirectionalLight(glm::vec4(0.0f, 0.0f, -1.0f, 1.0f), glm::vec4(1.0f), 0);
 	m_renderer->UpdateDirectionalLight(glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f), 1);
 
+	m_renderer->AddPointLight(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 15.0f);
+	m_renderer->AddPointLight(glm::vec4(-3.0f, 0.0f, 3.0f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 7.0f);
+
 	while(!glfwWindowShouldClose(m_window)) 
 	{
 		// Time
