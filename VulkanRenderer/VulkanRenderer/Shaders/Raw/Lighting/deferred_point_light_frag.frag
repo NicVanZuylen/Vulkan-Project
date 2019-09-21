@@ -44,9 +44,7 @@ void main()
     float normalDotLight = max(-dot(lightDir, normal.xyz), 0.0f);
 
     // Attenuation function
-	//float attenuation = clamp(1.0f - dist / finalLightRadius, 0.0f, 1.0f);
-    float attenuation = -pow((dist / finalLightRadius) + 0.1f, 7) + 1;
-	//attenuation *= attenuation;
+    float attenuation = -pow((dist / finalLightRadius) + 0.1f, 3) + 1;
 
     // Add to final lighting.
     vec3 lighting = normalDotLight * finalLightColor * BRIGHTNESS_MULT; // Lighting component.
