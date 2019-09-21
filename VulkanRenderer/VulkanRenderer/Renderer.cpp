@@ -778,13 +778,13 @@ void Renderer::CreateRenderPasses()
 		renderPassInfo.subpassCount = 2;
 		renderPassInfo.pSubpasses = subpasses;
 
-		VkSubpassDependency initialDependency = {};
-		initialDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-		initialDependency.dstSubpass = 0;
-		initialDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; // Ensures color & depth/stencil output has completed.
-		initialDependency.srcAccessMask = 0;
-		initialDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		initialDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+		VkSubpassDependency gBufferDependency = {};
+		gBufferDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		gBufferDependency.dstSubpass = DYNAMIC_SUBPASS_INDEX;
+		gBufferDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT; // Ensures color & depth/stencil output has completed.
+		gBufferDependency.srcAccessMask = 0;
+		gBufferDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		gBufferDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
 			| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
 		VkSubpassDependency postDependency = {};
@@ -796,7 +796,7 @@ void Renderer::CreateRenderPasses()
 		postDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		postDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-		VkSubpassDependency dependencies[] = { initialDependency, postDependency };
+		VkSubpassDependency dependencies[] = { gBufferDependency, postDependency };
 
 		renderPassInfo.dependencyCount = 2;
 		renderPassInfo.pDependencies = dependencies;
@@ -1014,6 +1014,17 @@ void Renderer::CreateCommandPools()
 	poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // Same as before, but transient isn't needed because this command buffer will not be recorded often.
 
 	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_postPassGraphicsCmdPool), "Renderer Error: Failed to create post-pass graphics command pool.");
+
+	// ==================================================================================================================================================
+	// Transfer command pool.
+
+	VkCommandPoolCreateInfo transferPoolInfo = {};
+	transferPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	transferPoolInfo.queueFamilyIndex = m_nTransferQueueFamilyIndex;
+	transferPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+
+	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &transferPoolInfo, nullptr, &m_transferCmdPool), "Renderer Error: Failed to create dedicated transfer command pool.");
+
 }
 
 void Renderer::CreateCmdBuffers() 
@@ -1066,13 +1077,6 @@ void Renderer::CreateCmdBuffers()
 	// ==================================================================================================================================================
 	// Transfer commands
 
-	VkCommandPoolCreateInfo transferPoolInfo = {};
-	transferPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	transferPoolInfo.queueFamilyIndex = m_nTransferQueueFamilyIndex;
-	transferPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-
-	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &transferPoolInfo, nullptr, &m_transferCmdPool), "Renderer Error: Failed to create dedicated transfer command pool.");
-
 	VkCommandBufferAllocateInfo transAllocInfo = {};
 	transAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	transAllocInfo.commandPool = m_transferCmdPool;
@@ -1119,7 +1123,7 @@ void Renderer::CreateSyncObjects()
 		RENDERER_SAFECALL(vkCreateFence(m_logicDevice, &fenceInfo, nullptr, &m_inFlightFences[i]), "Renderer Error: Failed to create in-flight fence.");
 	}
 
-	// Create transfer semaphores.
+	// Create transfer fences.
 	for (int i = 0; i < MAX_CONCURRENT_COPIES; ++i)
 	{
 		RENDERER_SAFECALL(vkCreateFence(m_logicDevice, &fenceInfo, nullptr, &m_copyReadyFences[i]), "Renderer Error: Failed to create semaphores.");
@@ -1134,7 +1138,6 @@ void Renderer::UpdateMVP(const unsigned int& bufferIndex)
 
 	// Set up matrices...
 	m_mvp.m_model = glm::mat4();
-	//m_mvp.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, -1.0f, 0.0f));
 	m_mvp.m_proj = glm::perspective(45.0f, (float)m_swapChainImageExtents.width / (float)m_swapChainImageExtents.height, 0.1f, 1000.0f);
 
 	// Change coordinate system using this matrix.
@@ -1172,10 +1175,12 @@ void Renderer::RecordTransferCommandBuffer(const unsigned int& bufferIndex)
 	// Issue commands for each requested copy operation.
 	for (int i = 0; i < requests.Count(); ++i)
 	{
+		// Perform copy operation.
 		vkCmdCopyBuffer(cmdBuffer, requests[i].m_srcBuffer, requests[i].m_dstBuffer, 1, &requests[i].m_copyRegion);
 	}
 
 	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of transfer command buffer.");
+
 	requests.Clear();
 }
 
@@ -1422,7 +1427,7 @@ void Renderer::ForceDynamicStateChange()
 	m_dynamicStateChange[2] = true;
 }
 
-void Renderer::End() 
+void Renderer::End()
 {
 	// Do not attempt to render to a zero sized window.
 	if (m_bMinimized)
@@ -1433,41 +1438,11 @@ void Renderer::End()
 	// Re-record the dynamic command buffer for this swap chain image if it has changed.
     RecordDynamicCommandBuffer(m_nPresentImageIndex, m_nCurrentFrameIndex);
 
-	if (m_bTransferReady && m_newCopyRequests.Count() > 0) 
-	{
-		m_nTransferFrameIndex = m_nCurrentFrame % MAX_CONCURRENT_COPIES;
-
-		DynamicArray<CopyRequest>& requests = m_transferBuffers[m_nTransferFrameIndex];
-
-		// Ensure there is enough room for the new requests.
-		if(requests.GetSize() < m_newCopyRequests.GetSize())
-			requests.SetSize(m_newCopyRequests.GetSize());
-
-		// Move all new transfer requests to the correct location for command buffer recording and submission.
-		requests.SetCount(m_newCopyRequests.Count());
-
-		unsigned int nCopySize = sizeof(CopyRequest) * m_newCopyRequests.Count();
-		memcpy_s(requests.Data(), nCopySize, m_newCopyRequests.Data(), nCopySize);
-
-		m_newCopyRequests.Clear();
-
-		// Enqueue index of these requests for command buffer recording and execution.
-		m_transferIndices.Enqueue(m_nTransferFrameIndex);
-		m_bTransferReady = false;
-	}
-
-	// Update lighting if necessary.
-	if (m_lightingManager->DirLightingChanged())
-		m_lightingManager->UpdateDirLights();
-
-	if (m_lightingManager->PointLightingChanged())
-		m_lightingManager->UpdatePointLights();
-
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 	VkCommandBuffer cmdBuffers[] = { m_mainPrimaryCmdBufs[m_nPresentImageIndex] };
+	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
 	submitInfo.waitSemaphoreCount = 1;
 	submitInfo.pWaitSemaphores = &m_imageAvailableSemaphores[m_nCurrentFrameIndex]; // Wait for the swap chain image to be retreived before submitting rendering commands.
@@ -1498,6 +1473,37 @@ void Renderer::End()
 	}
 	else if(result)
 		throw std::runtime_error("Renderer Error: Failed to present swap chain image.");
+
+	if (m_bTransferReady && m_newCopyRequests.Count() > 0)
+	{
+		m_nTransferFrameIndex = m_nCurrentFrame % MAX_CONCURRENT_COPIES;
+
+		DynamicArray<CopyRequest>& requests = m_transferBuffers[m_nTransferFrameIndex];
+
+		// Ensure there is enough room for the new requests.
+		if (requests.GetSize() < m_newCopyRequests.GetSize())
+			requests.SetSize(m_newCopyRequests.GetSize());
+
+		// Move all new transfer requests to the correct location for command buffer recording and submission.
+		requests.SetCount(m_newCopyRequests.Count());
+
+		unsigned int nCopySize = sizeof(CopyRequest) * m_newCopyRequests.Count();
+		memcpy_s(requests.Data(), nCopySize, m_newCopyRequests.Data(), nCopySize);
+
+		m_newCopyRequests.Clear();
+
+		// Enqueue index of these requests for command buffer recording and execution.
+		m_transferIndices.Enqueue(m_nTransferFrameIndex);
+		m_bTransferReady = false;
+	}
+
+	// Update lighting if necessary.
+	if (m_lightingManager->DirLightingChanged())
+		m_lightingManager->UpdateDirLights();
+
+	if (m_lightingManager->PointLightingChanged())
+		m_lightingManager->UpdatePointLights();
+	
 }
 
 void Renderer::WaitGraphicsIdle() 
@@ -1534,7 +1540,12 @@ void Renderer::CreateBuffer(const unsigned long long& size, const VkBufferUsageF
 	bufCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	bufCreateInfo.size = size;
 	bufCreateInfo.usage = bufferUsage;
-	bufCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	bufCreateInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
+	bufCreateInfo.queueFamilyIndexCount = 2;
+
+	unsigned int sharedQueueIndices[] = { m_nGraphicsQueueFamilyIndex, m_nTransferQueueFamilyIndex };
+
+	bufCreateInfo.pQueueFamilyIndices = sharedQueueIndices;
 
 	// Create buffer object.
 	RENDERER_SAFECALL(vkCreateBuffer(m_logicDevice, &bufCreateInfo, nullptr, &bufferHandle), "Mesh Error: Failed to create buffer.");
@@ -1721,6 +1732,16 @@ const unsigned int& Renderer::FrameHeight() const
 const unsigned int Renderer::SwapChainImageCount() const
 {
 	return m_swapChainImageViews.GetSize();
+}
+
+const unsigned int& Renderer::GraphicsQueueIndex() const 
+{
+	return m_nGraphicsQueueFamilyIndex;
+}
+
+const unsigned int& Renderer::TransferQueueIndex() const 
+{
+	return m_nTransferQueueFamilyIndex;
 }
 
 void Renderer::SetViewMatrix(glm::mat4& viewMat, glm::vec3& v3ViewPos) 

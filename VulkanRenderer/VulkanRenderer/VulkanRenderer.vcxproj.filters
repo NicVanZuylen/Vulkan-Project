@@ -51,9 +51,6 @@
     <ClCompile Include="Material.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="RenderPath.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="RendererHelper.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -93,9 +90,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Material.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="RenderPath.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="RendererHelper.h">

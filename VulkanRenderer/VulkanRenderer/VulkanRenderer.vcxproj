@@ -140,9 +140,6 @@
     </ClCompile>
     <ClCompile Include="Renderer.cpp" />
     <ClCompile Include="RendererHelper.cpp" />
-    <ClCompile Include="RenderPath.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="Sampler.cpp" />
     <ClCompile Include="Shader.cpp" />
     <ClCompile Include="Texture.cpp" />
@@ -164,9 +161,6 @@
     </ClInclude>
     <ClInclude Include="Renderer.h" />
     <ClInclude Include="RendererHelper.h" />
-    <ClInclude Include="RenderPath.h">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-    </ClInclude>
     <ClInclude Include="Sampler.h" />
     <ClInclude Include="Shader.h" />
     <ClInclude Include="Texture.h" />

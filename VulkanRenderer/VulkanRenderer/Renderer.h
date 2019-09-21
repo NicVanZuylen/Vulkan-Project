@@ -18,7 +18,7 @@
 #define WINDOW_HEIGHT 720
 
 #define MAX_FRAMES_IN_FLIGHT 2
-#define MAX_CONCURRENT_COPIES 16
+#define MAX_CONCURRENT_COPIES MAX_FRAMES_IN_FLIGHT
 
 #define DYNAMIC_SUBPASS_INDEX 0
 #define POST_SUBPASS_INDEX 1
@@ -132,6 +132,10 @@ public:
 	const unsigned int& FrameWidth() const;
 
 	const unsigned int& FrameHeight() const;
+
+	const unsigned int& GraphicsQueueIndex() const;
+
+	const unsigned int& TransferQueueIndex() const;
 
 	const unsigned int SwapChainImageCount() const;
 

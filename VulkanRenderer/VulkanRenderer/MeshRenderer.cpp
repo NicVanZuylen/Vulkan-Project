@@ -138,7 +138,7 @@ void MeshRenderer::SetInstance(const unsigned int& nIndex, Instance& instance)
 	}
 }
 
-void MeshRenderer::UpdateInstanceData() 
+void MeshRenderer::UpdateInstanceData()
 {
 	if (!m_bInstancesModified || m_nInstanceCount == 0)
 		return;
@@ -162,8 +162,31 @@ void MeshRenderer::UpdateInstanceData()
 	insCopyRegion.size = sizeof(Instance) * m_nInstanceCount;
 
 	// Create and submit copy request.
-	CopyRequest bufferCopyRequest = { m_instanceStagingBuffer, m_instanceBuffer, insCopyRegion };
-	m_renderer->RequestCopy(bufferCopyRequest);
+	//CopyRequest bufferCopyRequest = { m_instanceStagingBuffer, m_instanceBuffer, insCopyRegion };
+	//m_renderer->RequestCopy(bufferCopyRequest);
+
+	
+	Renderer::TempCmdBuffer tempCmdBuf = m_renderer->CreateTempCommandBuffer();
+
+	VkCommandBufferBeginInfo beginInfo = {};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = 0;
+	beginInfo.pInheritanceInfo = nullptr;
+	beginInfo.pNext = nullptr;
+
+	vkBeginCommandBuffer(tempCmdBuf.m_handle, &beginInfo);
+
+	VkBufferCopy copyRegion;
+	copyRegion.srcOffset = 0;
+	copyRegion.dstOffset = 0;
+	copyRegion.size = sizeof(Instance) * m_nInstanceCount;
+
+	vkCmdCopyBuffer(tempCmdBuf.m_handle, m_instanceStagingBuffer, m_instanceBuffer, 1, &copyRegion);
+
+	vkEndCommandBuffer(tempCmdBuf.m_handle);
+
+	m_renderer->UseAndDestroyTempCommandBuffer(tempCmdBuf);
+	
 
 	m_bInstancesModified = false;
 }

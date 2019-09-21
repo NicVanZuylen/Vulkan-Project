@@ -75,38 +75,58 @@ int Application::Init()
 
 void Application::Run() 
 {
+	// Load shaders
 	Shader* modelShader = new Shader(m_renderer, "Shaders/SPIR-V/vertModelInsG.spv", "Shaders/SPIR-V/fragModelG.spv");
 
+	// Load textures.
 	Texture* testTexture = new Texture(m_renderer, "Assets/Objects/Metal/diffuse.tga");
 	Texture* testTexture2 = new Texture(m_renderer, "Assets/Objects/Metal/normal.tga");
 
+	// Construct materials
 	Material* testMat = new Material(m_renderer, modelShader, { testTexture, testTexture2 });
 
-	Mesh* testMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Dragon.obj");
-	Mesh* testMesh2 = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
+	// Load meshes.
+	Mesh* bunnyMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Bunny.obj");
+	Mesh* sphereMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
+	Mesh* planeMesh = new Mesh(m_renderer, "Assets/Primitives/plane.obj");
 
-	MeshRenderer* testObject = new MeshRenderer(m_renderer, testMesh, testMat, &MeshRenderer::m_defaultInstanceAttributes, 100);
-	MeshRenderer* testObject2 = new MeshRenderer(m_renderer, testMesh2, testMat, &MeshRenderer::m_defaultInstanceAttributes, 100);
+	// Create render objects.
+	MeshRenderer* bunnyObj = new MeshRenderer(m_renderer, bunnyMesh, testMat, &MeshRenderer::m_defaultInstanceAttributes, 100);
+	MeshRenderer* sphereObj = new MeshRenderer(m_renderer, sphereMesh, testMat, &MeshRenderer::m_defaultInstanceAttributes, 100);
+	MeshRenderer* floorObj = new MeshRenderer(m_renderer, planeMesh, testMat, &MeshRenderer::m_defaultInstanceAttributes, 1);
 
+	// Time variables.
 	float fDeltaTime = 0.0f;	
 	float fDebugDisplayTime = DEBUG_DISPLAY_TIME;
+	float fElapsedTime = 0.0f;
 
-	Camera camera(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), 0.3f, 5.0f);
+	Camera camera(glm::vec3(0.0f, 3.0f, 10.0f), glm::vec3(0.0f), 0.3f, 5.0f);
 	
+	Instance bunnyIns;
+
 	Instance ins;
-	ins.m_modelMat = glm::translate(glm::vec3(0.0f, 0.0f, 5.0f));
 
-	testObject2->SetInstance(0, ins);
+	// Set sphere positon.
+	ins.m_modelMat = glm::translate(glm::vec3(0.0f, 2.0f, 6.5f));
 
+	sphereObj->SetInstance(0, ins);
+
+	// Double floor object scale.
+	ins.m_modelMat = glm::scale(glm::mat4(), glm::vec3(2.0f, 1.0f, 2.0f));
+
+	floorObj->SetInstance(0, ins);
+
+	// Model matrix for new object instances.
 	glm::mat4 instanceModelMat;
 
-	glm::mat4 moveModelMat;
+	// Update directional lights.
+	m_renderer->UpdateDirectionalLight(glm::normalize(glm::vec4(0.0f, -1.0f, -1.0f, 0.0f)), glm::vec4(0.5f), 0);
+	m_renderer->UpdateDirectionalLight(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), glm::vec4(0.5f, 0.0f, 0.0f, 1.0f), 1);
 
-	m_renderer->UpdateDirectionalLight(glm::vec4(0.0f, 0.0f, -1.0f, 1.0f), glm::vec4(1.0f), 0);
-	m_renderer->UpdateDirectionalLight(glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f), 1);
-
-	m_renderer->AddPointLight(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 15.0f);
-	m_renderer->AddPointLight(glm::vec4(-3.0f, 0.0f, 3.0f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 7.0f);
+	// Add point lights to the scene.
+	m_renderer->AddPointLight(glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 3.0f);
+	m_renderer->AddPointLight(glm::vec4(-3.0f, 3.5f, 3.5f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 3.0f);
+	m_renderer->AddPointLight(glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f);
 
 	while(!glfwWindowShouldClose(m_window)) 
 	{
@@ -129,7 +149,7 @@ void Application::Run()
 		// Fullscreen
 		if (m_input->GetKey(GLFW_KEY_F11) && !m_input->GetKey(GLFW_KEY_F11, INPUTSTATE_PREVIOUS))
 		{
-			// Get window's monitor and video mode.
+			// Get primary monitor and video mode.
 			GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 			const GLFWvidmode* vidMode = glfwGetVideoMode(monitor);
 
@@ -147,9 +167,14 @@ void Application::Run()
 			m_input->ResetStates();
 		}
 
+		// Rotate bunny model.
+		bunnyIns.m_modelMat = glm::rotate(glm::mat4(), fElapsedTime, glm::vec3(0.0f, 1.0f, 0.0f));
+		bunnyObj->SetInstance(0, bunnyIns);
+
 		// Draw...
 		m_renderer->Begin();
 		
+		// Add an instance of a model to the scene if G is pressed.
 		if (m_input->GetKey(GLFW_KEY_G) && !m_input->GetKey(GLFW_KEY_G, INPUTSTATE_PREVIOUS)) 
 		{
 			std::cout << "Adding object!" << std::endl;
@@ -157,22 +182,16 @@ void Application::Run()
 			instanceModelMat = glm::translate(instanceModelMat, glm::vec3(0.0f, 0.0f, -3.0f));
 
 			Instance newInstance = { instanceModelMat };
-			testObject->AddInstance(newInstance);
-		}
-
-		if (m_input->GetKey(GLFW_KEY_M))
-		{
-			moveModelMat = glm::translate(moveModelMat, glm::vec3(0.0f, 0.0f, -3.0f * fDeltaTime));
-
-			Instance newInstance = { moveModelMat };
-			testObject->SetInstance(0, newInstance);
+			bunnyObj->AddInstance(newInstance);
 		}
 
 		glm::mat4 viewMat = camera.GetViewMatrix();
 		glm::vec3 v4ViewPos = camera.GetPosition();
 
+		// Set rendering view matrix.
 		m_renderer->SetViewMatrix(viewMat, v4ViewPos);
 
+		// End frame.
 		m_renderer->End();
 
 		m_input->EndFrame();
@@ -182,8 +201,11 @@ void Application::Run()
 
 		auto timeDuration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
 
+		// Get deltatime and add to elapsed time.
 		fDeltaTime = static_cast<float>(timeDuration) / 1000000.0f;
+		fElapsedTime += fDeltaTime;
 
+		// Display frametime and FPS.
 		if(fDebugDisplayTime <= 0.0f) 
 		{
 			std::cout << "Frametime: " << fDeltaTime * 1000.0f << "ms\n";
@@ -197,15 +219,16 @@ void Application::Run()
 	delete testTexture2;
 	delete testTexture;
 
-	delete testObject;
-	delete testObject2;
+	delete bunnyObj;
+	delete sphereObj;
+	delete floorObj;
 
-	delete testMesh;
-	delete testMesh2;
+	delete bunnyMesh;
+	delete sphereMesh;
+	delete planeMesh;
 
 	delete testMat;
 
-	//m_renderer->UnregisterShader(modelShader);
 	delete modelShader;
 }
 
