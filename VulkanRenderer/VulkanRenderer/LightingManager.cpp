@@ -471,8 +471,6 @@ inline void LightingManager::CreatePointLightingPipeline(Shader* pLightShader, c
 	pointLightInsDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 	pointLightInsDesc.stride = sizeof(PointLight);
 
-	VkVertexInputAttributeDescription pointLightAttrDescs[3];
-
 	const VertexInfo* pointLightMeshFormat = m_pointLightVolMesh->VertexFormat();
 
 	// Instance format.

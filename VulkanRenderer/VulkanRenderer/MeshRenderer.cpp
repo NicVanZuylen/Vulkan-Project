@@ -48,6 +48,7 @@ MeshRenderer::~MeshRenderer()
 	{
 	    delete[] m_instanceArray;
 
+		m_renderer->WaitGraphicsIdle();
 		m_renderer->WaitTransferIdle();
 
 		// Destroy instance staging buffer & memory.
@@ -70,8 +71,9 @@ MeshRenderer::~MeshRenderer()
 
 	if (m_pipelineData->m_renderObjects.Count() == 0) // This is the last object using the pipeline, destroy the pipeline.
 	{
-		// Wait for graphics queue to be idle.
+		// Wait for graphics & transfer queues to be idle.
 		m_renderer->WaitGraphicsIdle();
+		m_renderer->WaitTransferIdle();
 
 		// Destroy pipeline objects.
 		vkDestroyPipeline(m_renderer->GetDevice(), m_pipelineData->m_handle, nullptr);
@@ -162,10 +164,10 @@ void MeshRenderer::UpdateInstanceData()
 	insCopyRegion.size = sizeof(Instance) * m_nInstanceCount;
 
 	// Create and submit copy request.
-	//CopyRequest bufferCopyRequest = { m_instanceStagingBuffer, m_instanceBuffer, insCopyRegion };
-	//m_renderer->RequestCopy(bufferCopyRequest);
+	CopyRequest bufferCopyRequest = { m_instanceStagingBuffer, m_instanceBuffer, insCopyRegion };
+	m_renderer->RequestCopy(bufferCopyRequest);
 
-	
+	/*
 	Renderer::TempCmdBuffer tempCmdBuf = m_renderer->CreateTempCommandBuffer();
 
 	VkCommandBufferBeginInfo beginInfo = {};
@@ -186,6 +188,7 @@ void MeshRenderer::UpdateInstanceData()
 	vkEndCommandBuffer(tempCmdBuf.m_handle);
 
 	m_renderer->UseAndDestroyTempCommandBuffer(tempCmdBuf);
+	*/
 	
 
 	m_bInstancesModified = false;

@@ -40,8 +40,6 @@ const bool Renderer::m_bEnableValidationLayers = true;
 
 #endif
 
-DynamicArray<CopyRequest> Renderer::m_newCopyRequests;
-
 Renderer::Renderer(GLFWwindow* window)
 {
 	m_window = window;
@@ -61,9 +59,6 @@ Renderer::Renderer(GLFWwindow* window)
 
 	m_transferBuffers.SetSize(MAX_CONCURRENT_COPIES);
 	m_transferBuffers.SetCount(MAX_CONCURRENT_COPIES);
-	m_bTransferThread = true;
-	m_bTransferReady = true;
-	m_transferThread = new std::thread(&Renderer::SubmitTransferOperations, this);
 
 	m_bMinimized = false;
 
@@ -135,12 +130,6 @@ Renderer::Renderer(GLFWwindow* window)
 
 Renderer::~Renderer()
 {
-	m_bTransferThread = false;
-	m_transferThread->join();
-
-	delete m_transferThread;
-	m_transferThread = nullptr;
-
 	vkDeviceWaitIdle(m_logicDevice);
 
 	// Delete deferred lighting shaders.
@@ -171,6 +160,7 @@ Renderer::~Renderer()
 
 	    vkDestroySemaphore(m_logicDevice, m_renderFinishedSemaphores[i], nullptr);
 	    vkDestroySemaphore(m_logicDevice, m_imageAvailableSemaphores[i], nullptr);
+		vkDestroySemaphore(m_logicDevice, m_transferCompleteSemaphores[i], nullptr);
 	}
 
 	for (int i = 0; i < MAX_CONCURRENT_COPIES; ++i) 
@@ -181,6 +171,8 @@ Renderer::~Renderer()
 	// Destroy lighting manager.
 	delete m_lightingManager;
 	m_lightingManager = nullptr;
+
+	vkDeviceWaitIdle(m_logicDevice);
 
 	// Destroy command pools.
 	vkDestroyCommandPool(m_logicDevice, m_mainGraphicsCommandPool, nullptr);
@@ -308,6 +300,30 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 
 	// Update lighting descriptors.
 	CreateGBufferInputDescriptorSet(false);
+
+	// ---------------------------------------------------------------------------------------------------------
+	// Semaphore recreation.
+
+	VkSemaphoreCreateInfo semaphoreInfo = {};
+	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+	// Re-create all rendering and transfer semaphores.
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+	{
+		vkDestroySemaphore(m_logicDevice, m_imageAvailableSemaphores[i], nullptr);
+		vkDestroySemaphore(m_logicDevice, m_renderFinishedSemaphores[i], nullptr);
+		vkDestroySemaphore(m_logicDevice, m_transferCompleteSemaphores[i], nullptr);
+
+		RENDERER_SAFECALL(vkCreateSemaphore(m_logicDevice, &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]), "Renderer Error: Failed to create semaphores.");
+		RENDERER_SAFECALL(vkCreateSemaphore(m_logicDevice, &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]), "Renderer Error: Failed to create semaphores.");
+		RENDERER_SAFECALL(vkCreateSemaphore(m_logicDevice, &semaphoreInfo, nullptr, &m_transferCompleteSemaphores[i]), "Renderer Error: Failed to create semaphores.");
+	}
+
+	// Reset frame count and indices.
+	m_nCurrentFrame = 0;
+
+	m_nLastFrameIndex = 0;
+	m_nCurrentFrameIndex = 1;
 
 	// ---------------------------------------------------------------------------------------------------------
 	// Pipeline recreation
@@ -1079,7 +1095,7 @@ void Renderer::CreateCmdBuffers()
 
 	VkCommandBufferAllocateInfo transAllocInfo = {};
 	transAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	transAllocInfo.commandPool = m_transferCmdPool;
+	transAllocInfo.commandPool = m_mainGraphicsCommandPool;
 	transAllocInfo.commandBufferCount = MAX_CONCURRENT_COPIES;
 	transAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
@@ -1100,6 +1116,9 @@ void Renderer::CreateSyncObjects()
 	m_renderFinishedSemaphores.SetSize(MAX_FRAMES_IN_FLIGHT);
 	m_renderFinishedSemaphores.SetCount(MAX_FRAMES_IN_FLIGHT);
 
+	m_transferCompleteSemaphores.SetSize(MAX_FRAMES_IN_FLIGHT);
+	m_transferCompleteSemaphores.SetCount(MAX_FRAMES_IN_FLIGHT);
+
 	m_copyReadyFences.SetSize(MAX_CONCURRENT_COPIES);
 	m_copyReadyFences.SetCount(MAX_CONCURRENT_COPIES);
 
@@ -1114,11 +1133,12 @@ void Renderer::CreateSyncObjects()
 	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-	// Create rendering semaphores.
+	// Create rendering, present and transfer semaphores. And frame-in-flight fences.
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
 	{
 		RENDERER_SAFECALL(vkCreateSemaphore(m_logicDevice, &semaphoreInfo, nullptr, &m_imageAvailableSemaphores[i]), "Renderer Error: Failed to create semaphores.");
 		RENDERER_SAFECALL(vkCreateSemaphore(m_logicDevice, &semaphoreInfo, nullptr, &m_renderFinishedSemaphores[i]), "Renderer Error: Failed to create semaphores.");
+		RENDERER_SAFECALL(vkCreateSemaphore(m_logicDevice, &semaphoreInfo, nullptr, &m_transferCompleteSemaphores[i]), "Renderer Error: Failed to create semaphores.");
 
 		RENDERER_SAFECALL(vkCreateFence(m_logicDevice, &fenceInfo, nullptr, &m_inFlightFences[i]), "Renderer Error: Failed to create in-flight fence.");
 	}
@@ -1346,54 +1366,50 @@ void Renderer::RecordPostPassCommandBuffers(const unsigned int& frameIndex)
 	}
 }
 
-void Renderer::SubmitTransferOperations() 
-{
-	m_transSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	m_transSubmitInfo.commandBufferCount = 1;
-	m_transSubmitInfo.waitSemaphoreCount = 0;
-	m_transSubmitInfo.pWaitSemaphores = nullptr;
-	m_transSubmitInfo.signalSemaphoreCount = 0;
-	m_transSubmitInfo.pSignalSemaphores = nullptr;
-
-	while(m_bTransferThread) 
-	{
-		if (!m_bTransferReady && m_transferIndices.Count() > 0) 
-		{
-			unsigned int transferIndex = m_transferIndices.Dequeue();
-
-			// Set command buffer.
-			m_transSubmitInfo.pCommandBuffers = &m_transferCmdBufs[transferIndex];
-
-			// Wait for previous transfer commands to complete before continuing...
-			vkWaitForFences(m_logicDevice, 1, &m_copyReadyFences[transferIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
-			vkResetFences(m_logicDevice, 1, &m_copyReadyFences[transferIndex]);
-
-			// Record command buffer.
-			RecordTransferCommandBuffer(transferIndex);
-
-			// Execute transfer commands. The fence will be signaled upon completion.
-			vkQueueSubmit(m_transferQueue, 1, &m_transSubmitInfo, m_copyReadyFences[transferIndex]);
-
-			m_bTransferReady = true;
-		}
-	}
-}
-
 void Renderer::Begin() 
 {
 	// Do not attempt to render to a zero sized window.
 	if (m_bMinimized)
 		return;
 
+	// ----------------------------------------------------------------------------------------------
 	// The frame in flight index will constantly loop around as new frames in flight are created and finished.
-	// Frame in flight index.
+	// Set the last frame index to the current frame index and increment the current frame index.
+	m_nLastFrameIndex = m_nCurrentFrameIndex;
 	m_nCurrentFrameIndex = ++m_nCurrentFrame % MAX_FRAMES_IN_FLIGHT;
 
+	// ----------------------------------------------------------------------------------------------
 	// Wait for frames-in-flight.
 	vkWaitForFences(m_logicDevice, 1, &m_inFlightFences[m_nCurrentFrameIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
 	vkResetFences(m_logicDevice, 1, &m_inFlightFences[m_nCurrentFrameIndex]);
 
+	// ----------------------------------------------------------------------------------------------
+	// Record and submit transfer commands from the last frame.
+
+	// Update lighting if necessary.
+	if (m_lightingManager->DirLightingChanged())
+		m_lightingManager->UpdateDirLights();
+
+	if (m_lightingManager->PointLightingChanged())
+		m_lightingManager->UpdatePointLights();
+
+	RecordTransferCommandBuffer(m_nCurrentFrameIndex);
+
+	VkSubmitInfo transferSubmitInfo = {};
+	transferSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	transferSubmitInfo.commandBufferCount = 1;
+	transferSubmitInfo.pCommandBuffers = &m_transferCmdBufs[m_nCurrentFrameIndex];
+	transferSubmitInfo.waitSemaphoreCount = 0;
+	transferSubmitInfo.pWaitSemaphores = nullptr;
+	transferSubmitInfo.signalSemaphoreCount = 1;
+	transferSubmitInfo.pSignalSemaphores = &m_transferCompleteSemaphores[m_nCurrentFrameIndex];
+	transferSubmitInfo.pNext = nullptr;
+
+	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &transferSubmitInfo, VK_NULL_HANDLE), "Renderer Error: Failed to submit transfer commands.");
+
+	// ----------------------------------------------------------------------------------------------
 	// Aquire next image to render to from the swap chain.
+
 	RENDERER_SAFECALL(vkAcquireNextImageKHR(m_logicDevice, m_swapChain, std::numeric_limits<unsigned long long>::max(), m_imageAvailableSemaphores[m_nCurrentFrameIndex], VK_NULL_HANDLE, &m_nPresentImageIndex),
 		"Renderer Error: Failed to aquire next swap chain image.");
 }
@@ -1417,7 +1433,7 @@ void Renderer::SubmitCopyOperation(VkCommandBuffer commandBuffer)
 
 void Renderer::RequestCopy(const CopyRequest& request) 
 {
-	m_newCopyRequests.Push(request);
+	m_transferBuffers[m_nCurrentFrameIndex].Push(request);
 }
 
 void Renderer::ForceDynamicStateChange() 
@@ -1442,10 +1458,13 @@ void Renderer::End()
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
 	VkCommandBuffer cmdBuffers[] = { m_mainPrimaryCmdBufs[m_nPresentImageIndex] };
-	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT };
 
-	submitInfo.waitSemaphoreCount = 1;
-	submitInfo.pWaitSemaphores = &m_imageAvailableSemaphores[m_nCurrentFrameIndex]; // Wait for the swap chain image to be retreived before submitting rendering commands.
+	// Wait for an available swap chain image, and the last frame's transfers to complete.
+	VkSemaphore renderWaitSemaphores[] = { m_imageAvailableSemaphores[m_nCurrentFrameIndex], m_transferCompleteSemaphores[m_nLastFrameIndex] };
+
+	submitInfo.waitSemaphoreCount = 1 + (m_nCurrentFrame > 1);
+	submitInfo.pWaitSemaphores = renderWaitSemaphores;
 	submitInfo.pWaitDstStageMask = waitStages;
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = cmdBuffers;
@@ -1453,7 +1472,9 @@ void Renderer::End()
 	submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[m_nCurrentFrameIndex]; // Signal this semaphore when the execution finishes, indicating presentation of the frame is ready.
 
 	// Submit primary command buffer. The CPU will not wait for it's execution to finish before continuing, so a render finished semaphore is needed to wait for commands to complete execution.
-	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_nCurrentFrameIndex]), "Renderer Error: Failed to submit command buffer.");
+	//RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_nCurrentFrameIndex]), "Renderer Error: Failed to submit command buffer.");
+
+	VkResult result = vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_nCurrentFrameIndex]);
 
 	VkPresentInfoKHR presentInfo = {};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -1465,7 +1486,7 @@ void Renderer::End()
 	presentInfo.pResults = nullptr;
 
 	// Present finished image to the screen.
-	VkResult result = vkQueuePresentKHR(m_graphicsQueue, &presentInfo);
+	result = vkQueuePresentKHR(m_graphicsQueue, &presentInfo);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) 
 	{
@@ -1474,6 +1495,7 @@ void Renderer::End()
 	else if(result)
 		throw std::runtime_error("Renderer Error: Failed to present swap chain image.");
 
+	/*
 	if (m_bTransferReady && m_newCopyRequests.Count() > 0)
 	{
 		m_nTransferFrameIndex = m_nCurrentFrame % MAX_CONCURRENT_COPIES;
@@ -1496,13 +1518,7 @@ void Renderer::End()
 		m_transferIndices.Enqueue(m_nTransferFrameIndex);
 		m_bTransferReady = false;
 	}
-
-	// Update lighting if necessary.
-	if (m_lightingManager->DirLightingChanged())
-		m_lightingManager->UpdateDirLights();
-
-	if (m_lightingManager->PointLightingChanged())
-		m_lightingManager->UpdatePointLights();
+	*/
 	
 }
 
@@ -1540,12 +1556,7 @@ void Renderer::CreateBuffer(const unsigned long long& size, const VkBufferUsageF
 	bufCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	bufCreateInfo.size = size;
 	bufCreateInfo.usage = bufferUsage;
-	bufCreateInfo.sharingMode = VK_SHARING_MODE_CONCURRENT;
-	bufCreateInfo.queueFamilyIndexCount = 2;
-
-	unsigned int sharedQueueIndices[] = { m_nGraphicsQueueFamilyIndex, m_nTransferQueueFamilyIndex };
-
-	bufCreateInfo.pQueueFamilyIndices = sharedQueueIndices;
+	bufCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 	// Create buffer object.
 	RENDERER_SAFECALL(vkCreateBuffer(m_logicDevice, &bufCreateInfo, nullptr, &bufferHandle), "Mesh Error: Failed to create buffer.");
@@ -1732,16 +1743,6 @@ const unsigned int& Renderer::FrameHeight() const
 const unsigned int Renderer::SwapChainImageCount() const
 {
 	return m_swapChainImageViews.GetSize();
-}
-
-const unsigned int& Renderer::GraphicsQueueIndex() const 
-{
-	return m_nGraphicsQueueFamilyIndex;
-}
-
-const unsigned int& Renderer::TransferQueueIndex() const 
-{
-	return m_nTransferQueueFamilyIndex;
 }
 
 void Renderer::SetViewMatrix(glm::mat4& viewMat, glm::vec3& v3ViewPos) 

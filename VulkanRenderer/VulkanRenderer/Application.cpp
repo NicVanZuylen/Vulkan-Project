@@ -120,8 +120,8 @@ void Application::Run()
 	glm::mat4 instanceModelMat;
 
 	// Update directional lights.
-	m_renderer->UpdateDirectionalLight(glm::normalize(glm::vec4(0.0f, -1.0f, -1.0f, 0.0f)), glm::vec4(0.5f), 0);
-	m_renderer->UpdateDirectionalLight(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), glm::vec4(0.5f, 0.0f, 0.0f, 1.0f), 1);
+	m_renderer->UpdateDirectionalLight(glm::normalize(glm::vec4(0.0f, -1.0f, -1.0f, 0.0f)), glm::vec4(1.0f), 0);
+	m_renderer->UpdateDirectionalLight(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), 1);
 
 	// Add point lights to the scene.
 	m_renderer->AddPointLight(glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 3.0f);
@@ -197,19 +197,31 @@ void Application::Run()
 		m_input->EndFrame();
 
 		// End time...
-		auto endTime = std::chrono::high_resolution_clock::now();
+		std::chrono::steady_clock::time_point endTime;
+		long long timeDuration;
 
-		auto timeDuration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
+		// Reset deltatime.
+		fDeltaTime = 0.0f;
+
+		// Framerate limitation...
+		// Wait for deltatime to reach value based upon frame cap.
+		while(fDeltaTime < (1000.0f / FRAMERATE_CAP) / 1000.0f) 
+		{
+			endTime = std::chrono::high_resolution_clock::now();
+			timeDuration = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
+
+			fDeltaTime = static_cast<float>(timeDuration) / 1000000.0f;
+		}
 
 		// Get deltatime and add to elapsed time.
-		fDeltaTime = static_cast<float>(timeDuration) / 1000000.0f;
 		fElapsedTime += fDeltaTime;
 
 		// Display frametime and FPS.
 		if(fDebugDisplayTime <= 0.0f) 
 		{
 			std::cout << "Frametime: " << fDeltaTime * 1000.0f << "ms\n";
-			std::cout << "FPS: " << (int)ceilf((1.0f / fDeltaTime)) << std::endl;
+			std::cout << "Elapsed Time: " << fElapsedTime << "s\n";
+			std::cout << "FPS: " << (int)ceilf((1.0f / fDeltaTime)) << "\n";
 
 			fDebugDisplayTime = DEBUG_DISPLAY_TIME;
 		}

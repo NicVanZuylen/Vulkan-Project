@@ -133,10 +133,6 @@ public:
 
 	const unsigned int& FrameHeight() const;
 
-	const unsigned int& GraphicsQueueIndex() const;
-
-	const unsigned int& TransferQueueIndex() const;
-
 	const unsigned int SwapChainImageCount() const;
 
 	// Setters
@@ -150,8 +146,6 @@ private:
 		DynamicArray<VkSurfaceFormatKHR> m_formats;
 		DynamicArray<VkPresentModeKHR> m_presentModes;
 	};
-
-	static DynamicArray<CopyRequest> m_newCopyRequests;
 
 	// -----------------------------------------------------------------------------------------------------
 	// Initialization functions
@@ -220,19 +214,16 @@ private:
 	inline void UpdateMVP(const unsigned int& bufferIndex);
 
 	// Record transfer command buffer.
-	inline void RecordTransferCommandBuffer(const unsigned int& bufferIndex);
+	inline void RecordTransferCommandBuffer(const unsigned int& nFrameIndex);
 
 	// Record main primary command buffer.
-	inline void RecordMainCommandBuffer(const unsigned int& bufferIndex, const unsigned int& frameIndex);
+	inline void RecordMainCommandBuffer(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex);
 
 	// Record dynamic secondary command buffer.
-	inline void RecordDynamicCommandBuffer(const unsigned int& bufferIndex, const unsigned int& frameIndex);
+	inline void RecordDynamicCommandBuffer(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex);
 
 	// Record post-pass secondary command buffers.
-	inline void RecordPostPassCommandBuffers(const unsigned int& frameIndex);
-
-	// Submit transfer operations to the GPU.
-	void SubmitTransferOperations();
+	inline void RecordPostPassCommandBuffers(const unsigned int& nFrameIndex);
 
 	// -----------------------------------------------------------------------------------------------------
 	// Swap chain queries
@@ -319,7 +310,7 @@ private:
 	VkSubmitInfo m_transSubmitInfo;
 	DynamicArray<VkCommandBuffer> m_transferCmdBufs; // Command buffer for dedicated transfer operations.
 
-	// -----------------------------------------------------------------------------------------------------
+	// ---------------------------------------------------------f--------------------------------------------
 	// Descriptors
 	VkDescriptorSetLayout m_uboDescriptorSetLayout;
 	VkDescriptorSetLayout m_gBufferInputSetLayout;
@@ -353,18 +344,15 @@ private:
 
 	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
 	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;
+	DynamicArray<VkSemaphore> m_transferCompleteSemaphores;
 	DynamicArray<VkFence> m_copyReadyFences;
 	DynamicArray<VkFence> m_inFlightFences;
 	unsigned long long m_nCurrentFrame;
 	unsigned int m_nCurrentFrameIndex;
+	unsigned int m_nLastFrameIndex;
 	unsigned int m_nPresentImageIndex;
 	
-	DynamicArray<DynamicArray<CopyRequest>> m_transferBuffers; // Arrays of transfer request buffer arrays for each concurrent transfer command buffer.
-	Queue<unsigned int> m_transferIndices;
-	std::thread* m_transferThread;
-	unsigned int m_nTransferFrameIndex;
-	bool m_bTransferThread;
-	bool m_bTransferReady;
+	DynamicArray<DynamicArray<CopyRequest>> m_transferBuffers; // Arrays of transfer request buffer arrays for each frame in flight.
 
 	// Misc
 	bool m_bMinimized;
