@@ -67,9 +67,6 @@ public:
 	// Request a dedicated transfer operation.
 	void RequestCopy(const CopyRequest& request);
 
-	// Force re-recording of the dynamic rendering commands.
-	void ForceDynamicStateChange();
-
 	// End the main render pass.
 	void End();
 
@@ -90,6 +87,9 @@ public:
 
 	// Create an image view for the specified image.
 	void CreateImageView(const VkImage& image, VkImageView& view, VkFormat format, VkImageAspectFlags aspectFlags);
+
+	// Add a point light to the scene.
+	void AddDirectionalLight(const glm::vec4& v4Direction, const glm::vec4& v4Color);
 
 	// Update information on a directional light.
 	void UpdateDirectionalLight(const glm::vec4& v4Direction, const glm::vec4& v4Color, const unsigned int& nIndex);
@@ -146,6 +146,13 @@ private:
 		DynamicArray<VkSurfaceFormatKHR> m_formats;
 		DynamicArray<VkPresentModeKHR> m_presentModes;
 	};
+
+	// -----------------------------------------------------------------------------------------------------
+	// Structure templates
+
+	// Command buffer begin infos
+	static VkCommandBufferBeginInfo m_standardCmdBeginInfo;
+	static VkCommandBufferBeginInfo m_renderSecondaryCmdBeginInfo;
 
 	// -----------------------------------------------------------------------------------------------------
 	// Initialization functions
@@ -213,17 +220,14 @@ private:
     // Update MVP Uniform buffer contents associated with the provided swap chain image.
 	inline void UpdateMVP(const unsigned int& bufferIndex);
 
-	// Record transfer command buffer.
-	inline void RecordTransferCommandBuffer(const unsigned int& nFrameIndex);
-
 	// Record main primary command buffer.
 	inline void RecordMainCommandBuffer(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex);
 
 	// Record dynamic secondary command buffer.
-	inline void RecordDynamicCommandBuffer(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex);
+	inline void RecordDynamicCommandBuffers(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex);
 
-	// Record post-pass secondary command buffers.
-	inline void RecordPostPassCommandBuffers(const unsigned int& nFrameIndex);
+	// Record lighting secondary command buffers.
+	inline void RecordLightingCommandBuffer(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex);
 
 	// -----------------------------------------------------------------------------------------------------
 	// Swap chain queries
@@ -300,11 +304,10 @@ private:
 	// -----------------------------------------------------------------------------------------------------
 	// Commands
 	VkCommandPool m_mainGraphicsCommandPool;
-	VkCommandPool m_postPassGraphicsCmdPool;
 	VkCommandPool m_transferCmdPool;
 	DynamicArray<VkCommandBuffer> m_mainPrimaryCmdBufs;
 	DynamicArray<VkCommandBuffer> m_dynamicPassCmdBufs; // Command buffers for the dynamic render pass.
-	DynamicArray<VkCommandBuffer> m_postPassCmdBufs[MAX_FRAMES_IN_FLIGHT]; // Post-pass command buffers, there is a set for each frame in flight.
+	DynamicArray<VkCommandBuffer> m_lightingPassCmdBufs; // Deferred lighting command buffers.
 
 	// Transfer queue submission info moved here to move it from the stack, where it would remain for as long as the thread lives.
 	VkSubmitInfo m_transSubmitInfo;
@@ -340,7 +343,6 @@ private:
 	VkRenderPass m_mainRenderPass;
 
 	DynamicArray<MeshRenderer*> m_dynamicObjects;
-	bool m_dynamicStateChange[3];
 
 	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
 	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;

@@ -107,7 +107,6 @@ void MeshRenderer::AddInstance(Instance& instance)
 		return;
 
 	m_instanceArray[m_nInstanceCount++] = instance;
-	m_renderer->ForceDynamicStateChange();
 	m_bInstancesModified = true;
 }
 
@@ -122,8 +121,6 @@ void MeshRenderer::RemoveInstance(const unsigned int& nIndex)
 		unsigned int nCopySize = (m_nInstanceCount - (nIndex + 1)) * sizeof(Instance);
 		memcpy_s(&m_instanceArray[nIndex], nCopySize, &m_instanceArray[nIndex + 1], nCopySize);
 	}
-
-	m_renderer->ForceDynamicStateChange();
 	
 	--m_nInstanceCount;
 }
@@ -135,12 +132,11 @@ void MeshRenderer::SetInstance(const unsigned int& nIndex, Instance& instance)
 	{
 	    m_instanceArray[nIndex] = instance;
 
-		m_renderer->ForceDynamicStateChange();
 		m_bInstancesModified = true;
 	}
 }
 
-void MeshRenderer::UpdateInstanceData()
+void MeshRenderer::UpdateInstanceData(VkCommandBuffer cmdBuffer)
 {
 	if (!m_bInstancesModified || m_nInstanceCount == 0)
 		return;
@@ -163,9 +159,11 @@ void MeshRenderer::UpdateInstanceData()
 	insCopyRegion.dstOffset = 0;
 	insCopyRegion.size = sizeof(Instance) * m_nInstanceCount;
 
+	vkCmdCopyBuffer(cmdBuffer, m_instanceStagingBuffer, m_instanceBuffer, 1, &insCopyRegion);
+
 	// Create and submit copy request.
-	CopyRequest bufferCopyRequest = { m_instanceStagingBuffer, m_instanceBuffer, insCopyRegion };
-	m_renderer->RequestCopy(bufferCopyRequest);
+	//CopyRequest bufferCopyRequest = { m_instanceStagingBuffer, m_instanceBuffer, insCopyRegion };
+	//m_renderer->RequestCopy(bufferCopyRequest);
 
 	/*
 	Renderer::TempCmdBuffer tempCmdBuf = m_renderer->CreateTempCommandBuffer();

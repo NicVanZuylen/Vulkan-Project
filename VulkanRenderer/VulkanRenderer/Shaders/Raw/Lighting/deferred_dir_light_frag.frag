@@ -11,7 +11,13 @@ layout (set = 0, binding = 0) uniform UniformBuffer
 
 layout(input_attachment_index = 0, set = 1, binding = 0) uniform subpassInput inputs[3];
 
-#define DIRECTIONAL_LIGHT_COUNT 2
+#define DIRECTIONAL_LIGHT_COUNT 4
+
+struct GlobalDirLightData 
+{
+    int count;
+    int padding[3];	
+};
 
 struct DirectionalLight 
 {
@@ -22,6 +28,7 @@ struct DirectionalLight
 layout(set = 2, binding = 0) uniform DirectionalLightArray 
 {
     DirectionalLight data[DIRECTIONAL_LIGHT_COUNT];
+    GlobalDirLightData globalData;
 } dirLights;
 
 #define BRIGHTNESS_MULT 3
@@ -41,7 +48,7 @@ void main()
 
     vec3 lighting = vec3(0.3f); // Ambient component.
 
-    for(int i = 0; i < DIRECTIONAL_LIGHT_COUNT; ++i) 
+    for(int i = 0; i < dirLights.globalData.count; ++i) 
     {
         // Get direction and color of the current light.
         vec4 lightDir = dirLights.data[i].direction;

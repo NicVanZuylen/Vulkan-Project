@@ -8,17 +8,19 @@ LightingManager::LightingManager(Renderer* renderer, Shader* dirLightShader, Sha
 {
 	m_renderer = renderer;
 
-	m_dirLights.SetSize(DIRECTIONAL_LIGHT_COUNT);
-	m_dirLights.SetCount(DIRECTIONAL_LIGHT_COUNT);
+	m_globalDirData = { 0, { 0, 0, 0 } };
 
-	for(int i = 0; i < DIRECTIONAL_LIGHT_COUNT; ++i) 
+	m_dirLights.SetSize(MAX_DIRECTIONAL_LIGHTS);
+	m_dirLights.SetCount(MAX_DIRECTIONAL_LIGHTS);
+
+	for(int i = 0; i < MAX_DIRECTIONAL_LIGHTS; ++i) 
 	{
 		m_dirLights[i].m_v4Direction = glm::vec4(0.0f, -1.0f, 0.0f, 1.0f); // Point directly down.
 		m_dirLights[i].m_v4Color = glm::vec4(1.0f); // White
 	}
 
 	// One UBO for all direction lights, to avoid memory fragmentation.
-	m_renderer->CreateBuffer(sizeof(DirectionalLight) * DIRECTIONAL_LIGHT_COUNT, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_dirLightUBO, m_dirLightUBOMemory);
+	m_renderer->CreateBuffer(sizeof(GlobalDirLightData) + (sizeof(DirectionalLight) * MAX_DIRECTIONAL_LIGHTS), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_dirLightUBO, m_dirLightUBOMemory);
 
 	m_pointLightVolMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj", &Mesh::defaultFormat);
 
@@ -97,9 +99,21 @@ const VkPipelineLayout& LightingManager::PointLightPipelineLayout()
 	return m_pointLightPipelineLayout;
 }
 
+void LightingManager::AddDirLight(const DirectionalLight& data) 
+{
+	if (m_globalDirData.m_nCount >= MAX_DIRECTIONAL_LIGHTS)
+		return;
+
+	// Set data and increment direction light count.
+	m_dirLights[m_globalDirData.m_nCount++] = data;
+
+	// Flag changes.
+	m_bDirLightChange = true;
+}
+
 void LightingManager::UpdateDirLight(const DirectionalLight& data, const unsigned int& nIndex) 
 {
-	if (nIndex >= DIRECTIONAL_LIGHT_COUNT)
+	if (nIndex >= MAX_DIRECTIONAL_LIGHTS)
 		return;
 
 	// Copy new data to local buffer.
@@ -158,7 +172,7 @@ void LightingManager::DrawPointLights(VkCommandBuffer& cmdBuffer)
 	m_pointLightVolMesh->Bind(cmdBuffer, m_pointLightInsBuffer);
 
 	// Draw...
-	vkCmdDrawIndexed(cmdBuffer, m_pointLightVolMesh->IndexCount(), MAX_POINT_LIGHT_COUNT, 0, 0, 0);
+	vkCmdDrawIndexed(cmdBuffer, m_pointLightVolMesh->IndexCount(), m_pointLights.Count(), 0, 0, 0);
 }
 
 const bool& LightingManager::DirLightingChanged() 
@@ -173,13 +187,18 @@ const bool& LightingManager::PointLightingChanged()
 
 void LightingManager::UpdateDirLights()
 {
-	int nBufferSize = sizeof(DirectionalLight) * DIRECTIONAL_LIGHT_COUNT;
+	int nGlobalSize = sizeof(GlobalDirLightData);
+	int nBufferSize = sizeof(DirectionalLight) * MAX_DIRECTIONAL_LIGHTS;
 
 	// Map directional light UBO memory...
 	void* mappedPtr = nullptr;
 	RENDERER_SAFECALL(vkMapMemory(m_renderer->GetDevice(), m_dirLightUBOMemory, 0, nBufferSize, 0, &mappedPtr), "Lighting Manager Error: Failed to map directional light data for update.");
 
-	memcpy_s(mappedPtr, nBufferSize, m_dirLights.Data(), nBufferSize);
+	char* charPtr = static_cast<char*>(mappedPtr);
+
+	memcpy_s(charPtr, nBufferSize, m_dirLights.Data(), nBufferSize);
+	memcpy_s(&charPtr[nBufferSize], nGlobalSize, &m_globalDirData, nGlobalSize);
+	//memcpy_s(charPtr, nBufferSize, m_dirLights.Data(), nBufferSize);
 
 	// Unmap buffer memory.
 	vkUnmapMemory(m_renderer->GetDevice(), m_dirLightUBOMemory);
@@ -187,7 +206,7 @@ void LightingManager::UpdateDirLights()
 	m_bDirLightChange = false;
 }
 
-void LightingManager::UpdatePointLights() 
+void LightingManager::UpdatePointLights(VkCommandBuffer cmdBuffer) 
 {
 	int nCopySize = sizeof(PointLight) * (m_nChangePLightEnd - m_nChangePLightStart);
 
@@ -207,9 +226,8 @@ void LightingManager::UpdatePointLights()
 	insCopyRegion.dstOffset = sizeof(PointLight) * m_nChangePLightStart;
 	insCopyRegion.size = nCopySize;
 
-	// Create and submit copy request.
-	CopyRequest bufferCopyRequest = { m_pointLightStageInsBuffer, m_pointLightInsBuffer, insCopyRegion };
-	m_renderer->RequestCopy(bufferCopyRequest);
+	// Submit copy command.
+	vkCmdCopyBuffer(cmdBuffer, m_pointLightStageInsBuffer, m_pointLightInsBuffer, 1, &insCopyRegion);
 
 	m_nChangePLightStart = 0U;
 	m_nChangePLightEnd = 1U;
@@ -280,7 +298,7 @@ void LightingManager::CreateDescriptorSets()
 	VkDescriptorBufferInfo dirLightUBOInfo = {};
 	dirLightUBOInfo.buffer = m_dirLightUBO;
 	dirLightUBOInfo.offset = 0;
-	dirLightUBOInfo.range = sizeof(DirectionalLight) * DIRECTIONAL_LIGHT_COUNT;
+	dirLightUBOInfo.range = VK_WHOLE_SIZE;
 
 	// Information to write to the descriptor set.
 	VkWriteDescriptorSet dirLightUBOWrite = {};

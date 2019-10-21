@@ -93,8 +93,10 @@ public:
 
 	/*
 	Description: Update instance data on the GPU.
+	Param:
+	    VkCommandBuffer: The command buffer to record transfer commands to.
 	*/
-	void UpdateInstanceData();
+	void UpdateInstanceData(VkCommandBuffer cmdBuffer);
 
 	/*
 	Description: Recreate the graphics pipeline this object uses.

@@ -10,7 +10,7 @@ class Input;
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 
-#define FRAMERATE_CAP 10000000.0f
+#define FRAMERATE_CAP 60.0f
 
 class Application
 {

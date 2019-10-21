@@ -7,6 +7,12 @@
 class Renderer;
 class Mesh;
 
+struct GlobalDirLightData 
+{
+	int m_nCount;
+	int m_nPadding[3];
+};
+
 struct DirectionalLight 
 {
 	glm::vec4 m_v4Direction;
@@ -20,7 +26,7 @@ struct PointLight
 	float m_fRadius;
 };
 
-#define DIRECTIONAL_LIGHT_COUNT 2
+#define MAX_DIRECTIONAL_LIGHTS 4
 #define MAX_POINT_LIGHT_COUNT 1000
 
 class LightingManager
@@ -68,6 +74,13 @@ public:
 	const VkPipelineLayout& PointLightPipelineLayout();
 
 	/*
+	Description: Add a directional light to the scene.
+	Param:
+		const DirectionalLight& data: The data for the new directional light.
+	*/
+	void AddDirLight(const DirectionalLight& data);
+
+	/*
 	Description: Update the data on a directional light.
 	Param:
 	    const DirectionalLight& data: The new data for the directional light.
@@ -109,8 +122,10 @@ public:
 
 	/*
 	Description: Update point lighting data on the GPU.
+	Param:
+	    VkCommandBuffer cmdBuffer: The transfer command buffer to record to.
 	*/
-	void UpdatePointLights();
+	void UpdatePointLights(VkCommandBuffer cmdBuffer);
 
 	/*
 	Description: Re-create lighting graphics pipelines.
@@ -146,6 +161,7 @@ private:
 	Mesh* m_pointLightVolMesh;
 
 	DynamicArray<DirectionalLight> m_dirLights;
+	GlobalDirLightData m_globalDirData;
 	bool m_bDirLightChange;
 
 	DynamicArray<PointLight> m_pointLights;

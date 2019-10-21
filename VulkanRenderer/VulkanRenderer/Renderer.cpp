@@ -30,6 +30,24 @@ const RendererHelper::EQueueFamilyFlags Renderer::m_eDesiredQueueFamilies = stat
     RendererHelper::EQueueFamilyFlags::QUEUE_FAMILY_TRANSFER
 );
 
+// Template structures
+
+VkCommandBufferBeginInfo Renderer::m_standardCmdBeginInfo =
+{
+	VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+	nullptr,
+	VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
+	nullptr
+};
+
+VkCommandBufferBeginInfo Renderer::m_renderSecondaryCmdBeginInfo =
+{
+	VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+	nullptr,
+	VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
+	nullptr
+};
+
 #ifndef RENDERER_DEBUG
 
 const bool Renderer::m_bEnableValidationLayers = false;
@@ -117,10 +135,6 @@ Renderer::Renderer(GLFWwindow* window)
 	CreateFramebuffers();
 	CreateCmdBuffers();
 
-	// Record post processing command buffer, it only needs to be recorded once.
-	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-		RecordPostPassCommandBuffers(i);
-
 	// Syncronization
 	CreateSyncObjects();
 
@@ -176,7 +190,6 @@ Renderer::~Renderer()
 
 	// Destroy command pools.
 	vkDestroyCommandPool(m_logicDevice, m_mainGraphicsCommandPool, nullptr);
-	vkDestroyCommandPool(m_logicDevice, m_postPassGraphicsCmdPool, nullptr);
 	vkDestroyCommandPool(m_logicDevice, m_transferCmdPool, nullptr);
 
 	// Destroy framebuffers.
@@ -329,6 +342,7 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	// Pipeline recreation
 
 	// Lighting pipeline recreation.
+
 	m_lightingManager->RecreatePipelines(m_dirLightingShader, m_pointLightingShader, m_nWindowWidth, m_nWindowHeight);
 
 	DynamicArray<PipelineData*>& allPipelines = MeshRenderer::Pipelines();
@@ -338,18 +352,6 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	    // Recreate pipelines using the first render object (as there should always be at-least one for the pipeline to exist.)
 		allPipelines[i]->m_renderObjects[0]->RecreatePipeline();
 	}
-
-	// Record post pass command buffers.
-	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-  	    RecordPostPassCommandBuffers(i);
-
-	// ---------------------------------------------------------------------------------------------------------
-	// State changes
-
-	// Flag state changes, command buffers will be re-recorded before submitting.
-	m_dynamicStateChange[0] = true;
-	m_dynamicStateChange[1] = true;
-	m_dynamicStateChange[2] = true;
 }
 
 void Renderer::CreateVKInstance() 
@@ -1025,13 +1027,6 @@ void Renderer::CreateCommandPools()
 	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_mainGraphicsCommandPool), "Renderer Error: Failed to create main graphics command pool.");
 
 	// ==================================================================================================================================================
-	// Graphics post-pass command pool.
-
-	poolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // Same as before, but transient isn't needed because this command buffer will not be recorded often.
-
-	RENDERER_SAFECALL(vkCreateCommandPool(m_logicDevice, &poolCreateInfo, nullptr, &m_postPassGraphicsCmdPool), "Renderer Error: Failed to create post-pass graphics command pool.");
-
-	// ==================================================================================================================================================
 	// Transfer command pool.
 
 	VkCommandPoolCreateInfo transferPoolInfo = {};
@@ -1056,12 +1051,9 @@ void Renderer::CreateCmdBuffers()
 	m_dynamicPassCmdBufs.SetSize(m_swapChainFramebuffers.GetSize());
 	m_dynamicPassCmdBufs.SetCount(m_dynamicPassCmdBufs.GetSize());
 
-	// Allocate handle memory for post-pass command buffers.
-	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
-	{
-		m_postPassCmdBufs[i].SetSize(m_swapChainFramebuffers.GetSize());
-		m_postPassCmdBufs[i].SetCount(m_postPassCmdBufs[i].GetSize());
-	}
+	// Allocate handle memory for lighting pass command buffers.
+	m_lightingPassCmdBufs.SetSize(m_swapChainFramebuffers.GetSize());
+	m_lightingPassCmdBufs.SetCount(m_lightingPassCmdBufs.GetSize());
 
 	// Allocation info.
 	VkCommandBufferAllocateInfo cmdBufAllocateInfo = {};
@@ -1078,17 +1070,8 @@ void Renderer::CreateCmdBuffers()
 	// Allocate dynamic command buffers...
 	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_dynamicPassCmdBufs.Data()), "Renderer Error: Failed to allocate dynamic command buffers.");
 
-	// Switch command pool for post-pass command buffers.
-	cmdBufAllocateInfo.commandPool = m_postPassGraphicsCmdPool;
-
-	// Allocate post-pass command buffers...
-	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-	     RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_postPassCmdBufs[i].Data()), "Renderer Error: Failed to allocate post-pass command buffers.");
-
-	// These command buffers will need to be initially recorded.
-	m_dynamicStateChange[0] = true;
-	m_dynamicStateChange[1] = true;
-	m_dynamicStateChange[2] = true;
+	// Allocate lighting pass command buffers...
+	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_logicDevice, &cmdBufAllocateInfo, m_lightingPassCmdBufs.Data()), "Renderer Error: Failed to allocate post-pass command buffers.");
 
 	// ==================================================================================================================================================
 	// Transfer commands
@@ -1179,31 +1162,6 @@ void Renderer::UpdateMVP(const unsigned int& bufferIndex)
 	vkUnmapMemory(m_logicDevice, m_mvpBufferMemBlocks[bufferIndex]);
 }
 
-void Renderer::RecordTransferCommandBuffer(const unsigned int& bufferIndex)
-{
-	VkCommandBuffer& cmdBuffer = m_transferCmdBufs[bufferIndex];
-
-	VkCommandBufferBeginInfo cmdBeginInfo = {};
-	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-	cmdBeginInfo.pInheritanceInfo = nullptr;
-
-	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of transfer command buffer.");
-
-	DynamicArray<CopyRequest>& requests = m_transferBuffers[bufferIndex];
-
-	// Issue commands for each requested copy operation.
-	for (int i = 0; i < requests.Count(); ++i)
-	{
-		// Perform copy operation.
-		vkCmdCopyBuffer(cmdBuffer, requests[i].m_srcBuffer, requests[i].m_dstBuffer, 1, &requests[i].m_copyRegion);
-	}
-
-	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of transfer command buffer.");
-
-	requests.Clear();
-}
-
 void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex, const unsigned int& frameIndex)
 {
 	// Swap chain clear value
@@ -1217,13 +1175,8 @@ void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex, const un
 
 	VkClearValue clearVals[5] = { swapChainClearVal, depthClearVal, colorClearVal, posClearVal, normalClearVal };
 
-	// Record primary command buffers...
-	VkCommandBufferBeginInfo beginInfo = {};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-
 	// Begin recording...
-	vkBeginCommandBuffer(m_mainPrimaryCmdBufs[bufferIndex], &beginInfo);
+	vkBeginCommandBuffer(m_mainPrimaryCmdBufs[bufferIndex], &m_standardCmdBeginInfo);
 
 	// Begin render pass.
 	VkRenderPassBeginInfo mainPassBeginInfo = {};
@@ -1247,7 +1200,7 @@ void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex, const un
 	vkCmdNextSubpass(m_mainPrimaryCmdBufs[bufferIndex], VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
 	// Execute post-processing commands...
-	vkCmdExecuteCommands(m_mainPrimaryCmdBufs[bufferIndex], 1, &m_postPassCmdBufs[frameIndex][bufferIndex]);
+	vkCmdExecuteCommands(m_mainPrimaryCmdBufs[bufferIndex], 1, &m_lightingPassCmdBufs[bufferIndex]);
 
 	// End render pass.
 	vkCmdEndRenderPass(m_mainPrimaryCmdBufs[bufferIndex]);
@@ -1256,28 +1209,24 @@ void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex, const un
 	vkEndCommandBuffer(m_mainPrimaryCmdBufs[bufferIndex]);
 }
 
-void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex, const unsigned int& frameIndex)
+void Renderer::RecordDynamicCommandBuffers(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex)
 {
-	// If there was no dynamic state change, no re-recording is necessary.
-	if (!m_dynamicStateChange[bufferIndex])
-		return;
-
-	VkCommandBufferBeginInfo cmdBeginInfo = {};
-	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+	// Begin structure for transfer command buffer.
+	VkCommandBufferBeginInfo cmdBeginInfo = m_renderSecondaryCmdBeginInfo;
 
 	// This command buffer is a secondary command buffer, executing draw commands for the first subpass.
 	VkCommandBufferInheritanceInfo inheritanceInfo = {};
 	inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-	inheritanceInfo.framebuffer = m_swapChainFramebuffers[bufferIndex];
+	inheritanceInfo.framebuffer = m_swapChainFramebuffers[nBufferIndex];
 	inheritanceInfo.renderPass = m_mainRenderPass;
 	inheritanceInfo.subpass = DYNAMIC_SUBPASS_INDEX;
 	inheritanceInfo.occlusionQueryEnable = VK_FALSE;
 
+	// Modify settings for dynamic pass command buffer.
 	cmdBeginInfo.pInheritanceInfo = &inheritanceInfo;
 
-	// Initial recording of dynamic command buffers...
-	VkCommandBuffer& cmdBuffer = m_dynamicPassCmdBufs[bufferIndex];
+	// Begin recording dynamic command buffer.
+	VkCommandBuffer& cmdBuffer = m_dynamicPassCmdBufs[nBufferIndex];
 
 	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of dynamic pass command buffer.");
 
@@ -1291,26 +1240,24 @@ void Renderer::RecordDynamicCommandBuffer(const unsigned int& bufferIndex, const
 		// Bind pipelines...
 		vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, currentPipeline.m_handle);
 
-		currentPipeline.m_material->UseDescriptorSet(cmdBuffer, currentPipeline.m_layout, frameIndex);
+		currentPipeline.m_material->UseDescriptorSet(cmdBuffer, currentPipeline.m_layout, nFrameIndex);
 
 		// Draw objects using the pipeline.
 		DynamicArray<MeshRenderer*>& renderObjects = currentPipeline.m_renderObjects;
 		for (int j = 0; j < renderObjects.Count(); ++j)
 		{
-			renderObjects[j]->UpdateInstanceData();
+			renderObjects[j]->UpdateInstanceData(m_transferCmdBufs[m_nCurrentFrameIndex]);
 			renderObjects[j]->CommandDraw(cmdBuffer);
 		}
 	}
 
 	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of dynamic pass command buffer.");
 
-	RecordMainCommandBuffer(bufferIndex, frameIndex);
-
-	// Flag that there is no further dynamic state changes yet.
-	m_dynamicStateChange[bufferIndex] = false;
+	RecordLightingCommandBuffer(nBufferIndex, nFrameIndex);
+	RecordMainCommandBuffer(nBufferIndex, nFrameIndex);
 }
 
-void Renderer::RecordPostPassCommandBuffers(const unsigned int& frameIndex)
+void Renderer::RecordLightingCommandBuffer(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex)
 {
 	// This command buffer is a secondary command buffer, executing draw commands for the final post-pass subpass.
 	VkCommandBufferInheritanceInfo inheritanceInfo = {};
@@ -1319,51 +1266,46 @@ void Renderer::RecordPostPassCommandBuffers(const unsigned int& frameIndex)
 	inheritanceInfo.subpass = POST_SUBPASS_INDEX;
 	inheritanceInfo.occlusionQueryEnable = VK_FALSE;
 
-	VkCommandBufferBeginInfo cmdBeginInfo = {};
-	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+	VkCommandBufferBeginInfo cmdBeginInfo = m_renderSecondaryCmdBeginInfo;
 	cmdBeginInfo.pInheritanceInfo = &inheritanceInfo;
 
-	for (int i = 0; i < m_swapChainFramebuffers.Count(); ++i)
-	{
-		// Set command buffer framebuffer.
-		inheritanceInfo.framebuffer = m_swapChainFramebuffers[i];
+	// Set command buffer framebuffer.
+	inheritanceInfo.framebuffer = m_swapChainFramebuffers[nBufferIndex];
 
-		VkCommandBuffer cmdBuf = m_postPassCmdBufs[frameIndex][i];
+	VkCommandBuffer cmdBuf = m_lightingPassCmdBufs[nBufferIndex];
 
-		// Record commands...
-		vkBeginCommandBuffer(cmdBuf, &cmdBeginInfo);
+	// Record commands...
+	vkBeginCommandBuffer(cmdBuf, &cmdBeginInfo);
 
-		// ----------------------------------------------------------------------------------------------
-		// Directional lighting
+	// ----------------------------------------------------------------------------------------------
+	// Directional lighting
 
-		// Bind deferred lighting pipeline and descriptor.
-		vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->DirLightPipeline());
+	// Bind deferred lighting pipeline and descriptor.
+	vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->DirLightPipeline());
 
-		// Use MVP UBO and Lighting input attachment descriptor sets.
-		VkDescriptorSet lightingSets[] = { m_uboDescriptorSets[frameIndex], m_gBufferInputSet, m_lightingManager->DirLightUBOSet() };
+	// Use MVP UBO and Lighting input attachment descriptor sets.
+	VkDescriptorSet lightingSets[] = { m_uboDescriptorSets[nFrameIndex], m_gBufferInputSet, m_lightingManager->DirLightUBOSet() };
 
-		vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->DirLightPipelineLayout(), 0, 3, lightingSets, 0, 0);
+	vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->DirLightPipelineLayout(), 0, 3, lightingSets, 0, 0);
 
-		// Run deferred directional lighting post pass.
-		vkCmdDraw(cmdBuf, 6, 1, 0, 0);
+	// Run deferred directional lighting post pass.
+	vkCmdDraw(cmdBuf, 6, 1, 0, 0);
 
-		// ----------------------------------------------------------------------------------------------
-		// Point lighting
+	// ----------------------------------------------------------------------------------------------
+	// Point lighting
 
-		// Bind point light pipeline
-		vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->PointLightPipeline());
+	// Bind point light pipeline
+	vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->PointLightPipeline());
 
-		vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->PointLightPipelineLayout(), 0, 2, lightingSets, 0, 0);
+	vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lightingManager->PointLightPipelineLayout(), 0, 2, lightingSets, 0, 0);
 
-		// Run deferred point lighting post pass.
-		m_lightingManager->DrawPointLights(cmdBuf);
+	// Run deferred point lighting post pass.
+	m_lightingManager->DrawPointLights(cmdBuf);
 
-		// ----------------------------------------------------------------------------------------------
+	// ----------------------------------------------------------------------------------------------
 
-		// End recording.
-		vkEndCommandBuffer(cmdBuf);
-	}
+	// End recording.
+	vkEndCommandBuffer(cmdBuf);
 }
 
 void Renderer::Begin() 
@@ -1382,30 +1324,6 @@ void Renderer::Begin()
 	// Wait for frames-in-flight.
 	vkWaitForFences(m_logicDevice, 1, &m_inFlightFences[m_nCurrentFrameIndex], VK_TRUE, std::numeric_limits<unsigned long long>::max());
 	vkResetFences(m_logicDevice, 1, &m_inFlightFences[m_nCurrentFrameIndex]);
-
-	// ----------------------------------------------------------------------------------------------
-	// Record and submit transfer commands from the last frame.
-
-	// Update lighting if necessary.
-	if (m_lightingManager->DirLightingChanged())
-		m_lightingManager->UpdateDirLights();
-
-	if (m_lightingManager->PointLightingChanged())
-		m_lightingManager->UpdatePointLights();
-
-	RecordTransferCommandBuffer(m_nCurrentFrameIndex);
-
-	VkSubmitInfo transferSubmitInfo = {};
-	transferSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	transferSubmitInfo.commandBufferCount = 1;
-	transferSubmitInfo.pCommandBuffers = &m_transferCmdBufs[m_nCurrentFrameIndex];
-	transferSubmitInfo.waitSemaphoreCount = 0;
-	transferSubmitInfo.pWaitSemaphores = nullptr;
-	transferSubmitInfo.signalSemaphoreCount = 1;
-	transferSubmitInfo.pSignalSemaphores = &m_transferCompleteSemaphores[m_nCurrentFrameIndex];
-	transferSubmitInfo.pNext = nullptr;
-
-	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &transferSubmitInfo, VK_NULL_HANDLE), "Renderer Error: Failed to submit transfer commands.");
 
 	// ----------------------------------------------------------------------------------------------
 	// Aquire next image to render to from the swap chain.
@@ -1436,23 +1354,39 @@ void Renderer::RequestCopy(const CopyRequest& request)
 	m_transferBuffers[m_nCurrentFrameIndex].Push(request);
 }
 
-void Renderer::ForceDynamicStateChange() 
-{
-	m_dynamicStateChange[0] = true;
-	m_dynamicStateChange[1] = true;
-	m_dynamicStateChange[2] = true;
-}
-
 void Renderer::End()
 {
 	// Do not attempt to render to a zero sized window.
 	if (m_bMinimized)
 		return;
 
+	// ----------------------------------------------------------------------------------------------
+	// Begin recording of transfer commands.
+
+	VkCommandBuffer transCmdBuf = m_transferCmdBufs[m_nCurrentFrameIndex];
+	vkBeginCommandBuffer(transCmdBuf, &m_standardCmdBeginInfo);
+
+	// ----------------------------------------------------------------------------------------------
+	// Update camera data...
+
 	UpdateMVP(m_nCurrentFrameIndex);
 
+	// ----------------------------------------------------------------------------------------------
+	// Update lighting.
+
+	if (m_lightingManager->DirLightingChanged())
+		m_lightingManager->UpdateDirLights();
+
+	if (m_lightingManager->PointLightingChanged())
+		m_lightingManager->UpdatePointLights(transCmdBuf);
+
+	// ----------------------------------------------------------------------------------------------
 	// Re-record the dynamic command buffer for this swap chain image if it has changed.
-    RecordDynamicCommandBuffer(m_nPresentImageIndex, m_nCurrentFrameIndex);
+
+    RecordDynamicCommandBuffers(m_nPresentImageIndex, m_nCurrentFrameIndex);
+
+	// ----------------------------------------------------------------------------------------------
+	// Prepare to submit graphics commands.
 
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1471,10 +1405,31 @@ void Renderer::End()
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[m_nCurrentFrameIndex]; // Signal this semaphore when the execution finishes, indicating presentation of the frame is ready.
 
-	// Submit primary command buffer. The CPU will not wait for it's execution to finish before continuing, so a render finished semaphore is needed to wait for commands to complete execution.
-	//RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_nCurrentFrameIndex]), "Renderer Error: Failed to submit command buffer.");
+	// ----------------------------------------------------------------------------------------------
+	// Finish recording transfer commands and submit.
+
+	RENDERER_SAFECALL(vkEndCommandBuffer(transCmdBuf), "Renderer Error: Failed to record dynamic transfer commands.");
+
+	VkSubmitInfo transferSubmitInfo = {};
+	transferSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	transferSubmitInfo.commandBufferCount = 1;
+	transferSubmitInfo.pCommandBuffers = &transCmdBuf;
+	transferSubmitInfo.waitSemaphoreCount = 0;
+	transferSubmitInfo.pWaitSemaphores = nullptr;
+	transferSubmitInfo.signalSemaphoreCount = 1;
+	transferSubmitInfo.pSignalSemaphores = &m_transferCompleteSemaphores[m_nCurrentFrameIndex];
+	transferSubmitInfo.pNext = nullptr;
+
+	// Submit transfer commands to be complete by this time the next frame.
+	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &transferSubmitInfo, VK_NULL_HANDLE), "Renderer Error: Failed to submit transfer commands.");
+
+	// ----------------------------------------------------------------------------------------------
+	// Submit primary command buffer to render the entire frame.
 
 	VkResult result = vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFences[m_nCurrentFrameIndex]);
+
+	// ----------------------------------------------------------------------------------------------
+	// Submit rendered frame to the swap chain for presentation.
 
 	VkPresentInfoKHR presentInfo = {};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -1485,8 +1440,10 @@ void Renderer::End()
 	presentInfo.pImageIndices = &m_nPresentImageIndex;
 	presentInfo.pResults = nullptr;
 
-	// Present finished image to the screen.
 	result = vkQueuePresentKHR(m_graphicsQueue, &presentInfo);
+
+	// ----------------------------------------------------------------------------------------------
+	// Ensure window surface & graphics pipelines meet presentation requirements.
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) 
 	{
@@ -1495,31 +1452,7 @@ void Renderer::End()
 	else if(result)
 		throw std::runtime_error("Renderer Error: Failed to present swap chain image.");
 
-	/*
-	if (m_bTransferReady && m_newCopyRequests.Count() > 0)
-	{
-		m_nTransferFrameIndex = m_nCurrentFrame % MAX_CONCURRENT_COPIES;
-
-		DynamicArray<CopyRequest>& requests = m_transferBuffers[m_nTransferFrameIndex];
-
-		// Ensure there is enough room for the new requests.
-		if (requests.GetSize() < m_newCopyRequests.GetSize())
-			requests.SetSize(m_newCopyRequests.GetSize());
-
-		// Move all new transfer requests to the correct location for command buffer recording and submission.
-		requests.SetCount(m_newCopyRequests.Count());
-
-		unsigned int nCopySize = sizeof(CopyRequest) * m_newCopyRequests.Count();
-		memcpy_s(requests.Data(), nCopySize, m_newCopyRequests.Data(), nCopySize);
-
-		m_newCopyRequests.Clear();
-
-		// Enqueue index of these requests for command buffer recording and execution.
-		m_transferIndices.Enqueue(m_nTransferFrameIndex);
-		m_bTransferReady = false;
-	}
-	*/
-	
+	// ----------------------------------------------------------------------------------------------
 }
 
 void Renderer::WaitGraphicsIdle() 
@@ -1626,6 +1559,13 @@ void Renderer::CreateImageView(const VkImage& image, VkImageView& view, VkFormat
 	viewCreateInfo.subresourceRange.layerCount = 1;
 
 	RENDERER_SAFECALL(vkCreateImageView(m_logicDevice, &viewCreateInfo, nullptr, &view), "Renderer Error: Failed to create image view.");
+}
+
+void Renderer::AddDirectionalLight(const glm::vec4& v4Direction, const glm::vec4& v4Color) 
+{
+	DirectionalLight dirLight = { v4Direction, v4Color };
+
+	m_lightingManager->AddDirLight(dirLight);
 }
 
 void Renderer::UpdateDirectionalLight(const glm::vec4& v4Direction, const glm::vec4& v4Color, const unsigned int& nIndex)

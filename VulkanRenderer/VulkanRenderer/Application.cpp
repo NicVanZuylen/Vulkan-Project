@@ -120,13 +120,13 @@ void Application::Run()
 	glm::mat4 instanceModelMat;
 
 	// Update directional lights.
-	m_renderer->UpdateDirectionalLight(glm::normalize(glm::vec4(0.0f, -1.0f, -1.0f, 0.0f)), glm::vec4(1.0f), 0);
-	m_renderer->UpdateDirectionalLight(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), 1);
+	m_renderer->AddDirectionalLight(glm::normalize(glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)), glm::vec4(1.0f));
+	m_renderer->AddDirectionalLight(glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
 
 	// Add point lights to the scene.
-	m_renderer->AddPointLight(glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 3.0f);
-	m_renderer->AddPointLight(glm::vec4(-3.0f, 3.5f, 3.5f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 3.0f);
-	m_renderer->AddPointLight(glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f);
+	//m_renderer->AddPointLight(glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 3.0f);
+	//m_renderer->AddPointLight(glm::vec4(-3.0f, 3.5f, 3.5f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 3.0f);
+	//m_renderer->AddPointLight(glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f);
 
 	while(!glfwWindowShouldClose(m_window)) 
 	{
@@ -156,13 +156,21 @@ void Application::Run()
 			m_bFullScreen = !m_bFullScreen;
 
 			// Recreate window.
-			if(m_bFullScreen)
+			if (m_bFullScreen) 
+			{
 			    CreateWindow(vidMode->width, vidMode->height, true);
-			else
+
+			    // Set new window for the renderer, it will also re-create the swap chain and graphics pipelines to accomodate.
+			    m_renderer->SetWindow(m_window, vidMode->width, vidMode->height);
+			}
+			else 
+			{
 				CreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, false);
 
-			// Set new window for the renderer, it will also re-create the swap chain and graphics pipelines to accomodate.
-			m_renderer->SetWindow(m_window, vidMode->width, vidMode->height);
+				// Set new window for the renderer, it will also re-create the swap chain and graphics pipelines to accomodate.
+				m_renderer->SetWindow(m_window, WINDOW_WIDTH, WINDOW_HEIGHT);
+			}
+
 
 			m_input->ResetStates();
 		}
