@@ -1,6 +1,6 @@
 #include "Shader.h"
 #include "Renderer.h"
-#include "MeshRenderer.h"
+#include "RenderObject.h"
 
 #include <iostream>
 #include <fstream>
@@ -112,7 +112,7 @@ void Shader::Load(const char* vertPath, const char* fragPath, DynamicArray<char>
 
 	int vertExcept = vertFile.exceptions();
 
-	if (!vertExcept)
+	if (!vertExcept && vertFile.good())
 	{
 		// Get file size.
 		const int fileSize = (const int)vertFile.tellg();
@@ -143,7 +143,7 @@ void Shader::Load(const char* vertPath, const char* fragPath, DynamicArray<char>
 
     int fragExcept = fragFile.exceptions();
 
-	if (!fragExcept)
+	if (!fragExcept && fragFile.good())
 	{
 		// Get file size.
 		const int fileSize = (const int)fragFile.tellg();

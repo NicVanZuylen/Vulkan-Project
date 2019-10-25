@@ -6,7 +6,7 @@
 
 class Renderer;
 class Mesh;
-class MeshRenderer;
+class RenderObject;
 class Material;
 
 struct PipelineData;
@@ -22,7 +22,7 @@ struct PipelineData
 	VkPipeline m_handle;
 	VkPipelineLayout m_layout;
 	DynamicArray<EVertexAttribute> m_vertexAttributes;
-	DynamicArray<MeshRenderer*> m_renderObjects; // All objects using this pipeline.
+	DynamicArray<RenderObject*> m_renderObjects; // All objects using this pipeline.
 };
 
 struct PipelineDataPtr 
@@ -37,7 +37,7 @@ struct Instance
 	glm::mat4 m_modelMat;
 };
 
-class MeshRenderer
+class RenderObject
 {
 public:
 
@@ -52,9 +52,9 @@ public:
 		DynamicArray<EVertexAttribute>* instanceAttributes: Array of per-instance vertex attributes for the instance buffer.
 		unsigned int nMaxInstanceCount: Maximum amount of instances allowed for this render object.
 	*/
-	MeshRenderer(Renderer* renderer, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes = &m_defaultInstanceAttributes, unsigned int nMaxInstanceCount = 1);
+	RenderObject(Renderer* renderer, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes = &m_defaultInstanceAttributes, unsigned int nMaxInstanceCount = 1);
 
-	~MeshRenderer();
+	~RenderObject();
 
 	/*
 	Description: Get all existing RenderObject pipelines.
@@ -106,6 +106,8 @@ public:
 	const Shader* GetShader() const;
 
 	const Material* GetMaterial() const;
+
+	PipelineData* GetPipeline();
 
 private:
 

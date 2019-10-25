@@ -3,7 +3,7 @@
 #include "DynamicArray.h"
 
 class Renderer;
-class MeshRenderer;
+class RenderObject;
 struct PipelineData;
 struct VkShaderModule_T;
 

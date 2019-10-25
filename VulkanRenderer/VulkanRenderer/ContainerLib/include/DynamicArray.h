@@ -43,6 +43,7 @@ public:
 		m_contents = new T[list.size()];
 		m_nCount = static_cast<int>(list.size());
 		m_nSize = static_cast<int>(list.size());
+		m_nExpandRate = 1;
 
 		int i = 0;
 		for (auto it = list.begin(); it != list.end(); ++it)
@@ -143,6 +144,46 @@ public:
 
 		m_contents[index] = value;
 		++m_nCount;
+	}
+
+	// Extend contents with the values of another dynamic array.
+	inline void Append(const DynArr<T>& other) 
+	{
+#ifdef CONTAINER_DEBUG_IMPLEMENTATION
+		assert(size > 0 && "Dynamic Array Error: Attempted to append zero length array.");
+#else
+		if (other.m_nCount == 0)
+			return;
+#endif
+
+		int nNewLength = m_nCount + other.m_nCount;
+		int nSize = m_nCount * sizeof(T);
+		int nOtherSize = other.m_nCount * sizeof(T);
+
+		T* tmpContents = new T[nNewLength];
+
+		// Copy old contents of this array into the new array.
+		memcpy_s(tmpContents, nSize, m_contents, nSize);
+
+		// Delete old contents.
+		delete[] m_contents;
+		m_contents = nullptr;
+
+		// Copy contents from other array into this one.
+		memcpy_s(&tmpContents[m_nCount], nOtherSize, other.m_contents, nOtherSize);
+
+		// Set new size and count.
+		m_nCount = nNewLength;
+		m_nSize = nNewLength;
+
+		// Set new pointer.
+		m_contents = tmpContents;
+	}
+
+	// Append using += operator.
+	inline operator += (const DynArr<T>& other) 
+	{
+		Append(other);
 	}
 
 	// Set the dynamic array size.
@@ -344,7 +385,17 @@ private:
 	}
 
 	T* m_contents = nullptr;
-	int m_nExpandRate;
-	int m_nSize;
-	int m_nCount;
+	size_t m_nExpandRate;
+	size_t m_nSize;
+	size_t m_nCount;
 };
+
+// Append two arrays using the + operator.
+template<typename T>
+inline DynArr<T>& operator + (const DynArr<T>& first, const DynArr<T> second) 
+{
+	DynArr<T> newArray = first;
+	newArray += second;
+
+	return newArray;
+}

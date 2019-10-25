@@ -1,4 +1,4 @@
-#include "MeshRenderer.h"
+#include "RenderObject.h"
 #include "VertexInfo.h"
 #include "Mesh.h"
 #include "Shader.h"
@@ -17,11 +17,11 @@ PipelineDataPtr::PipelineDataPtr()
 	m_ptr = nullptr;
 }
 
-Table<PipelineDataPtr> MeshRenderer::m_pipelineTable;
-DynamicArray<PipelineData*> MeshRenderer::m_allPipelines;
-DynamicArray<EVertexAttribute> MeshRenderer::m_defaultInstanceAttributes = { VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4 };
+Table<PipelineDataPtr> RenderObject::m_pipelineTable;
+DynamicArray<PipelineData*> RenderObject::m_allPipelines;
+DynamicArray<EVertexAttribute> RenderObject::m_defaultInstanceAttributes = { VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4 };
 
-MeshRenderer::MeshRenderer(Renderer* renderer, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes, unsigned int nMaxInstanceCount)
+RenderObject::RenderObject(Renderer* renderer, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes, unsigned int nMaxInstanceCount)
 {
 	m_renderer = renderer;
 	m_mesh = mesh;
@@ -42,7 +42,7 @@ MeshRenderer::MeshRenderer(Renderer* renderer, Mesh* mesh, Material* material, D
 	AddInstance(firstInstance);
 }
 
-MeshRenderer::~MeshRenderer()
+RenderObject::~RenderObject()
 {
 	if(m_instanceArray) 
 	{
@@ -84,12 +84,12 @@ MeshRenderer::~MeshRenderer()
 	}
 }
 
-DynamicArray<PipelineData*>& MeshRenderer::Pipelines() 
+DynamicArray<PipelineData*>& RenderObject::Pipelines() 
 {
 	return m_allPipelines;
 }
 
-void MeshRenderer::CommandDraw(VkCommandBuffer_T* cmdBuffer) 
+void RenderObject::CommandDraw(VkCommandBuffer_T* cmdBuffer) 
 {
 	Mesh& meshRef = *m_mesh;
 
@@ -100,7 +100,7 @@ void MeshRenderer::CommandDraw(VkCommandBuffer_T* cmdBuffer)
 	vkCmdDrawIndexed(cmdBuffer, meshRef.IndexCount(), m_nInstanceCount, 0, 0, 0);
 }
 
-void MeshRenderer::AddInstance(Instance& instance) 
+void RenderObject::AddInstance(Instance& instance) 
 {
 	// Don't attempt to add beyond the max instance limit.
 	if (m_nInstanceCount >= m_nInstanceArraySize)
@@ -110,7 +110,7 @@ void MeshRenderer::AddInstance(Instance& instance)
 	m_bInstancesModified = true;
 }
 
-void MeshRenderer::RemoveInstance(const unsigned int& nIndex)
+void RenderObject::RemoveInstance(const unsigned int& nIndex)
 {
 	if (m_nInstanceCount <= 0)
 		return;
@@ -125,7 +125,7 @@ void MeshRenderer::RemoveInstance(const unsigned int& nIndex)
 	--m_nInstanceCount;
 }
 
-void MeshRenderer::SetInstance(const unsigned int& nIndex, Instance& instance) 
+void RenderObject::SetInstance(const unsigned int& nIndex, Instance& instance) 
 {
 	// Don't attempt to modify beyond the max instance limit.
 	if (nIndex < m_nInstanceCount) 
@@ -136,7 +136,7 @@ void MeshRenderer::SetInstance(const unsigned int& nIndex, Instance& instance)
 	}
 }
 
-void MeshRenderer::UpdateInstanceData(VkCommandBuffer cmdBuffer)
+void RenderObject::UpdateInstanceData(VkCommandBuffer cmdBuffer)
 {
 	if (!m_bInstancesModified || m_nInstanceCount == 0)
 		return;
@@ -192,22 +192,27 @@ void MeshRenderer::UpdateInstanceData(VkCommandBuffer cmdBuffer)
 	m_bInstancesModified = false;
 }
 
-void MeshRenderer::RecreatePipeline() 
+void RenderObject::RecreatePipeline() 
 {
 	CreateGraphicsPipeline(&m_pipelineData->m_vertexAttributes, true);
 }
 
-const Shader* MeshRenderer::GetShader() const
+const Shader* RenderObject::GetShader() const
 {
 	return m_material->GetShader();
 }
 
-const Material* MeshRenderer::GetMaterial() const 
+const Material* RenderObject::GetMaterial() const 
 {
 	return m_material;
 }
 
-void MeshRenderer::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertexAttributes, bool bRecreate)
+PipelineData* RenderObject::GetPipeline()
+{
+	return m_pipelineData;
+}
+
+void RenderObject::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertexAttributes, bool bRecreate)
 {
 	// -------------------------------------------------------------------------------------------------------------------
 	// Instance buffer

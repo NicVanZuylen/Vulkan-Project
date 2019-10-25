@@ -170,6 +170,12 @@ private:
 	bool m_bPointLightChange;
 
 	// ---------------------------------------------------------------------------------
+	// Command buffers
+
+	VkCommandPool m_commandPool;
+	DynamicArray<VkCommandBuffer> m_passCmdBuffers;
+
+	// ---------------------------------------------------------------------------------
 	// Buffers
 
 	VkBuffer m_dirLightUBO;

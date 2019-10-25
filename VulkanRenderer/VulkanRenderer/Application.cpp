@@ -16,7 +16,7 @@
 #include "Mesh.h"
 #include "Texture.h"
 #include "Material.h"
-#include "MeshRenderer.h"
+#include "RenderObject.h"
 
 #include "Camera.h"
 
@@ -76,7 +76,7 @@ int Application::Init()
 void Application::Run() 
 {
 	// Load shaders
-	Shader* modelShader = new Shader(m_renderer, "Shaders/SPIR-V/vertModelInsG.spv", "Shaders/SPIR-V/fragModelG.spv");
+	Shader* modelShader = new Shader(m_renderer, "Shaders/SPIR-V/ModelIns_Vert.spv", "Shaders/SPIR-V/GModel_Frag.spv");
 
 	// Load textures.
 	Texture* testTexture = new Texture(m_renderer, "Assets/Objects/Metal/diffuse.tga");
@@ -91,9 +91,9 @@ void Application::Run()
 	Mesh* planeMesh = new Mesh(m_renderer, "Assets/Primitives/plane.obj");
 
 	// Create render objects.
-	MeshRenderer* bunnyObj = new MeshRenderer(m_renderer, bunnyMesh, testMat, &MeshRenderer::m_defaultInstanceAttributes, 100);
-	MeshRenderer* sphereObj = new MeshRenderer(m_renderer, sphereMesh, testMat, &MeshRenderer::m_defaultInstanceAttributes, 100);
-	MeshRenderer* floorObj = new MeshRenderer(m_renderer, planeMesh, testMat, &MeshRenderer::m_defaultInstanceAttributes, 1);
+	RenderObject* bunnyObj = new RenderObject(m_renderer, bunnyMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 100);
+	RenderObject* sphereObj = new RenderObject(m_renderer, sphereMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 100);
+	RenderObject* floorObj = new RenderObject(m_renderer, planeMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 1);
 
 	// Time variables.
 	float fDeltaTime = 0.0f;	
@@ -121,12 +121,12 @@ void Application::Run()
 
 	// Update directional lights.
 	m_renderer->AddDirectionalLight(glm::normalize(glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)), glm::vec4(1.0f));
-	m_renderer->AddDirectionalLight(glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+	//m_renderer->AddDirectionalLight(glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
 
 	// Add point lights to the scene.
-	//m_renderer->AddPointLight(glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 3.0f);
-	//m_renderer->AddPointLight(glm::vec4(-3.0f, 3.5f, 3.5f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 3.0f);
-	//m_renderer->AddPointLight(glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f);
+	m_renderer->AddPointLight(glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 3.0f);
+	m_renderer->AddPointLight(glm::vec4(-3.0f, 3.5f, 3.5f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 3.0f);
+	m_renderer->AddPointLight(glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f);
 
 	while(!glfwWindowShouldClose(m_window)) 
 	{

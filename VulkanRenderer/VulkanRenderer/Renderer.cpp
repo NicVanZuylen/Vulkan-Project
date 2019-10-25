@@ -5,7 +5,7 @@
 #include "LightingManager.h"
 #include "Shader.h"
 #include "Material.h"
-#include "MeshRenderer.h"
+#include "RenderObject.h"
 #include "Texture.h"
 #include "gtc/matrix_transform.hpp"
 
@@ -125,8 +125,8 @@ Renderer::Renderer(GLFWwindow* window)
 	CreateGBufferInputDescriptorSet();
 
 	// Load deferred lighting shaders.
-	m_dirLightingShader = new Shader(this, "Shaders/SPIR-V/Lighting/fs_quad_vert.spv", "Shaders/SPIR-V/Lighting/deferred_dir_light_frag.spv");
-	m_pointLightingShader = new Shader(this, "Shaders/SPIR-V/Lighting/deferred_point_light_vert.spv", "Shaders/SPIR-V/Lighting/deferred_point_light_frag.spv");
+	m_dirLightingShader = new Shader(this, "Shaders/SPIR-V/fs_quad_vert.spv", "Shaders/SPIR-V/deferred_dir_light_frag.spv");
+	m_pointLightingShader = new Shader(this, "Shaders/SPIR-V/deferred_point_light_vert.spv", "Shaders/SPIR-V/deferred_point_light_frag.spv");
 
 	// Create lighting manager.
 	m_lightingManager = new LightingManager(this, m_dirLightingShader, m_pointLightingShader, m_nWindowWidth, m_nWindowHeight);
@@ -345,7 +345,7 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 
 	m_lightingManager->RecreatePipelines(m_dirLightingShader, m_pointLightingShader, m_nWindowWidth, m_nWindowHeight);
 
-	DynamicArray<PipelineData*>& allPipelines = MeshRenderer::Pipelines();
+	DynamicArray<PipelineData*>& allPipelines = RenderObject::Pipelines();
 
 	for(int i = 0; i < allPipelines.Count(); ++i) 
 	{
@@ -356,12 +356,10 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 
 void Renderer::CreateVKInstance() 
 {
-	VkResult result = {};
-
 	// ----------------------------------------------------------------------------------------------------------
 	// Extension count.
 
-	result = vkEnumerateInstanceExtensionProperties(nullptr, &m_extensionCount, nullptr);
+	VkResult result = vkEnumerateInstanceExtensionProperties(nullptr, &m_extensionCount, nullptr);
 
 	m_extensions = new VkExtensionProperties[m_extensionCount];
 
@@ -807,7 +805,7 @@ void Renderer::CreateRenderPasses()
 
 		VkSubpassDependency postDependency = {};
 		postDependency.srcSubpass = DYNAMIC_SUBPASS_INDEX;
-		postDependency.dstSubpass = POST_SUBPASS_INDEX;
+		postDependency.dstSubpass = LIGHTING_SUBPASS_INDEX;
 		postDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 		postDependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
 			| VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -1230,7 +1228,7 @@ void Renderer::RecordDynamicCommandBuffers(const unsigned int& nBufferIndex, con
 
 	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of dynamic pass command buffer.");
 
-	DynamicArray<PipelineData*>& allPipelines = MeshRenderer::Pipelines();
+	DynamicArray<PipelineData*>& allPipelines = RenderObject::Pipelines();
 
 	// Iterate through all pipelines and draw their objects.
 	for (int i = 0; i < allPipelines.Count(); ++i)
@@ -1243,7 +1241,7 @@ void Renderer::RecordDynamicCommandBuffers(const unsigned int& nBufferIndex, con
 		currentPipeline.m_material->UseDescriptorSet(cmdBuffer, currentPipeline.m_layout, nFrameIndex);
 
 		// Draw objects using the pipeline.
-		DynamicArray<MeshRenderer*>& renderObjects = currentPipeline.m_renderObjects;
+		DynamicArray<RenderObject*>& renderObjects = currentPipeline.m_renderObjects;
 		for (int j = 0; j < renderObjects.Count(); ++j)
 		{
 			renderObjects[j]->UpdateInstanceData(m_transferCmdBufs[m_nCurrentFrameIndex]);
@@ -1263,7 +1261,7 @@ void Renderer::RecordLightingCommandBuffer(const unsigned int& nBufferIndex, con
 	VkCommandBufferInheritanceInfo inheritanceInfo = {};
 	inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
 	inheritanceInfo.renderPass = m_mainRenderPass;
-	inheritanceInfo.subpass = POST_SUBPASS_INDEX;
+	inheritanceInfo.subpass = LIGHTING_SUBPASS_INDEX;
 	inheritanceInfo.occlusionQueryEnable = VK_FALSE;
 
 	VkCommandBufferBeginInfo cmdBeginInfo = m_renderSecondaryCmdBeginInfo;

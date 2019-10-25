@@ -458,7 +458,7 @@ void LightingManager::CreateDirLightingPipeline(Shader* dirLightShader, const un
 	pipelineInfo.pDynamicState = nullptr;
 	pipelineInfo.layout = m_dirLightPipelineLayout;
 	pipelineInfo.renderPass = m_renderer->MainRenderPass();
-	pipelineInfo.subpass = POST_SUBPASS_INDEX;
+	pipelineInfo.subpass = LIGHTING_SUBPASS_INDEX;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 	pipelineInfo.basePipelineIndex = -1;
 
@@ -631,7 +631,7 @@ inline void LightingManager::CreatePointLightingPipeline(Shader* pLightShader, c
 	pipelineInfo.pDynamicState = nullptr;
 	pipelineInfo.layout = m_dirLightPipelineLayout;
 	pipelineInfo.renderPass = m_renderer->MainRenderPass();
-	pipelineInfo.subpass = POST_SUBPASS_INDEX;
+	pipelineInfo.subpass = LIGHTING_SUBPASS_INDEX;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 	pipelineInfo.basePipelineIndex = -1;
 

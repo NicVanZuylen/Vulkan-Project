@@ -13,6 +13,12 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{6be5955f-e2e7-4df6-9d25-b6fda5f0e56c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders\Lighting">
+      <UniqueIdentifier>{8add3d0f-1a78-42c7-ad17-fab6d4e3fec3}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -31,9 +37,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Shader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="MeshRenderer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="Mesh.cpp">
@@ -57,6 +60,21 @@
     <ClCompile Include="LightingManager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="RenderModule.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="RenderObject.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="GBufferPass.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SubScene.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Scene.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Application.h">
@@ -72,9 +90,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Shader.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="MeshRenderer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Mesh.h">
@@ -98,5 +113,61 @@
     <ClInclude Include="LightingManager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="RenderModule.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="RenderObject.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GBufferPass.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SubScene.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Scene.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\Lighting\deferred_dir_light_frag.frag">
+      <Filter>Shaders\Lighting</Filter>
+    </None>
+    <None Include="Shaders\Lighting\deferred_point_light_frag.frag">
+      <Filter>Shaders\Lighting</Filter>
+    </None>
+    <None Include="Shaders\Lighting\deferred_point_light_vert.vert">
+      <Filter>Shaders\Lighting</Filter>
+    </None>
+    <None Include="Shaders\Lighting\fs_quad_vert.vert">
+      <Filter>Shaders\Lighting</Filter>
+    </None>
+    <None Include="Shaders\model.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\model.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\modelIns.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\rect.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\rect.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\triangle.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\triangle.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\triangleAlt.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\triangleAlt.vert">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

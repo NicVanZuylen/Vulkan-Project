@@ -1,6 +1,6 @@
 #include "Mesh.h"
 #include "VertexInfo.h"
-#include "MeshRenderer.h"
+#include "RenderObject.h"
 #include "Renderer.h"
 #include <vector>
 #include <iostream>

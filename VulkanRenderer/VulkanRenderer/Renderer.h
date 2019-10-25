@@ -21,10 +21,10 @@
 #define MAX_CONCURRENT_COPIES MAX_FRAMES_IN_FLIGHT
 
 #define DYNAMIC_SUBPASS_INDEX 0
-#define POST_SUBPASS_INDEX 1
+#define LIGHTING_SUBPASS_INDEX 1
 
 class LightingManager;
-class MeshRenderer;
+class RenderObject;
 class Texture;
 
 struct Shader;
@@ -313,7 +313,7 @@ private:
 	VkSubmitInfo m_transSubmitInfo;
 	DynamicArray<VkCommandBuffer> m_transferCmdBufs; // Command buffer for dedicated transfer operations.
 
-	// ---------------------------------------------------------f--------------------------------------------
+	// -----------------------------------------------------------------------------------------------------
 	// Descriptors
 	VkDescriptorSetLayout m_uboDescriptorSetLayout;
 	VkDescriptorSetLayout m_gBufferInputSetLayout;
@@ -342,7 +342,7 @@ private:
 
 	VkRenderPass m_mainRenderPass;
 
-	DynamicArray<MeshRenderer*> m_dynamicObjects;
+	DynamicArray<RenderObject*> m_dynamicObjects;
 
 	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
 	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;
