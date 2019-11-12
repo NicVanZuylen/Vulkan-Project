@@ -26,10 +26,10 @@ Scene::~Scene()
 
 void Scene::AddSubscene()
 {
-	SubScene* newSubscene = new SubScene(m_renderer, m_nGraphicsQueueFamilyIndex, m_nWindowWidth, m_nWindowHeight, m_subScenes.Count() == 0);
-	newSubscene->SetImages(m_colorImage, m_depthImage, m_posImage, m_normalImage); // Share render target images.
+	//SubScene* newSubscene = new SubScene(m_renderer, m_nGraphicsQueueFamilyIndex, m_nWindowWidth, m_nWindowHeight, m_subScenes.Count() == 0);
+	//newSubscene->SetImages((EGBufferImageTypeBit)(GBUFFER_COLOR_BIT | GBUFFER_DEPTH_BIT | GBUFFER_POSITION_BIT | GBUFFER_NORMAL_BIT)); // Share render target images.
 
-	m_subScenes.Push(newSubscene);
+	//m_subScenes.Push(newSubscene);
 }
 
 inline void Scene::ConstructSubScenes()

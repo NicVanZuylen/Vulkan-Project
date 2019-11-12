@@ -221,13 +221,13 @@ private:
 	inline void UpdateMVP(const unsigned int& bufferIndex);
 
 	// Record main primary command buffer.
-	inline void RecordMainCommandBuffer(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex);
+	inline void RecordMainCommandBuffer(const unsigned int& nPresentImageIndex, const unsigned int& nFrameIndex);
 
 	// Record dynamic secondary command buffer.
-	inline void RecordDynamicCommandBuffers(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex);
+	inline void RecordDynamicCommandBuffers(const unsigned int& nPresentImageIndex, const unsigned int& nFrameIndex);
 
 	// Record lighting secondary command buffers.
-	inline void RecordLightingCommandBuffer(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex);
+	inline void RecordLightingCommandBuffer(const unsigned int& nPresentImageIndex, const unsigned int& nFrameIndex);
 
 	// -----------------------------------------------------------------------------------------------------
 	// Swap chain queries
@@ -361,6 +361,6 @@ private:
 
 	// Extensions.
 	VkExtensionProperties* m_extensions;
-	unsigned int m_extensionCount;
+	unsigned int m_nExtensionCount;
 };
 

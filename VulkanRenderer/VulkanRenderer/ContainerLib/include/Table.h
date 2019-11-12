@@ -28,10 +28,10 @@ public:
 
 	~Table() 
 	{
-		for (int i = 0; i < m_contents->Count(); ++i)
+		for (uint32_t i = 0; i < m_contents->Count(); ++i)
 			delete (*m_contents)[i];
 
-		for (int i = 0; i < m_pairs.Count(); ++i)
+		for (uint32_t i = 0; i < m_pairs.Count(); ++i)
 			delete m_pairs[i];
 
 		delete[] m_contents;
@@ -60,7 +60,7 @@ public:
 #endif
 
 		// If the matching pair wasnt found assign the new value or find the existing matching pair.
-		for (int i = 0; i < arr.Count(); ++i)
+		for (uint32_t i = 0; i < arr.Count(); ++i)
 		{
 			HashTablePair<T>& pair = *arr[i];
 			const char* cKey = pair.m_key.c_str();

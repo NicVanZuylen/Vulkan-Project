@@ -417,7 +417,7 @@ void Mesh::LoadOBJ(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned 
 		chunkVertices.SetSize(static_cast<int>(shape.mesh.positions.size() / 3)); // Divide size by 3 to account for the fact that the array is of floats rather than vector structs.
 		chunkVertices.SetCount(chunkVertices.GetSize());
 
-		for (int j = 0; j < chunkVertices.Count(); ++j)
+		for (uint32_t j = 0; j < chunkVertices.Count(); ++j)
 		{
 			// Positions, normals etc are stored in float format, in groups. (3 for positions and normals, 2 for tex coords).
 			// Multiply the index to jump to the current float group.

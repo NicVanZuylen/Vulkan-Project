@@ -80,7 +80,10 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <DisableSpecificWarnings>26812 26451 6385 26495</DisableSpecificWarnings>
+      <DisableSpecificWarnings>
+      </DisableSpecificWarnings>
+      <WarningVersion>
+      </WarningVersion>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -91,7 +94,10 @@
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>D:\VulkanSDK\1.1.106.0\Include;C:\VulkanSDK\1.1.106.0\Include;$(ProjectDir)TinyObjLoader\include;$(ProjectDir)STB\include;$(ProjectDir)glm\include;$(ProjectDir)GLFW_3.2.1\include;$(ProjectDir)ContainerLib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>RENDERER_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <DisableSpecificWarnings>26812 26451 6385 26495</DisableSpecificWarnings>
+      <DisableSpecificWarnings>
+      </DisableSpecificWarnings>
+      <WarningVersion>
+      </WarningVersion>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>D:\VulkanSDK\1.1.106.0\Lib;C:\VulkanSDK\1.1.106.0\Lib;$(ProjectDir)GLFW_3.2.1\lib-vc2015;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
@@ -106,7 +112,10 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <DisableSpecificWarnings>26812 26451 6385 26495</DisableSpecificWarnings>
+      <DisableSpecificWarnings>
+      </DisableSpecificWarnings>
+      <WarningVersion>
+      </WarningVersion>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -122,7 +131,10 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>D:\VulkanSDK\1.1.106.0\Include;C:\VulkanSDK\1.1.106.0\Include;$(ProjectDir)TinyObjLoader\include;$(ProjectDir)STB\include;$(ProjectDir)glm\include;$(ProjectDir)GLFW_3.2.1\include;$(ProjectDir)ContainerLib\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <DisableSpecificWarnings>26812 26451 6385 26495</DisableSpecificWarnings>
+      <DisableSpecificWarnings>
+      </DisableSpecificWarnings>
+      <WarningVersion>
+      </WarningVersion>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>

@@ -2,7 +2,7 @@
 
 VkFormat RendererHelper::FindBestDepthFormat(VkPhysicalDevice physDevice, DynamicArray<VkFormat>& formats, VkImageTiling tiling, VkFormatFeatureFlags features)
 {
-	for (int i = 0; i < formats.Count(); ++i)
+	for (uint32_t i = 0; i < formats.Count(); ++i)
 	{
 		VkFormatProperties properties;
 
@@ -38,9 +38,9 @@ bool RendererHelper::CheckDeviceExtensionSupport(const DynamicArray<const char*>
 	int requiredExtensionCount = 0; // Amount of required extensions found.
 
 	// Compare required extension names with available extension names, find all matches.
-	for (int i = 0; i < extensionNames.Count(); ++i)
+	for (uint32_t i = 0; i < extensionNames.Count(); ++i)
 	{
-		for (int j = 0; j < extensions.Count(); ++j)
+		for (uint32_t j = 0; j < extensions.Count(); ++j)
 		{
 			if (strcmp(extensionNames[i], extensions[j].extensionName) == 0)
 			{

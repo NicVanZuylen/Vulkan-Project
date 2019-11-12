@@ -29,7 +29,7 @@ Material::Material(Renderer* renderer, Shader* shader, const DynamicArray<Textur
 	m_nameID += shader->m_name;
 
 	// Add all textures in the provided array.
-	for (int i = 0; i < textureMaps.Count(); ++i)
+	for (uint32_t i = 0; i < textureMaps.Count(); ++i)
 		AddTextureMap(textureMaps[i]);
 
 	CreateDescriptorObjects();
@@ -61,7 +61,7 @@ Material::Material(Renderer* renderer, Shader* shader, const std::initializer_li
 	m_textures = textureMaps;
 
 	// Add all textures in the provided array.
-	for (int i = 0; i < m_textures.Count(); ++i)
+	for (uint32_t i = 0; i < m_textures.Count(); ++i)
 		m_nameID += "|" + m_textures[i]->GetName();
 
 	CreateDescriptorObjects();
@@ -209,7 +209,7 @@ void Material::UpdateDescriptorSets()
 	// Image buffer information data.
 	DynamicArray<VkDescriptorImageInfo> imageInfos(m_textures.Count(), 1);
 
-	for (int i = 0; i < m_textures.Count(); ++i) 
+	for (uint32_t i = 0; i < m_textures.Count(); ++i) 
 	{
 		imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		imageInfos[i].imageView = m_textures[i]->ImageView();

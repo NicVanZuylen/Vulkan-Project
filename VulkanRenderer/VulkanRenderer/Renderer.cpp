@@ -9,6 +9,8 @@
 #include "Texture.h"
 #include "gtc/matrix_transform.hpp"
 
+#include "SubScene.h"
+
 #define GLFW_FORCE_RADIANS
 #define GLFW_FORCE_DEPTH_ZERO_TO_ONE
 
@@ -62,7 +64,7 @@ Renderer::Renderer(GLFWwindow* window)
 {
 	m_window = window;
 	m_extensions = nullptr;
-	m_extensionCount = 0;
+	m_nExtensionCount = 0;
 
 	m_nWindowWidth = WINDOW_WIDTH;
 	m_nWindowHeight = WINDOW_HEIGHT;
@@ -135,6 +137,11 @@ Renderer::Renderer(GLFWwindow* window)
 	CreateFramebuffers();
 	CreateCmdBuffers();
 
+	EGBufferImageTypeBit gBufferBits = (EGBufferImageTypeBit)(GBUFFER_COLOR_BIT | GBUFFER_COLOR_HDR_BIT | GBUFFER_DEPTH_BIT | GBUFFER_POSITION_BIT | GBUFFER_NORMAL_BIT);
+
+	SubScene* subsceneTest = new SubScene(this, true, m_nGraphicsQueueFamilyIndex, m_nWindowWidth, m_nWindowHeight, gBufferBits, true);
+	delete subsceneTest;
+
 	// Syncronization
 	CreateSyncObjects();
 
@@ -157,7 +164,7 @@ Renderer::~Renderer()
 	vkDestroyDescriptorPool(m_logicDevice, m_descriptorPool, nullptr);
 
 	// Destroy MVP Uniform buffers.
-	for (int i = 0; i < m_mvpBuffers.Count(); ++i)
+	for (uint32_t i = 0; i < m_mvpBuffers.Count(); ++i)
 	{
 		vkDestroyBuffer(m_logicDevice, m_mvpBuffers[i], nullptr);
 		vkFreeMemory(m_logicDevice, m_mvpBufferMemBlocks[i], nullptr);
@@ -168,7 +175,7 @@ Renderer::~Renderer()
 	vkDestroyDescriptorSetLayout(m_logicDevice, m_gBufferInputSetLayout, nullptr);
 
 	// Destroy sync objects.
-	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
+	for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
 	{
 		vkDestroyFence(m_logicDevice, m_inFlightFences[i], nullptr);
 
@@ -177,7 +184,7 @@ Renderer::~Renderer()
 		vkDestroySemaphore(m_logicDevice, m_transferCompleteSemaphores[i], nullptr);
 	}
 
-	for (int i = 0; i < MAX_CONCURRENT_COPIES; ++i) 
+	for (uint32_t i = 0; i < MAX_CONCURRENT_COPIES; ++i)
 	{
 		vkDestroyFence(m_logicDevice, m_copyReadyFences[i], nullptr);
 	}
@@ -193,7 +200,7 @@ Renderer::~Renderer()
 	vkDestroyCommandPool(m_logicDevice, m_transferCmdPool, nullptr);
 
 	// Destroy framebuffers.
-	for (int i = 0; i < m_swapChainFramebuffers.GetSize(); ++i)
+	for (uint32_t i = 0; i < m_swapChainFramebuffers.GetSize(); ++i)
 		vkDestroyFramebuffer(m_logicDevice, m_swapChainFramebuffers[i], nullptr);
 
 	// Destroy render passes.
@@ -209,7 +216,7 @@ Renderer::~Renderer()
 	DestroyFramebufferImages();
 
 	// Destroy image views.
-	for (int i = 0; i < m_swapChainImageViews.Count(); ++i)
+	for (uint32_t i = 0; i < m_swapChainImageViews.Count(); ++i)
 		vkDestroyImageView(m_logicDevice, m_swapChainImageViews[i], nullptr);
 
 	// Destroy swap chain.
@@ -261,7 +268,7 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	WaitGraphicsIdle();
 
 	// Destroy old framebuffers.
-	for (int i = 0; i < m_swapChainFramebuffers.GetSize(); ++i) 
+	for (uint32_t i = 0; i < m_swapChainFramebuffers.GetSize(); ++i)
 	{
 		vkDestroyFramebuffer(m_logicDevice, m_swapChainFramebuffers[i], nullptr);
 		m_swapChainFramebuffers[i] = nullptr;
@@ -271,7 +278,7 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	DestroyFramebufferImages();
 
 	// Destroy swap chain image views.
-	for (int i = 0; i < m_swapChainImageViews.Count(); ++i) 
+	for (uint32_t i = 0; i < m_swapChainImageViews.Count(); ++i)
 	{
 		vkDestroyImageView(m_logicDevice, m_swapChainImageViews[i], nullptr);
 		m_swapChainImageViews[i] = nullptr;
@@ -347,7 +354,7 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 
 	DynamicArray<PipelineData*>& allPipelines = RenderObject::Pipelines();
 
-	for(int i = 0; i < allPipelines.Count(); ++i) 
+	for(uint32_t i = 0; i < allPipelines.Count(); ++i)
 	{
 	    // Recreate pipelines using the first render object (as there should always be at-least one for the pipeline to exist.)
 		allPipelines[i]->m_renderObjects[0]->RecreatePipeline();
@@ -359,9 +366,9 @@ void Renderer::CreateVKInstance()
 	// ----------------------------------------------------------------------------------------------------------
 	// Extension count.
 
-	VkResult result = vkEnumerateInstanceExtensionProperties(nullptr, &m_extensionCount, nullptr);
+	VkResult result = vkEnumerateInstanceExtensionProperties(nullptr, &m_nExtensionCount, nullptr);
 
-	m_extensions = new VkExtensionProperties[m_extensionCount];
+	m_extensions = new VkExtensionProperties[m_nExtensionCount];
 
 	if (result == VK_INCOMPLETE)
 		result = VK_SUCCESS;
@@ -426,11 +433,11 @@ void Renderer::CreateVKInstance()
 	// ----------------------------------------------------------------------------------------------------------
 	// Extensions...
 
-	result = vkEnumerateInstanceExtensionProperties(nullptr, &m_extensionCount, m_extensions);
+	result = vkEnumerateInstanceExtensionProperties(nullptr, &m_nExtensionCount, m_extensions);
 
 	std::cout << "Renderer Info: Available extensions are: \n" << std::endl;
 
-	for (unsigned int i = 0; i < m_extensionCount; ++i)
+	for (unsigned int i = 0; i < m_nExtensionCount; ++i)
 		std::cout << m_extensions[i].extensionName << "\n";
 
 	std::cout << "\n";
@@ -451,10 +458,10 @@ void Renderer::CheckValidationLayerSupport()
 	vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.Data());
 
 	// Compare against required layers...
-	int successCount = 0;
-	for(int i = 0; i < m_validationLayers.Count(); ++i) 
+	uint32_t successCount = 0;
+	for(uint32_t i = 0; i < m_validationLayers.Count(); ++i)
 	{
-		for (int j = 0; j < availableLayers.Count(); ++j)
+		for (uint32_t j = 0; j < availableLayers.Count(); ++j)
 		{
 			if (strcmp(m_validationLayers[i], availableLayers[j].layerName) == 0)
 			{
@@ -622,7 +629,7 @@ void Renderer::CreateSwapChainImageViews()
 	m_swapChainImageViews.SetSize(m_swapChainImages.GetSize());
 	m_swapChainImageViews.SetCount(m_swapChainImageViews.GetSize());
 
-	for (int i = 0; i < m_swapChainImages.Count(); ++i) 
+	for (uint32_t i = 0; i < m_swapChainImages.Count(); ++i)
 	{
 		VkImageView view = nullptr;
 		VkImageViewCreateInfo viewCreateInfo = {};
@@ -828,7 +835,7 @@ void Renderer::CreateFramebuffers()
 	m_swapChainFramebuffers.SetSize(m_swapChainImageViews.GetSize());
 	m_swapChainFramebuffers.SetCount(m_swapChainImageViews.GetSize());
 
-	for (int i = 0; i < m_swapChainImageViews.Count(); ++i)
+	for (uint32_t i = 0; i < m_swapChainImageViews.Count(); ++i)
 	{
 		// Provide basic buffers for deferred rendering: Depth, Colors, Positions, Normals.
 		VkImageView attachments[] = { m_swapChainImageViews[i], m_depthImage->ImageView(), m_colorImage->ImageView(), m_posImage->ImageView(), m_normalImage->ImageView() }; // Image used as the framebuffer attachment.
@@ -893,7 +900,7 @@ void Renderer::CreateMVPUniformBuffers()
 	m_mvpBufferMemBlocks.SetSize(m_mvpBuffers.GetSize());
 	m_mvpBufferMemBlocks.SetCount(m_mvpBufferMemBlocks.GetSize());
 
-	for (int i = 0; i < m_mvpBuffers.Count(); ++i)
+	for (uint32_t i = 0; i < m_mvpBuffers.Count(); ++i)
 		CreateBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_mvpBuffers[i], m_mvpBufferMemBlocks[i]);
 }
 
@@ -942,7 +949,7 @@ void Renderer::CreateUBOMVPDescriptorSets()
 	// so no explicit action is needed to free the descriptor sets.
 	RENDERER_SAFECALL(vkAllocateDescriptorSets(m_logicDevice, &allocInfo, m_uboDescriptorSets.Data()), "Renderer Error: Failed to allocate MVP UBO descriptor sets.");
 
-	for(int i = 0; i < m_uboDescriptorSets.GetSize(); ++i) 
+	for(uint32_t i = 0; i < m_uboDescriptorSets.GetSize(); ++i)
 	{
 		VkDescriptorBufferInfo bufferInfo = {};
 		bufferInfo.buffer = m_mvpBuffers[i];
@@ -1131,7 +1138,7 @@ void Renderer::CreateSyncObjects()
 	}
 }
 
-void Renderer::UpdateMVP(const unsigned int& bufferIndex)
+void Renderer::UpdateMVP(const unsigned int& nPresentImageIndex)
 {
 	// Do not attempt to update for a zero sized window.
 	if (m_bMinimized)
@@ -1153,14 +1160,14 @@ void Renderer::UpdateMVP(const unsigned int& bufferIndex)
 
 	// Update buffer.
 	void* buffer = nullptr;
-	vkMapMemory(m_logicDevice, m_mvpBufferMemBlocks[bufferIndex], 0, bufferSize, 0, &buffer);
+	vkMapMemory(m_logicDevice, m_mvpBufferMemBlocks[nPresentImageIndex], 0, bufferSize, 0, &buffer);
 
 	memcpy_s(buffer, bufferSize, &m_mvp, bufferSize);
 
-	vkUnmapMemory(m_logicDevice, m_mvpBufferMemBlocks[bufferIndex]);
+	vkUnmapMemory(m_logicDevice, m_mvpBufferMemBlocks[nPresentImageIndex]);
 }
 
-void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex, const unsigned int& frameIndex)
+void Renderer::RecordMainCommandBuffer(const unsigned int& nPresentImageIndex, const unsigned int& frameIndex)
 {
 	// Swap chain clear value
 	VkClearValue swapChainClearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -1174,40 +1181,40 @@ void Renderer::RecordMainCommandBuffer(const unsigned int& bufferIndex, const un
 	VkClearValue clearVals[5] = { swapChainClearVal, depthClearVal, colorClearVal, posClearVal, normalClearVal };
 
 	// Begin recording...
-	vkBeginCommandBuffer(m_mainPrimaryCmdBufs[bufferIndex], &m_standardCmdBeginInfo);
+	vkBeginCommandBuffer(m_mainPrimaryCmdBufs[nPresentImageIndex], &m_standardCmdBeginInfo);
 
 	// Begin render pass.
 	VkRenderPassBeginInfo mainPassBeginInfo = {};
 	mainPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	mainPassBeginInfo.renderPass = m_mainRenderPass;
-	mainPassBeginInfo.framebuffer = m_swapChainFramebuffers[bufferIndex];
+	mainPassBeginInfo.framebuffer = m_swapChainFramebuffers[nPresentImageIndex];
 	mainPassBeginInfo.renderArea.offset = { 0, 0 };
 	mainPassBeginInfo.renderArea.extent = m_swapChainImageExtents;
 	mainPassBeginInfo.clearValueCount = 5;
 	mainPassBeginInfo.pClearValues = clearVals;
 
 	// Subpass commands are recorded in secondary command buffers.
-	vkCmdBeginRenderPass(m_mainPrimaryCmdBufs[bufferIndex], &mainPassBeginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+	vkCmdBeginRenderPass(m_mainPrimaryCmdBufs[nPresentImageIndex], &mainPassBeginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
-	VkCommandBuffer subpassCommands[] = { m_dynamicPassCmdBufs[bufferIndex] };
+	VkCommandBuffer subpassCommands[] = { m_dynamicPassCmdBufs[nPresentImageIndex] };
 
 	// Execute subpass secondary command buffers.
-	vkCmdExecuteCommands(m_mainPrimaryCmdBufs[bufferIndex], 1, subpassCommands);
+	vkCmdExecuteCommands(m_mainPrimaryCmdBufs[nPresentImageIndex], 1, subpassCommands);
 
 	// Progress to next subpass.
-	vkCmdNextSubpass(m_mainPrimaryCmdBufs[bufferIndex], VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+	vkCmdNextSubpass(m_mainPrimaryCmdBufs[nPresentImageIndex], VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
 	// Execute post-processing commands...
-	vkCmdExecuteCommands(m_mainPrimaryCmdBufs[bufferIndex], 1, &m_lightingPassCmdBufs[bufferIndex]);
+	vkCmdExecuteCommands(m_mainPrimaryCmdBufs[nPresentImageIndex], 1, &m_lightingPassCmdBufs[nPresentImageIndex]);
 
 	// End render pass.
-	vkCmdEndRenderPass(m_mainPrimaryCmdBufs[bufferIndex]);
+	vkCmdEndRenderPass(m_mainPrimaryCmdBufs[nPresentImageIndex]);
 
 	// End recording.
-	vkEndCommandBuffer(m_mainPrimaryCmdBufs[bufferIndex]);
+	vkEndCommandBuffer(m_mainPrimaryCmdBufs[nPresentImageIndex]);
 }
 
-void Renderer::RecordDynamicCommandBuffers(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex)
+void Renderer::RecordDynamicCommandBuffers(const unsigned int& nPresentImageIndex, const unsigned int& nFrameIndex)
 {
 	// Begin structure for transfer command buffer.
 	VkCommandBufferBeginInfo cmdBeginInfo = m_renderSecondaryCmdBeginInfo;
@@ -1215,7 +1222,7 @@ void Renderer::RecordDynamicCommandBuffers(const unsigned int& nBufferIndex, con
 	// This command buffer is a secondary command buffer, executing draw commands for the first subpass.
 	VkCommandBufferInheritanceInfo inheritanceInfo = {};
 	inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-	inheritanceInfo.framebuffer = m_swapChainFramebuffers[nBufferIndex];
+	inheritanceInfo.framebuffer = m_swapChainFramebuffers[nPresentImageIndex];
 	inheritanceInfo.renderPass = m_mainRenderPass;
 	inheritanceInfo.subpass = DYNAMIC_SUBPASS_INDEX;
 	inheritanceInfo.occlusionQueryEnable = VK_FALSE;
@@ -1224,14 +1231,14 @@ void Renderer::RecordDynamicCommandBuffers(const unsigned int& nBufferIndex, con
 	cmdBeginInfo.pInheritanceInfo = &inheritanceInfo;
 
 	// Begin recording dynamic command buffer.
-	VkCommandBuffer& cmdBuffer = m_dynamicPassCmdBufs[nBufferIndex];
+	VkCommandBuffer& cmdBuffer = m_dynamicPassCmdBufs[nPresentImageIndex];
 
 	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo), "Renderer Error: Failed to begin recording of dynamic pass command buffer.");
 
 	DynamicArray<PipelineData*>& allPipelines = RenderObject::Pipelines();
 
 	// Iterate through all pipelines and draw their objects.
-	for (int i = 0; i < allPipelines.Count(); ++i)
+	for (uint32_t i = 0; i < allPipelines.Count(); ++i)
 	{
 		PipelineData& currentPipeline = *allPipelines[i];
 
@@ -1242,7 +1249,7 @@ void Renderer::RecordDynamicCommandBuffers(const unsigned int& nBufferIndex, con
 
 		// Draw objects using the pipeline.
 		DynamicArray<RenderObject*>& renderObjects = currentPipeline.m_renderObjects;
-		for (int j = 0; j < renderObjects.Count(); ++j)
+		for (uint32_t j = 0; j < renderObjects.Count(); ++j)
 		{
 			renderObjects[j]->UpdateInstanceData(m_transferCmdBufs[m_nCurrentFrameIndex]);
 			renderObjects[j]->CommandDraw(cmdBuffer);
@@ -1251,8 +1258,8 @@ void Renderer::RecordDynamicCommandBuffers(const unsigned int& nBufferIndex, con
 
 	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Renderer Error: Failed to end recording of dynamic pass command buffer.");
 
-	RecordLightingCommandBuffer(nBufferIndex, nFrameIndex);
-	RecordMainCommandBuffer(nBufferIndex, nFrameIndex);
+	RecordLightingCommandBuffer(nPresentImageIndex, nFrameIndex);
+	RecordMainCommandBuffer(nPresentImageIndex, nFrameIndex);
 }
 
 void Renderer::RecordLightingCommandBuffer(const unsigned int& nBufferIndex, const unsigned int& nFrameIndex)
@@ -1698,7 +1705,7 @@ VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(DynamicArray<VkSurfaceForma
 		return desiredFormat; // So use the desired format.
 	}
 
-	for (int i = 0; i < availableFormats.Count(); ++i) 
+	for (uint32_t i = 0; i < availableFormats.Count(); ++i)
 	{
 		if (availableFormats[i].format == desiredFormat.format && availableFormats[i].colorSpace == desiredFormat.colorSpace) // Found the desired format.
 			return desiredFormat;
@@ -1712,7 +1719,7 @@ VkPresentModeKHR Renderer::ChooseSwapPresentMode(DynamicArray<VkPresentModeKHR>&
 {
 	VkPresentModeKHR bestMode = VK_PRESENT_MODE_FIFO_KHR; // FIFO_KHR is guaranteed to be available.
 
-	for (int i = 0; i < availablePresentModes.Count(); ++i) 
+	for (uint32_t i = 0; i < availablePresentModes.Count(); ++i)
 	{
 		if (availablePresentModes[i] == VK_PRESENT_MODE_MAILBOX_KHR)
 			return availablePresentModes[i]; // Use mailbox if it is available.

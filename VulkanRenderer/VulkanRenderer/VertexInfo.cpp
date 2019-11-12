@@ -65,7 +65,7 @@ void VertexInfo::CalculateInputInformation(const bool& bPerInstance, const Verte
 
 	m_nameID = "|";
 
-	for (int i = 0; i < m_attributes.Count(); ++i)
+	for (uint32_t i = 0; i < m_attributes.Count(); ++i)
 	{
 		VkVertexInputAttributeDescription desc = {};
 		desc.binding = m_bindDescription.binding;
