@@ -2,7 +2,21 @@
 #include "Renderer.h"
 #include "GBufferPass.h"
 #include "LightingManager.h"
+#include "Material.h"
 #include "Texture.h"
+#include "RenderObject.h"
+
+PipelineData::PipelineData()
+{
+	m_handle = nullptr;
+	m_layout = nullptr;
+	m_material = nullptr;
+}
+
+PipelineDataPtr::PipelineDataPtr()
+{
+	m_ptr = nullptr;
+}
 
 VkAttachmentDescription SubScene::m_swapChainAttachmentDescription =
 {
@@ -36,7 +50,7 @@ VkAttachmentDescription SubScene::m_colorAttachmentDescription =
 	VK_FORMAT_R8G8B8A8_UNORM,
 	VK_SAMPLE_COUNT_1_BIT,
 	VK_ATTACHMENT_LOAD_OP_CLEAR,
-	VK_ATTACHMENT_STORE_OP_STORE,
+	VK_ATTACHMENT_STORE_OP_DONT_CARE,
 	VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 	VK_ATTACHMENT_STORE_OP_DONT_CARE,
 	VK_IMAGE_LAYOUT_UNDEFINED,
@@ -49,7 +63,7 @@ VkAttachmentDescription SubScene::m_colorHDRAttachmentDescription =
 	VK_FORMAT_R16G16B16A16_SFLOAT,
 	VK_SAMPLE_COUNT_1_BIT,
 	VK_ATTACHMENT_LOAD_OP_CLEAR,
-	VK_ATTACHMENT_STORE_OP_STORE,
+	VK_ATTACHMENT_STORE_OP_DONT_CARE,
 	VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 	VK_ATTACHMENT_STORE_OP_DONT_CARE,
 	VK_IMAGE_LAYOUT_UNDEFINED,
@@ -62,7 +76,7 @@ VkAttachmentDescription SubScene::m_vectorAttachmentDescription =
 	VK_FORMAT_R16G16B16A16_SFLOAT,
 	VK_SAMPLE_COUNT_1_BIT,
 	VK_ATTACHMENT_LOAD_OP_CLEAR,
-	VK_ATTACHMENT_STORE_OP_STORE,
+	VK_ATTACHMENT_STORE_OP_DONT_CARE,
 	VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 	VK_ATTACHMENT_STORE_OP_DONT_CARE,
 	VK_IMAGE_LAYOUT_UNDEFINED,
@@ -121,54 +135,68 @@ VkSubmitInfo SubScene::m_renderSubmitInfo
 	nullptr
 };
 
-SubScene::SubScene(Renderer* renderer, bool bPrimary, unsigned int nQueueFamilyIndex, unsigned int nOutWidth, unsigned int nOutHeight, EGBufferImageTypeBit eImageBits, bool bOutputHDR)
+SubScene::SubScene(SubSceneParams& params)
 {
-	m_renderer = renderer;
+	m_renderer = params.m_renderer;
 
-	//m_gPass = new GBufferPass(m_renderer, nQueueFamilyIndex, false);
-	//m_lightManager = new LightingManager(m_renderer, nullptr, nullptr, nOutWidth, nOutHeight);
+	m_gPass = new GBufferPass(m_renderer, &m_allPipelines, m_commandPool, m_framebuffers, m_pass, m_nQueueFamilyIndex);
+	m_lightManager = new LightingManager(m_renderer, params.m_dirLightShader, params.m_pointLightShader, params.m_nFrameBufferWidth, params.m_nFrameBufferHeight);
 
 	m_pass = VK_NULL_HANDLE;
-	m_nQueueFamilyIndex = nQueueFamilyIndex;
+	m_nQueueFamilyIndex = params.m_nQueueFamilyIndex;
 
 	// Create output color image. HDR if specified.
-	if(!bOutputHDR)
-	    m_outImage = new Texture(m_renderer, nOutWidth, nOutHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_UNORM, !bPrimary);
+	if(!params.m_bOutputHDR)
+	    m_outImage = new Texture(m_renderer, params.m_nFrameBufferWidth, params.m_nFrameBufferHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_UNORM, !params.m_bPrimary);
 	else
-		m_outImage = new Texture(m_renderer, nOutWidth, nOutHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, !bPrimary);
+		m_outImage = new Texture(m_renderer, params.m_nFrameBufferWidth, params.m_nFrameBufferHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, !params.m_bPrimary);
 
-	m_nWidth = nOutWidth;
-	m_nHeight = nOutHeight;
+	// Output image clear value.
+	VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+	m_clearValues.Push(clearVal);
+
+	m_nWidth = params.m_nFrameBufferWidth;
+	m_nHeight = params.m_nFrameBufferHeight;
 
 
 	// Create G Buffer images.
-	SetImages(eImageBits);
+	SetImages(params.eAttachmentBits);
 
 	// Additional operations.
 	CreateRenderPass(); // Create subscene render pass.
+	CreateFramebuffers(); // Create subscene framebuffer.
 	CreateCmds(); // Create command pool & primary command buffers.
 	GetQueue(); // Get device queue subscene commands will be submitted to.
 }
 
 SubScene::~SubScene() 
 {
-	// Destroy command pool.
-	vkDestroyCommandPool(m_renderer->GetDevice(), m_commandPool, nullptr);
+	VkDevice device = m_renderer->GetDevice();
 
-	// Remove existing G Buffer images.
-	for (uint32_t i = 0; i < m_gBufferImages.Count(); ++i)
-		delete m_gBufferImages[i];
+	// Destroy command pool.
+	vkDestroyCommandPool(device, m_commandPool, nullptr);
+
+	// Destroy framebuffers.
+	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+	    vkDestroyFramebuffer(device, m_framebuffers[i], nullptr);
 
 	// Destroy subscene render pass.
-	vkDestroyRenderPass(m_renderer->GetDevice(), m_pass, nullptr);
+	vkDestroyRenderPass(device, m_pass, nullptr);
 
-	if (m_depthImage)
-		delete m_depthImage;
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
+	{
+		// Remove existing G Buffer images.
+		for (uint32_t j = 0; j < m_gBufferImages[i].Count(); ++j)
+			delete m_gBufferImages[i][j];
 
-	m_colorImage = nullptr;
-	m_depthImage = nullptr;
-	m_posImage = nullptr;
-	m_normalImage = nullptr;
+		if (m_depthImages[i])
+			delete m_depthImages[i];
+
+		m_colorImages[i] = nullptr;
+		m_depthImages[i] = nullptr;
+		m_posImages[i] = nullptr;
+		m_normalImages[i] = nullptr;
+	}
 
 	delete m_gPass;
 	delete m_lightManager;
@@ -176,47 +204,84 @@ SubScene::~SubScene()
 	delete m_outImage;
 }
 
-void SubScene::SetImages(EGBufferImageTypeBit eImageBits)
+void SubScene::SetImages(EGBufferAttachmentTypeBit eImageBits)
 {
-	// Remove existing G Buffer images.
-	for (uint32_t i = 0; i < m_gBufferImages.Count(); ++i)
-		delete m_gBufferImages[i];
-
-	m_gBufferImages.Clear();
-
-	// Create images the bit field contains...
-	if (eImageBits & GBUFFER_COLOR_BIT)
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
 	{
-		// Create HDR image if correct bit is found.
-		if(eImageBits & GBUFFER_COLOR_HDR_BIT)
-		    m_colorImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true);
-		else
-			m_colorImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_UNORM, true);
+		// Remove existing G Buffer images.
+		for (uint32_t j = 0; j < m_gBufferImages[i].Count(); ++j)
+			delete m_gBufferImages[i][j];
 
-		m_gBufferImages.Push(m_colorImage);
+		m_gBufferImages[i].Clear();
+		m_depthImages[i] = nullptr;
+
+
+		// Create images the bit field contains...
+		if (eImageBits & GBUFFER_COLOR_BIT)
+		{
+			// Create HDR image if correct bit is found.
+			if (eImageBits & GBUFFER_COLOR_HDR_BIT)
+				m_colorImages[i] = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true);
+			else
+				m_colorImages[i] = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_UNORM, true);
+
+			m_gBufferImages[i].Push(m_colorImages[i]);
+
+			if (i == 0)
+			{
+			    VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+			    m_clearValues.Push(clearVal);
+			}
+		}
+
+		if (eImageBits & GBUFFER_DEPTH_BIT)
+		{
+			// Specify pool of depth formats and find the best available format.
+			DynamicArray<VkFormat> depthFormats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
+			VkFormat depthFormat = RendererHelper::FindBestDepthFormat(m_renderer->GetPhysDevice(), depthFormats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+
+			m_depthImages[i] = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_DEPTH_STENCIL, depthFormat);
+
+			if (i == 0)
+			{
+			    VkClearValue clearVal = { 1.0f, 1.0f, 1.0f, 1.0f };
+			    m_clearValues.Push(clearVal);
+			}
+		}
+
+		if (eImageBits & GBUFFER_POSITION_BIT)
+		{
+			m_posImages[i] = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true);
+			m_gBufferImages[i].Push(m_posImages[i]);
+
+			if (i == 0)
+			{
+			    VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+			    m_clearValues.Push(clearVal);
+			}
+		}
+
+		if (eImageBits & GBUFFER_NORMAL_BIT)
+		{
+			m_normalImages[i] = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true);
+			m_gBufferImages[i].Push(m_normalImages[i]);
+
+			if (i == 0) 
+			{
+			    VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+			    m_clearValues.Push(clearVal);
+			}
+		}
+
+		// Update images array.
+		m_allImages[i].Clear();
+		m_allImages[i].Push(m_outImage);
+		m_allImages[i] += m_gBufferImages[i];
+
+		if (m_depthImages[i])
+			m_allImages[i].Push(m_depthImages[i]);
 	}
 
-	if (eImageBits & GBUFFER_DEPTH_BIT) 
-	{
-		// Specify pool of depth formats and find the best available format.
-		DynamicArray<VkFormat> depthFormats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
-		VkFormat depthFormat = RendererHelper::FindBestDepthFormat(m_renderer->GetPhysDevice(), depthFormats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-
-	    m_depthImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_DEPTH_STENCIL, depthFormat);;
-	}
-
-	if (eImageBits & GBUFFER_POSITION_BIT) 
-	{
-	    m_posImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true);
-		m_gBufferImages.Push(m_posImage);
-	}
-
-	if (eImageBits & GBUFFER_NORMAL_BIT) 
-	{
-	    m_normalImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true);
-		m_gBufferImages.Push(m_normalImage);
-	}
-	
 	// Store image bit field information.
 	m_eGBufferImageBits = eImageBits;
 }
@@ -243,7 +308,7 @@ void SubScene::DrawScene
 	m_renderSubmitInfo.pWaitDstStageMask = waitStages;
 
 	// Submit commands...
-	vkQueueSubmit(m_renderQueue, 1, &m_renderSubmitInfo, VK_NULL_HANDLE);
+	vkQueueSubmit(m_renderQueue, 1, &m_renderSubmitInfo, signalFence);
 }
 
 GBufferPass* SubScene::GetGBufferPass()
@@ -289,6 +354,9 @@ inline void SubScene::CreateAttachmentDescriptions(const DynamicArray<Texture*>&
 			RENDERER_SAFECALL(true, "Scene: Invalid Enum!");
 			break;
 		}
+
+		// Set format if different from default.
+		attachments[i].format = targets[i]->Format();
 	}
 }
 
@@ -319,7 +387,7 @@ inline void SubScene::CreateAttachmentReferences(const uint32_t& nIndexOffset, c
 			break;
 
 		default:
-			RENDERER_SAFECALL(true, "Scene: Invalid Enum!");
+			RENDERER_SAFECALL(true, "SubScene Error: Invalid Enum!");
 			break;
 		}
 
@@ -345,6 +413,7 @@ inline void SubScene::CreateRenderPass()
 {
 	// ---------------------------------------------------------------------------------
 	// Delete old render pass.
+
 	if(m_pass) 
 	{
 		vkDestroyRenderPass(m_renderer->GetDevice(), m_pass, nullptr);
@@ -354,15 +423,15 @@ inline void SubScene::CreateRenderPass()
 	// ---------------------------------------------------------------------------------
 	// Descriptions
 
-	m_targetImages = { m_outImage };
+	DynamicArray<Texture*> targetImages = { m_outImage };
 
 	DynamicArray<VkAttachmentDescription> targetDescriptions;
-	CreateAttachmentDescriptions(m_targetImages, targetDescriptions);
+	CreateAttachmentDescriptions(targetImages, targetDescriptions);
 
 	DynamicArray<VkAttachmentDescription> gDescriptions;
-	CreateAttachmentDescriptions(m_gBufferImages, gDescriptions);
+	CreateAttachmentDescriptions(m_gBufferImages[0], gDescriptions);
 
-	DynamicArray<Texture*> depthImages = { m_depthImage };
+	DynamicArray<Texture*> depthImages = { m_depthImages[0] };
 
 	DynamicArray<VkAttachmentDescription> depthDescriptions;
 	CreateAttachmentDescriptions(depthImages, depthDescriptions);
@@ -373,22 +442,22 @@ inline void SubScene::CreateRenderPass()
 	// References
 
 	DynamicArray<VkAttachmentReference> targetRefs;
-	CreateAttachmentReferences(0, m_targetImages, targetRefs);
+	CreateAttachmentReferences(0, targetImages, targetRefs);
 
 	DynamicArray<VkAttachmentReference> targetInputRefs;
-	CreateInputAttachmentReferences(0, m_targetImages, targetInputRefs);
+	CreateInputAttachmentReferences(0, targetImages, targetInputRefs);
 
 	DynamicArray<VkAttachmentReference> gBufferRefs;
-	CreateAttachmentReferences(m_targetImages.Count(), m_gBufferImages, gBufferRefs);
+	CreateAttachmentReferences(targetImages.Count(), m_gBufferImages[0], gBufferRefs);
 
 	DynamicArray<VkAttachmentReference> gBufferInputRefs;
-	CreateInputAttachmentReferences(m_targetImages.Count(), m_gBufferImages, gBufferInputRefs);
+	CreateInputAttachmentReferences(targetImages.Count(), m_gBufferImages[0], gBufferInputRefs);
 
 	DynamicArray<VkAttachmentReference> depthRefs;
-	CreateAttachmentReferences(m_targetImages.Count() + m_gBufferImages.Count(), depthImages, depthRefs);
+	CreateAttachmentReferences(targetImages.Count() + m_gBufferImages[0].Count(), depthImages, depthRefs);
 
 	DynamicArray<VkAttachmentReference> depthInputRefs;
-	CreateInputAttachmentReferences(m_targetImages.Count() + m_gBufferImages.Count(), depthImages, depthInputRefs);
+	CreateInputAttachmentReferences(targetImages.Count() + m_gBufferImages[0].Count(), depthImages, depthInputRefs);
 
 	// ---------------------------------------------------------------------------------
 	// Subpasses
@@ -434,6 +503,37 @@ inline void SubScene::CreateRenderPass()
 	RENDERER_SAFECALL(vkCreateRenderPass(m_renderer->GetDevice(), &renderPassInfo, nullptr, &m_pass), "Renderer Error: Failed to create render pass.");
 }
 
+inline void SubScene::CreateFramebuffers()
+{
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
+	{
+	    // Destroy previous framebuffers if they exist.
+		if(m_framebuffers[i])
+		    vkDestroyFramebuffer(m_renderer->GetDevice(), m_framebuffers[i], nullptr);
+
+		// Gather all images and extract their image views into another array.
+		DynamicArray<VkImageView> views(m_allImages[i].Count());
+
+		for (int j = 0; j < m_allImages[i].Count(); ++j)
+		{
+			views.Push(m_allImages[i][j]->ImageView());
+		}
+
+		VkFramebufferCreateInfo createInfo = {};
+		createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		createInfo.attachmentCount = views.Count();
+		createInfo.pAttachments = views.Data();
+		createInfo.renderPass = m_pass;
+		createInfo.layers = 1;
+		createInfo.width = m_nWidth;
+		createInfo.height = m_nHeight;
+		createInfo.flags = 0;
+		createInfo.pNext = nullptr;
+
+		RENDERER_SAFECALL(vkCreateFramebuffer(m_renderer->GetDevice(), &createInfo, nullptr, &m_framebuffers[i]), "SubScene Error: Failed to create framebuffer.");
+	}
+}
+
 inline void SubScene::CreateCmds()
 {
 	// ---------------------------------------------------------------------------------
@@ -471,13 +571,34 @@ inline void SubScene::GetQueue()
 
 inline void SubScene::RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex)
 {
-	VkCommandBuffer cmdBuf = m_primaryCmdBufs[nPresentImageIndex];
+	VkCommandBuffer cmdBuf = m_primaryCmdBufs[nFrameIndex];
 
 	// Begin recording...
 	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuf, &m_primaryCmdBeginInfo), "Subscene Error: Failed to begin recording of primary command buffer.");
 
-	// Iterate through all local render object pipelines and draw all member objects.
+	VkRect2D renderArea = { 0, 0, m_nWidth, m_nHeight };
+
+	VkRenderPassBeginInfo beginInfo = {};
+	beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	beginInfo.framebuffer = m_framebuffers[nPresentImageIndex];
+	beginInfo.clearValueCount = m_clearValues.Count();
+	beginInfo.pClearValues = m_clearValues.Data();
+	beginInfo.renderArea = renderArea;
+	beginInfo.renderPass = m_pass;
+	beginInfo.pNext = nullptr;
+
+	// Begin render pass instance.
+	vkCmdBeginRenderPass(cmdBuf, &beginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	// G-Buffer Pass
+	vkCmdExecuteCommands(cmdBuf, 1, m_gPass->GetCommandBuffer(nFrameIndex));
+
+	// Execute lighting pass.
+
+
+	// End render pass instance.
+	vkCmdEndRenderPass(cmdBuf);
 
 	// Finish recording.
-	vkEndCommandBuffer(cmdBuf);
+	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuf), "SubScene Error: Failed to end recording of dynamic object command buffer.");
 }

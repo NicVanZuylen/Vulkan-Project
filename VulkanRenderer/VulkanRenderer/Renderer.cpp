@@ -137,9 +137,20 @@ Renderer::Renderer(GLFWwindow* window)
 	CreateFramebuffers();
 	CreateCmdBuffers();
 
-	EGBufferImageTypeBit gBufferBits = (EGBufferImageTypeBit)(GBUFFER_COLOR_BIT | GBUFFER_COLOR_HDR_BIT | GBUFFER_DEPTH_BIT | GBUFFER_POSITION_BIT | GBUFFER_NORMAL_BIT);
+	EGBufferAttachmentTypeBit gBufferBits = (EGBufferAttachmentTypeBit)(GBUFFER_COLOR_BIT | GBUFFER_COLOR_HDR_BIT | GBUFFER_DEPTH_BIT | GBUFFER_POSITION_BIT | GBUFFER_NORMAL_BIT);
 
-	SubScene* subsceneTest = new SubScene(this, true, m_nGraphicsQueueFamilyIndex, m_nWindowWidth, m_nWindowHeight, gBufferBits, true);
+	SubSceneParams params = {};
+	params.eAttachmentBits = gBufferBits;
+	params.m_bOutputHDR = true;
+	params.m_bPrimary = true;
+	params.m_dirLightShader = m_dirLightingShader;
+	params.m_pointLightShader = m_pointLightingShader;
+	params.m_nFrameBufferWidth = m_nWindowWidth;
+	params.m_nFrameBufferHeight = m_nWindowHeight;
+	params.m_nQueueFamilyIndex = 0;
+	params.m_renderer = this;
+
+	SubScene* subsceneTest = new SubScene(params);
 	delete subsceneTest;
 
 	// Syncronization

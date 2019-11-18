@@ -7,6 +7,8 @@
 class Renderer;
 class Mesh;
 
+struct Shader;
+
 struct GlobalDirLightData 
 {
 	int m_nCount;

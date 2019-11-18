@@ -5,20 +5,6 @@
 #include "Material.h"
 #include "Renderer.h"
 
-PipelineData::PipelineData() 
-{
-	m_handle = nullptr;
-	m_layout = nullptr;
-	m_material = nullptr;
-}
-
-PipelineDataPtr::PipelineDataPtr() 
-{
-	m_ptr = nullptr;
-}
-
-Table<PipelineDataPtr> RenderObject::m_pipelineTable;
-DynamicArray<PipelineData*> RenderObject::m_allPipelines;
 DynamicArray<EVertexAttribute> RenderObject::m_defaultInstanceAttributes = { VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4 };
 
 RenderObject::RenderObject(Renderer* renderer, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes, unsigned int nMaxInstanceCount)
@@ -82,11 +68,6 @@ RenderObject::~RenderObject()
 		delete m_pipelineData;
 		m_pipelineData = nullptr;
 	}
-}
-
-DynamicArray<PipelineData*>& RenderObject::Pipelines() 
-{
-	return m_allPipelines;
 }
 
 void RenderObject::CommandDraw(VkCommandBuffer_T* cmdBuffer) 

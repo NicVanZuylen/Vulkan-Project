@@ -3,6 +3,7 @@
 #include "glm.hpp"
 #include "Table.h"
 #include "VertexInfo.h"
+#include "Scene.h"
 
 class Renderer;
 class Mesh;
@@ -13,24 +14,6 @@ struct PipelineData;
 struct Shader;
 
 struct VkCommandBuffer_T;
-
-struct PipelineData
-{
-	PipelineData();
-
-	Material* m_material;
-	VkPipeline m_handle;
-	VkPipelineLayout m_layout;
-	DynamicArray<EVertexAttribute> m_vertexAttributes;
-	DynamicArray<RenderObject*> m_renderObjects; // All objects using this pipeline.
-};
-
-struct PipelineDataPtr 
-{
-	PipelineDataPtr();
-
-	PipelineData* m_ptr;
-};
 
 struct Instance 
 {
@@ -55,12 +38,6 @@ public:
 	RenderObject(Renderer* renderer, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes = &m_defaultInstanceAttributes, unsigned int nMaxInstanceCount = 1);
 
 	~RenderObject();
-
-	/*
-	Description: Get all existing RenderObject pipelines.
-	Return Type: DynArr<PipelineData*>& 
-	*/
-	static DynamicArray<PipelineData*>& Pipelines();
 
 	/*
 	Description: Add the draw commands of this object to the externally recorded command buffer.
@@ -139,8 +116,5 @@ private:
 
 	// Pipeline information.
 	PipelineData* m_pipelineData;
-
-	static Table<PipelineDataPtr> m_pipelineTable;
-	static DynamicArray<PipelineData*> m_allPipelines;
 };
 

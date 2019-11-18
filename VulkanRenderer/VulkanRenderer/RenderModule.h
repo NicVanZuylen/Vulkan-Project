@@ -1,24 +1,21 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include "DynamicArray.h"
-
-class Renderer;
+#include "Renderer.h"
 
 class RenderModule
 {
 public:
 
-	RenderModule(Renderer* renderer, unsigned int nQueueFamilyIndex, bool bStatic);
+	RenderModule(Renderer* renderer, VkCommandPool cmdPool, VkFramebuffer* frameBuffers, VkRenderPass pass, unsigned int nQueueFamilyIndex, bool bStatic);
 
 	virtual ~RenderModule() = 0;
 
 	virtual void RecordCommandBuffer(unsigned int nBufferIndex, unsigned int nFrameIndex) = 0;
 
-	VkCommandBuffer GetCommandBuffer(unsigned int nBufferIndex);
+	const VkCommandBuffer* GetCommandBuffer(unsigned int nBufferIndex);
 
 private:
-
-	inline void CreateCommandPool();
 
 	inline void CreateCommandBuffers();
 
@@ -30,6 +27,12 @@ protected:
 	Renderer* m_renderer;
 	unsigned int m_nQueueFamilyIndex;
 	bool m_bStatic;
+
+	// ---------------------------------------------------------------------------------
+	// Rendering
+
+	VkFramebuffer m_frameBuffers[MAX_FRAMES_IN_FLIGHT];
+	VkRenderPass m_renderPass;
 
 	// ---------------------------------------------------------------------------------
 	// Command pool

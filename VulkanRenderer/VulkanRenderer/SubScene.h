@@ -1,17 +1,21 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include "DynamicArray.h"
+#include "VertexInfo.h"
+#include "Renderer.h"
 
-class Renderer;
 class RenderModule;
 class GBufferPass;
 class LightingManager;
 class Texture;
+class Material;
+
+struct Shader;
 
 #define SUB_PASS_COUNT 2
 #define POST_SUBPASS_INDEX 2
 
-enum EGBufferImageTypeBit
+enum EGBufferAttachmentTypeBit
 {
 	GBUFFER_COLOR_BIT = 1,
 	GBUFFER_COLOR_HDR_BIT = 1 << 1,
@@ -42,6 +46,38 @@ struct MiscGBufferDescription
 	bool m_bInput;
 };
 
+struct SubSceneParams 
+{
+	Renderer* m_renderer;
+	unsigned int m_nQueueFamilyIndex;
+	unsigned int m_nFrameBufferWidth;
+	unsigned int m_nFrameBufferHeight;
+	Shader* m_dirLightShader;
+	Shader* m_pointLightShader;
+	EGBufferAttachmentTypeBit eAttachmentBits;
+	bool m_bPrimary;
+	bool m_bOutputHDR;
+};
+
+// Contains graphics pipeline handles and pointers to all renderobjects using the pipeline for the subscene it belongs to.
+struct PipelineData
+{
+	PipelineData();
+
+	Material* m_material;
+	VkPipeline m_handle;
+	VkPipelineLayout m_layout;
+	DynamicArray<EVertexAttribute> m_vertexAttributes;
+	DynamicArray<RenderObject*> m_renderObjects; // All objects using this pipeline.
+};
+
+struct PipelineDataPtr
+{
+	PipelineDataPtr();
+
+	PipelineData* m_ptr;
+};
+
 /*
 Description: A Render Pass and Collection of RenderObjects used for rendering a scene to a texture or swap chain image.
 Author: Nic Van Zuylen
@@ -51,7 +87,7 @@ class SubScene
 {
 public:
 
-	SubScene(Renderer* renderer, bool bPrimary, unsigned int nQueueFamilyIndex, unsigned int nOutWidth, unsigned int nOutHeight, EGBufferImageTypeBit eImageBits, bool bOutputHDR = false);
+	SubScene(SubSceneParams& params);
 
 	~SubScene();
 
@@ -60,7 +96,7 @@ public:
 	Param:
 	    EGBufferImageTypeBit eImageBits: Bit field of the images to create & use for rendering.
     */
-	void SetImages(EGBufferImageTypeBit eImageBits);
+	void SetImages(EGBufferAttachmentTypeBit eImageBits);
 
 	/*
     Description: Draw this subscene.
@@ -102,6 +138,11 @@ private:
 	Description: Create render pass for this subscene.
 	*/
 	inline void CreateRenderPass();
+
+	/*
+	Description: Create the framebuffer for this subscene.
+	*/
+	inline void CreateFramebuffers();
 
 	/*
 	Description: Create command pool & primary command buffers.
@@ -154,15 +195,21 @@ private:
 	// ---------------------------------------------------------------------------------
 	// Render target images.
 
-	EGBufferImageTypeBit m_eGBufferImageBits;
+	EGBufferAttachmentTypeBit m_eGBufferImageBits;
 
-	Texture* m_colorImage;
-	Texture* m_depthImage;
-	Texture* m_posImage;
-	Texture* m_normalImage;
+	Texture* m_colorImages[MAX_FRAMES_IN_FLIGHT];
+	Texture* m_depthImages[MAX_FRAMES_IN_FLIGHT];
+	Texture* m_posImages[MAX_FRAMES_IN_FLIGHT];
+	Texture* m_normalImages[MAX_FRAMES_IN_FLIGHT];
 
-	DynamicArray<Texture*> m_targetImages;
-	DynamicArray<Texture*> m_gBufferImages;
+	DynamicArray<Texture*> m_gBufferImages[MAX_FRAMES_IN_FLIGHT];
+	DynamicArray<Texture*> m_allImages[MAX_FRAMES_IN_FLIGHT];
+	DynamicArray<VkClearValue> m_clearValues;
+
+	// ---------------------------------------------------------------------------------
+	// Framebuffer
+
+	VkFramebuffer m_framebuffers[MAX_FRAMES_IN_FLIGHT];
 
 	// ---------------------------------------------------------------------------------
 	// Render pass
@@ -180,6 +227,9 @@ private:
 
 	// ---------------------------------------------------------------------------------
 	// Member objects.
+
+	Table<PipelineDataPtr> m_pipelines;
+	DynamicArray<PipelineData*> m_allPipelines; // All pipelines to iterate through when rendering.
 
 	// ---------------------------------------------------------------------------------
 	// Output

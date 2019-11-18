@@ -1,11 +1,15 @@
 #include "Scene.h"
 #include "Renderer.h"
 #include "Texture.h"
+#include "Shader.h"
 
 Scene::Scene(uint32_t nWindowWidth, uint32_t nWindowHeight, uint32_t nQueueFamilyIndex)
 {
 	m_nWindowWidth = nWindowWidth;
 	m_nWindowHeight = nWindowHeight;
+
+	m_dirLightShader = new Shader(m_renderer, FS_QUAD_SHADER, DEFERRED_DIR_LIGHT_SHADER);
+	m_pointLightShader = new Shader(m_renderer, FS_QUAD_SHADER, DEFERRED_POINT_LIGHT_SHADER);
 
 	m_nGraphicsQueueFamilyIndex = nQueueFamilyIndex;
 
@@ -17,6 +21,10 @@ Scene::~Scene()
 	// Destroy primary command buffers.
 	vkDestroyCommandPool(m_renderer->GetDevice(), m_cmdPool, nullptr);
 
+	// Destroy shared shaders.
+	delete m_dirLightShader;
+	delete m_pointLightShader;
+
 	// Destroy shared render target images.
 	delete m_normalImage;
 	delete m_posImage;
@@ -26,16 +34,34 @@ Scene::~Scene()
 
 void Scene::AddSubscene()
 {
-	//SubScene* newSubscene = new SubScene(m_renderer, m_nGraphicsQueueFamilyIndex, m_nWindowWidth, m_nWindowHeight, m_subScenes.Count() == 0);
-	//newSubscene->SetImages((EGBufferImageTypeBit)(GBUFFER_COLOR_BIT | GBUFFER_DEPTH_BIT | GBUFFER_POSITION_BIT | GBUFFER_NORMAL_BIT)); // Share render target images.
+	EGBufferAttachmentTypeBit eImageBits = (EGBufferAttachmentTypeBit)(GBUFFER_COLOR_BIT | GBUFFER_DEPTH_BIT | GBUFFER_POSITION_BIT | GBUFFER_NORMAL_BIT);
 
-	//m_subScenes.Push(newSubscene);
+	// Set up subscene constructor parameters...
+	SubSceneParams params = {};
+	params.eAttachmentBits = eImageBits;
+	params.m_bOutputHDR = true;
+	params.m_bPrimary = true;
+	params.m_dirLightShader = m_dirLightShader;
+	params.m_pointLightShader = m_pointLightShader;
+	params.m_nFrameBufferWidth = m_nWindowWidth;
+	params.m_nFrameBufferHeight = m_nWindowHeight;
+	params.m_nQueueFamilyIndex = m_nGraphicsQueueFamilyIndex;
+	params.m_renderer = m_renderer;
+
+	// Create subscene.
+	m_subScene = new SubScene(params);
+}
+
+void Scene::DrawSubscenes(const uint32_t& nPresentImageIndex, const uint32_t nFrameIndex, DynamicArray<VkSemaphore>& waitSemaphores, DynamicArray<VkSemaphore>& renderFinishedSemaphores, VkFence& frameFence)
+{
+	VkPipelineStageFlags waitStages[2] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT };
+
+	m_subScene->DrawScene(nPresentImageIndex, nFrameIndex, waitSemaphores, waitStages, renderFinishedSemaphores, frameFence);
 }
 
 inline void Scene::ConstructSubScenes()
 {
-	m_subScenes.SetSize(MAX_SUBSCENE_COUNT);
-	m_subScenes.SetCount(MAX_SUBSCENE_COUNT);
+	
 }
 
 inline void Scene::ConstructRenderTargets()
