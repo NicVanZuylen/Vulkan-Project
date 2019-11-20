@@ -9,11 +9,11 @@ class GBufferPass : public RenderModule
 {
 public:
 
-	GBufferPass(Renderer* renderer, DynamicArray<PipelineData*>* pipelines, VkCommandPool cmdPool, VkFramebuffer* framebuffers, VkRenderPass pass, uint32_t nQueueFamilyIndex);
+	GBufferPass(Renderer* renderer, DynamicArray<PipelineData*>* pipelines, VkCommandPool cmdPool, VkRenderPass pass, uint32_t nQueueFamilyIndex);
 
 	~GBufferPass();
 
-	void RecordCommandBuffer(uint32_t nPresentImageIndex, uint32_t nFrameIndex) override;
+	void RecordCommandBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, const VkFramebuffer& framebuffer, const VkCommandBuffer transferCmdBuf) override;
 
 private:
 

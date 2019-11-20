@@ -4,9 +4,36 @@
 #include "Mesh.h"
 #include "Shader.h"
 
-LightingManager::LightingManager(Renderer* renderer, Shader* dirLightShader, Shader* pointLightShader, const unsigned int& nWindowWidth, const unsigned int& nWindowHeight)
+VkCommandBufferInheritanceInfo LightingManager::m_inheritanceInfo =
 {
-	m_renderer = renderer;
+	VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO,
+	nullptr,
+	VK_NULL_HANDLE,
+	LIGHTING_SUBPASS_INDEX,
+	VK_NULL_HANDLE,
+	VK_FALSE,
+	0,
+	0
+};
+
+VkCommandBufferBeginInfo LightingManager::m_beginInfo =
+{
+	VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+	nullptr,
+	VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
+	&LightingManager::m_inheritanceInfo
+};
+
+LightingManager::LightingManager(Renderer* renderer, Shader* dirLightShader, Shader* pointLightShader, VkDescriptorSet* mvpUBOSets, VkDescriptorSet gBufferInputSet,
+	const unsigned int& nWindowWidth, const unsigned int& nWindowHeight,
+	VkCommandPool cmdPool, VkRenderPass pass, VkDescriptorSetLayout uboLayout, VkDescriptorSetLayout gBufferLayout, unsigned int nQueueFamilyIndex) : RenderModule(renderer, cmdPool, pass, nQueueFamilyIndex, false)
+{
+	// Copy descriptor set handles...
+	std::memcpy(m_mvpUBOSets, mvpUBOSets, sizeof(VkDescriptorSet) * MAX_FRAMES_IN_FLIGHT);
+	m_gBufferInputSet = gBufferInputSet;
+
+	m_mvpUBOSetLayout = uboLayout;
+	m_gBufferSetLayout = gBufferLayout;
 
 	m_globalDirData = { 0, { 0, 0, 0 } };
 
@@ -166,13 +193,56 @@ void LightingManager::RecreatePipelines(Shader* dirLightShader, Shader* pointLig
 	CreatePointLightingPipeline(pointLightShader, nWindowWidth, nWindowHeight);
 }
 
-void LightingManager::DrawPointLights(VkCommandBuffer& cmdBuffer)
+void LightingManager::RecordCommandBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, const VkFramebuffer& framebuffer, const VkCommandBuffer transferCmdBuf)
 {
-	// Bind point light volume vertex buffer and point light instance buffer.
-	m_pointLightVolMesh->Bind(cmdBuffer, m_pointLightInsBuffer);
 
-	// Draw...
-	vkCmdDrawIndexed(cmdBuffer, m_pointLightVolMesh->IndexCount(), m_pointLights.Count(), 0, 0, 0);
+	// Set inheritence framebuffer.
+	m_inheritanceInfo.framebuffer = framebuffer;
+
+	VkCommandBuffer cmdBuf = m_cmdBuffers[nFrameIndex];
+
+	// Update lighting
+	if (m_bDirLightChange)
+		UpdateDirLights();
+
+	if (m_bPointLightChange)
+		UpdatePointLights(transferCmdBuf);
+
+	// Begin recording...
+	RENDERER_SAFECALL(vkBeginCommandBuffer(cmdBuf, &m_beginInfo), "Lighting Manager Error: Failed to begin recording of draw commands.");
+
+	// ----------------------------------------------------------------------------------------------
+	// Directional lighting
+
+	// Bind deferred lighting pipeline and descriptor.
+	vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dirLightPipeline);
+
+	// Use MVP UBO and Lighting input attachment descriptor sets.
+	VkDescriptorSet lightingSets[] = { m_mvpUBOSets[nFrameIndex], m_gBufferInputSet, m_dirLightUBOSet };
+
+	vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dirLightPipelineLayout, 0, 3, lightingSets, 0, 0);
+
+	// Run deferred directional lighting post pass.
+	vkCmdDraw(cmdBuf, 6, 1, 0, 0);
+
+	// ----------------------------------------------------------------------------------------------
+	// Point lighting
+
+	// Bind point light pipeline
+	vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pointLightPipeline);
+
+	vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pointLightPipelineLayout, 0, 2, lightingSets, 0, 0);
+
+	// Bind point light volume vertex buffer and point light instance buffer.
+	m_pointLightVolMesh->Bind(cmdBuf, m_pointLightInsBuffer);
+
+	// Draw point lights...
+	vkCmdDrawIndexed(cmdBuf, m_pointLightVolMesh->IndexCount(), m_pointLights.Count(), 0, 0, 0);
+
+	// ----------------------------------------------------------------------------------------------
+
+	// End recording...
+	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuf), "Lighting Manager Error: Failed to end recording of draw commands.");
 }
 
 const bool& LightingManager::DirLightingChanged() 
@@ -432,7 +502,7 @@ void LightingManager::CreateDirLightingPipeline(Shader* dirLightShader, const un
 	colorBlending.blendConstants[2] = 0.0f;
 	colorBlending.blendConstants[3] = 0.0f;
 
-	VkDescriptorSetLayout setLayouts[] = { m_renderer->MVPUBOSetLayout(), m_renderer->GBufferInputSetLayout(), m_dirLightUBOLayout };
+	VkDescriptorSetLayout setLayouts[] = { m_mvpUBOSetLayout, m_gBufferSetLayout, m_dirLightUBOLayout };
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -457,7 +527,7 @@ void LightingManager::CreateDirLightingPipeline(Shader* dirLightShader, const un
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = nullptr;
 	pipelineInfo.layout = m_dirLightPipelineLayout;
-	pipelineInfo.renderPass = m_renderer->MainRenderPass();
+	pipelineInfo.renderPass = m_renderPass;
 	pipelineInfo.subpass = LIGHTING_SUBPASS_INDEX;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 	pipelineInfo.basePipelineIndex = -1;
@@ -465,7 +535,7 @@ void LightingManager::CreateDirLightingPipeline(Shader* dirLightShader, const un
 	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_renderer->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_dirLightPipeline), "Renderer Error: Failed to create lighting graphics pipeline.");
 }
 
-inline void LightingManager::CreatePointLightingPipeline(Shader* pLightShader, const unsigned int& nWindowWidth, const unsigned int& nWindowHeight) 
+inline void LightingManager::CreatePointLightingPipeline(Shader* pLightShader, const unsigned int& nWindowWidth, const unsigned int& nWindowHeight)
 {
 	// Vertex shader stage information.
 	VkPipelineShaderStageCreateInfo vertStageInfo = {};
@@ -605,7 +675,7 @@ inline void LightingManager::CreatePointLightingPipeline(Shader* pLightShader, c
 	colorBlending.blendConstants[2] = 0.0f;
 	colorBlending.blendConstants[3] = 0.0f;
 
-	VkDescriptorSetLayout setLayouts[] = { m_renderer->MVPUBOSetLayout(), m_renderer->GBufferInputSetLayout() };
+	VkDescriptorSetLayout setLayouts[] = { m_mvpUBOSetLayout, m_gBufferSetLayout };
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -630,7 +700,7 @@ inline void LightingManager::CreatePointLightingPipeline(Shader* pLightShader, c
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = nullptr;
 	pipelineInfo.layout = m_dirLightPipelineLayout;
-	pipelineInfo.renderPass = m_renderer->MainRenderPass();
+	pipelineInfo.renderPass = m_renderPass;
 	pipelineInfo.subpass = LIGHTING_SUBPASS_INDEX;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 	pipelineInfo.basePipelineIndex = -1;

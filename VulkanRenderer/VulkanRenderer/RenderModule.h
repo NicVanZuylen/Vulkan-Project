@@ -7,11 +7,11 @@ class RenderModule
 {
 public:
 
-	RenderModule(Renderer* renderer, VkCommandPool cmdPool, VkFramebuffer* frameBuffers, VkRenderPass pass, unsigned int nQueueFamilyIndex, bool bStatic);
+	RenderModule(Renderer* renderer, VkCommandPool cmdPool, VkRenderPass pass, unsigned int nQueueFamilyIndex, bool bStatic);
 
 	virtual ~RenderModule() = 0;
 
-	virtual void RecordCommandBuffer(unsigned int nBufferIndex, unsigned int nFrameIndex) = 0;
+	virtual void RecordCommandBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, const VkFramebuffer& framebuffer, const VkCommandBuffer transferCmdBuf) = 0;
 
 	const VkCommandBuffer* GetCommandBuffer(unsigned int nBufferIndex);
 
@@ -31,7 +31,6 @@ protected:
 	// ---------------------------------------------------------------------------------
 	// Rendering
 
-	VkFramebuffer m_frameBuffers[MAX_FRAMES_IN_FLIGHT];
 	VkRenderPass m_renderPass;
 
 	// ---------------------------------------------------------------------------------

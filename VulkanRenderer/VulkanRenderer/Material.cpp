@@ -1,6 +1,7 @@
 #include "Material.h"
 #include "Sampler.h"
 #include "Shader.h"
+#include "Scene.h"
 
 Sampler* Material::m_defaultSampler = nullptr;
 int Material::m_globalMaterialCount = 0;
@@ -129,54 +130,31 @@ const VkDescriptorSetLayout& Material::GetDescriptorLayout() const
 
 void Material::CreateDescriptorSetLayouts() 
 {
-	// This needs to be the same as the binding defined in the renderer.
-	VkDescriptorSetLayoutBinding uboLayoutBinding = {};
-	uboLayoutBinding.binding = 0;
-	uboLayoutBinding.descriptorCount = 1;
-	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	uboLayoutBinding.pImmutableSamplers = nullptr;
-
 	VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
-	samplerLayoutBinding.binding = m_bUseMVPUBO; // 0 if not using MVP UBO, otherwise 1.
+	samplerLayoutBinding.binding = 0;
 	samplerLayoutBinding.descriptorCount = m_textures.Count();
 	samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 	samplerLayoutBinding.pImmutableSamplers = nullptr;
 
-	VkDescriptorSetLayoutBinding layoutBindings[2] = { uboLayoutBinding, samplerLayoutBinding };
-
 	VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
 	layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutCreateInfo.bindingCount = 1 + m_bUseMVPUBO;
-	
-	if(m_bUseMVPUBO) 
-		layoutCreateInfo.pBindings = layoutBindings;
-	else 
-		layoutCreateInfo.pBindings = &samplerLayoutBinding;
+	layoutCreateInfo.bindingCount = 1;
+	layoutCreateInfo.pBindings = &samplerLayoutBinding;
 
 	RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_renderer->GetDevice(), &layoutCreateInfo, nullptr, &m_descriptorSetLayout), "Material Error: Failed to create descriptor set layout.");
 }
 
 void Material::CreateDescriptorObjects() 
 {
-	VkDescriptorPoolSize poolSizes[2] = {};
-	poolSizes[0].descriptorCount = MAX_FRAMES_IN_FLIGHT;
-	poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSizes[1].descriptorCount = MAX_FRAMES_IN_FLIGHT * m_textures.Count();
-	poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-
-	int poolSizeCount = 1 + m_bUseMVPUBO;
+	VkDescriptorPoolSize poolSize;
+	poolSize.descriptorCount = MAX_FRAMES_IN_FLIGHT * m_textures.Count();
+	poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
 	VkDescriptorPoolCreateInfo poolCreateInfo = {};
 	poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	poolCreateInfo.poolSizeCount = poolSizeCount;
-
-	if (m_bUseMVPUBO)
-		poolCreateInfo.pPoolSizes = poolSizes;
-	else
-		poolCreateInfo.pPoolSizes = &poolSizes[1];
-
+	poolCreateInfo.poolSizeCount = 1;
+	poolCreateInfo.pPoolSizes = &poolSize;
 	poolCreateInfo.maxSets = MAX_FRAMES_IN_FLIGHT;
 	
 	RENDERER_SAFECALL(vkCreateDescriptorPool(m_renderer->GetDevice(), &poolCreateInfo, nullptr, &m_descriptorPool), "Material Error: Failed to create descriptor pool.");
@@ -218,38 +196,17 @@ void Material::UpdateDescriptorSets()
 
 	for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
 	{
-		VkDescriptorBufferInfo uboInfo = {};
-		uboInfo.buffer = m_renderer->MVPUBOHandle(i);
-		uboInfo.offset = 0;
-		uboInfo.range = sizeof(MVPUniformBuffer);
-
-		// UBO.
-		VkWriteDescriptorSet uboWrite = {};
-		uboWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		uboWrite.descriptorCount = 1;
-		uboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		uboWrite.dstArrayElement = 0;
-		uboWrite.dstBinding = 0;
-		uboWrite.dstSet = m_descriptorSets[i];
-		uboWrite.pBufferInfo = &uboInfo;
-
 		// Textures.
 		VkWriteDescriptorSet texWrite = {};
 		texWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		texWrite.descriptorCount = m_textures.Count();
 		texWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		texWrite.dstArrayElement = 0;
-		texWrite.dstBinding = m_bUseMVPUBO;
+		texWrite.dstBinding = 0;
 		texWrite.dstSet = m_descriptorSets[i];
 		texWrite.pImageInfo = imageInfos.Data();
 
-		// Descriptor write infos.
-		VkWriteDescriptorSet descriptorWrites[2] = { texWrite, uboWrite };
-
 		// Update descriptor sets.
-		if(m_bUseMVPUBO)
-		    vkUpdateDescriptorSets(m_renderer->GetDevice(), 1 + m_bUseMVPUBO, descriptorWrites, 0, nullptr);
-		else
-			vkUpdateDescriptorSets(m_renderer->GetDevice(), 1 + m_bUseMVPUBO, &descriptorWrites[1], 0, nullptr);
+		vkUpdateDescriptorSets(m_renderer->GetDevice(), 1, &texWrite, 0, nullptr);
 	}
 }

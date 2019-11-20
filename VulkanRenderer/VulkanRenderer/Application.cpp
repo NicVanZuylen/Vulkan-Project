@@ -90,10 +90,12 @@ void Application::Run()
 	Mesh* sphereMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 	Mesh* planeMesh = new Mesh(m_renderer, "Assets/Primitives/plane.obj");
 
+	Scene* scene = nullptr;
+
 	// Create render objects.
-	RenderObject* bunnyObj = new RenderObject(m_renderer, bunnyMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 100);
-	RenderObject* sphereObj = new RenderObject(m_renderer, sphereMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 100);
-	RenderObject* floorObj = new RenderObject(m_renderer, planeMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 1);
+	RenderObject* bunnyObj = new RenderObject(scene, bunnyMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 100);
+	RenderObject* sphereObj = new RenderObject(scene, sphereMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 100);
+	RenderObject* floorObj = new RenderObject(scene, planeMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 1);
 
 	// Time variables.
 	float fDeltaTime = 0.0f;	
@@ -120,13 +122,13 @@ void Application::Run()
 	glm::mat4 instanceModelMat;
 
 	// Update directional lights.
-	m_renderer->AddDirectionalLight(glm::normalize(glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)), glm::vec4(1.0f));
+	//m_renderer->AddDirectionalLight(glm::normalize(glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)), glm::vec4(1.0f));
 	//m_renderer->AddDirectionalLight(glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
 
 	// Add point lights to the scene.
-	m_renderer->AddPointLight(glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 3.0f);
-	m_renderer->AddPointLight(glm::vec4(-3.0f, 3.5f, 3.5f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 3.0f);
-	m_renderer->AddPointLight(glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f);
+	//m_renderer->AddPointLight(glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 3.0f);
+	//m_renderer->AddPointLight(glm::vec4(-3.0f, 3.5f, 3.5f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 3.0f);
+	//m_renderer->AddPointLight(glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f);
 
 	while(!glfwWindowShouldClose(m_window)) 
 	{
@@ -197,7 +199,7 @@ void Application::Run()
 		glm::vec3 v4ViewPos = camera.GetPosition();
 
 		// Set rendering view matrix.
-		m_renderer->SetViewMatrix(viewMat, v4ViewPos);
+		//m_renderer->SetViewMatrix(viewMat, v4ViewPos);
 
 		// End frame.
 		m_renderer->End();

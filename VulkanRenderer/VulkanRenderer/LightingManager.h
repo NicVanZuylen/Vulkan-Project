@@ -2,6 +2,7 @@
 #include <vulkan/vulkan.h>
 #include "glm.hpp"
 #include "DynamicArray.h"
+#include "RenderModule.h"
 #include "Texture.h"
 
 class Renderer;
@@ -31,11 +32,13 @@ struct PointLight
 #define MAX_DIRECTIONAL_LIGHTS 4
 #define MAX_POINT_LIGHT_COUNT 1000
 
-class LightingManager
+class LightingManager : public RenderModule
 {
 public:
 
-	LightingManager(Renderer* renderer, Shader* dirLightShader, Shader* pointLightShader, const unsigned int& nWindowWidth, const unsigned int& nWindowHeight);
+	LightingManager(Renderer* renderer, Shader* dirLightShader, Shader* pointLightShader, VkDescriptorSet* mvpUBOSets, VkDescriptorSet gBufferInputSet,
+		const unsigned int& nWindowWidth, const unsigned int& nWindowHeight, 
+		VkCommandPool cmdPool, VkRenderPass pass, VkDescriptorSetLayout uboLayout, VkDescriptorSetLayout gBufferLayout, unsigned int nQueueFamilyIndex);
 
 	~LightingManager();
 
@@ -135,11 +138,9 @@ public:
 	void RecreatePipelines(Shader* dirLightShader, Shader* pointLightShader, const unsigned int& nWindowWidth, const unsigned int& nWindowHeight);
 
 	/*
-	Description: Draw all point lights in the scene.
-	Param:
-	    VkCommandBuffer& cmdBuffer: The command buffer to embed draw commands in.
+	Description: Record lighting pass command buffer.
 	*/
-	void DrawPointLights(VkCommandBuffer& cmdBuffer);
+	void RecordCommandBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, const VkFramebuffer& framebuffer, const VkCommandBuffer transferCmdBuf) override;
 
 private:
 
@@ -155,7 +156,11 @@ private:
 
 	inline void CreatePointLightingPipeline(Shader* pLightShader, const unsigned int& nWindowWidth, const unsigned int& nWindowHeight);
 
-	Renderer* m_renderer;
+	// ---------------------------------------------------------------------------------
+	// Template Vulkan Structures
+
+	static VkCommandBufferInheritanceInfo m_inheritanceInfo;
+	static VkCommandBufferBeginInfo m_beginInfo;
 
 	// ---------------------------------------------------------------------------------
 	// Lights
@@ -172,12 +177,6 @@ private:
 	bool m_bPointLightChange;
 
 	// ---------------------------------------------------------------------------------
-	// Command buffers
-
-	VkCommandPool m_commandPool;
-	DynamicArray<VkCommandBuffer> m_passCmdBuffers;
-
-	// ---------------------------------------------------------------------------------
 	// Buffers
 
 	VkBuffer m_dirLightUBO;
@@ -191,9 +190,16 @@ private:
 
 	// ---------------------------------------------------------------------------------
 	// Descriptors
+
 	VkDescriptorPool m_descriptorPool;
 	VkDescriptorSetLayout m_dirLightUBOLayout;
 	VkDescriptorSet m_dirLightUBOSet;
+
+	VkDescriptorSet m_mvpUBOSets[MAX_FRAMES_IN_FLIGHT];
+	VkDescriptorSet m_gBufferInputSet;
+
+	VkDescriptorSetLayout m_mvpUBOSetLayout;
+	VkDescriptorSetLayout m_gBufferSetLayout;
 
 	// ---------------------------------------------------------------------------------
 	// Pipelines

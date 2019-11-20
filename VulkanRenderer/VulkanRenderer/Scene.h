@@ -21,6 +21,10 @@ public:
 
 	void DrawSubscenes(const uint32_t& nPresentImageIndex, const uint32_t nFrameIndex, DynamicArray<VkSemaphore>& waitSemaphores, DynamicArray<VkSemaphore>& renderFinishedSemaphores, VkFence& frameFence);
 
+	SubScene* GetSubScenes();
+
+	Renderer* GetRenderer();
+
 private:
 
 	// ---------------------------------------------------------------------------------

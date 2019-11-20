@@ -29,14 +29,6 @@ class Texture;
 
 struct Shader;
 
-struct MVPUniformBuffer 
-{
-	glm::mat4 m_model;
-	glm::mat4 m_view;
-	glm::mat4 m_proj;
-	glm::vec4 m_v4ViewPos;
-};
-
 struct CopyRequest 
 {
 	VkBuffer m_srcBuffer;
@@ -88,18 +80,6 @@ public:
 	// Create an image view for the specified image.
 	void CreateImageView(const VkImage& image, VkImageView& view, VkFormat format, VkImageAspectFlags aspectFlags);
 
-	// Add a point light to the scene.
-	void AddDirectionalLight(const glm::vec4& v4Direction, const glm::vec4& v4Color);
-
-	// Update information on a directional light.
-	void UpdateDirectionalLight(const glm::vec4& v4Direction, const glm::vec4& v4Color, const unsigned int& nIndex);
-
-	// Add a point light to the scene.
-	void AddPointLight(const glm::vec4& v4Position, const glm::vec3& v3Color, const float& fRadius);
-
-	// Update information on a directional light.
-	void UpdatePointLight(const glm::vec4& v4Position, const glm::vec3& v3Color, const float& fRadius, const unsigned int& nIndex);
-
 	struct TempCmdBuffer 
 	{
 		VkCommandBuffer m_handle;
@@ -119,24 +99,15 @@ public:
 
 	VkCommandPool GetCommandPool();
 
-	VkRenderPass MainRenderPass();
-
-	VkDescriptorSetLayout MVPUBOSetLayout();
-
-	VkDescriptorSetLayout GBufferInputSetLayout();
-
-	VkBuffer MVPUBOHandle(const unsigned int& nSwapChainImageIndex);
-
-	const DynamicArray<VkFramebuffer>& GetFramebuffers() const;
-
 	const unsigned int& FrameWidth() const;
 
 	const unsigned int& FrameHeight() const;
 
 	const unsigned int SwapChainImageCount() const;
 
-	// Setters
-	void SetViewMatrix(glm::mat4& viewMat, glm::vec3& v3ViewPos);
+	VkFormat SwapChainImageFormat();
+
+	DynamicArray<VkImageView>& SwapChainImageViews();
 
 private:
 
@@ -178,36 +149,6 @@ private:
 	// Create swapchain image views.
 	inline void CreateSwapChainImageViews();
 
-	// Create basic framebuffers.
-	inline void CreateFramebufferImages();
-
-	// Destroy basic framebuffers.
-	inline void DestroyFramebufferImages();
-
-	// Create render pass.
-	inline void CreateRenderPasses();
-
-	// Create framebuffer.
-	inline void CreateFramebuffers();
-
-	// Create MVP descriptor set layout.
-	inline void CreateMVPDescriptorSetLayout();
-
-	// Deferred lighting set layout.
-	inline void CreateGBufferInputSetLayout();
-
-	// Create MVP uniform buffers.
-	inline void CreateMVPUniformBuffers();
-
-	// Create global descriptor pool, global descriptors are allocated from it.
-	inline void CreateDescriptorPool();
-
-	// Create UBO MVP descriptor sets.
-	inline void CreateUBOMVPDescriptorSets();
-
-	// Create Deferred lighting pass descriptor set.
-	inline void CreateGBufferInputDescriptorSet(bool bAllocNew = true);
-
 	// Create command pools.
 	inline void CreateCommandPools();
 
@@ -216,18 +157,6 @@ private:
 
 	// Create semaphores & fences.
 	inline void CreateSyncObjects();
-
-    // Update MVP Uniform buffer contents associated with the provided swap chain image.
-	inline void UpdateMVP(const unsigned int& bufferIndex);
-
-	// Record main primary command buffer.
-	inline void RecordMainCommandBuffer(const unsigned int& nPresentImageIndex, const unsigned int& nFrameIndex);
-
-	// Record dynamic secondary command buffer.
-	inline void RecordDynamicCommandBuffers(const unsigned int& nPresentImageIndex, const unsigned int& nFrameIndex);
-
-	// Record lighting secondary command buffers.
-	inline void RecordLightingCommandBuffer(const unsigned int& nPresentImageIndex, const unsigned int& nFrameIndex);
 
 	// -----------------------------------------------------------------------------------------------------
 	// Swap chain queries
@@ -284,65 +213,29 @@ private:
 
 	// -----------------------------------------------------------------------------------------------------
 	// Swap chain and swap chain images & framebuffers.
+
 	VkFormat m_swapChainImageFormat;
 	VkExtent2D m_swapChainImageExtents;
 	VkSwapchainKHR m_swapChain;
 	DynamicArray<VkImage> m_swapChainImages;
 	DynamicArray<VkImageView> m_swapChainImageViews;
-	DynamicArray<VkFramebuffer> m_swapChainFramebuffers;
 
 	// -----------------------------------------------------------------------------------------------------
-	// Images and framebuffers.
-
-	Texture* m_depthImage;
-
-	// G-Buffers
-	Texture* m_colorImage;
-	Texture* m_posImage;
-	Texture* m_normalImage;
-
-	// -----------------------------------------------------------------------------------------------------
-	// Commands
-	VkCommandPool m_mainGraphicsCommandPool;
-	VkCommandPool m_transferCmdPool;
-	DynamicArray<VkCommandBuffer> m_mainPrimaryCmdBufs;
-	DynamicArray<VkCommandBuffer> m_dynamicPassCmdBufs; // Command buffers for the dynamic render pass.
-	DynamicArray<VkCommandBuffer> m_lightingPassCmdBufs; // Deferred lighting command buffers.
-
-	// Transfer queue submission info moved here to move it from the stack, where it would remain for as long as the thread lives.
-	VkSubmitInfo m_transSubmitInfo;
-	DynamicArray<VkCommandBuffer> m_transferCmdBufs; // Command buffer for dedicated transfer operations.
-
-	// -----------------------------------------------------------------------------------------------------
-	// Descriptors
-	VkDescriptorSetLayout m_uboDescriptorSetLayout;
-	VkDescriptorSetLayout m_gBufferInputSetLayout;
-
-	VkDescriptorPool m_descriptorPool;
-	DynamicArray<VkDescriptorSet> m_uboDescriptorSets;
-	VkDescriptorSet m_gBufferInputSet;
-
-	// -----------------------------------------------------------------------------------------------------
-	// Descriptor buffers
-	DynamicArray<VkBuffer> m_mvpBuffers;
-	DynamicArray<VkDeviceMemory> m_mvpBufferMemBlocks;
-
-	MVPUniformBuffer m_mvp;
-
-	// -----------------------------------------------------------------------------------------------------
-	// Lighting
+	// Lighting shaders
 
 	Shader* m_dirLightingShader;
 	Shader* m_pointLightingShader;
 
-	LightingManager* m_lightingManager;
-
 	// -----------------------------------------------------------------------------------------------------
+	// Commands
+
+	VkCommandPool m_mainGraphicsCommandPool;
+	VkCommandPool m_transferCmdPool;
+
+	VkSubmitInfo m_transSubmitInfo;
+	DynamicArray<VkCommandBuffer> m_transferCmdBufs; // Command buffer for dedicated transfer operations.
+    // -------------------------------------------------------------------------------------------------
 	// Rendering
-
-	VkRenderPass m_mainRenderPass;
-
-	DynamicArray<RenderObject*> m_dynamicObjects;
 
 	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
 	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;

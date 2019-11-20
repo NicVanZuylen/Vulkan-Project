@@ -23,8 +23,8 @@ VkCommandBufferBeginInfo GBufferPass::m_beginInfo =
 	&GBufferPass::m_inheritanceInfo
 }; 
 
-GBufferPass::GBufferPass(Renderer* renderer, DynamicArray<PipelineData*>* pipelines, VkCommandPool cmdPool, VkFramebuffer* framebuffers, VkRenderPass pass, uint32_t nQueueFamilyIndex)
-	: RenderModule(renderer, cmdPool, framebuffers, pass, nQueueFamilyIndex, false)
+GBufferPass::GBufferPass(Renderer* renderer, DynamicArray<PipelineData*>* pipelines, VkCommandPool cmdPool, VkRenderPass pass, uint32_t nQueueFamilyIndex)
+	: RenderModule(renderer, cmdPool, pass, nQueueFamilyIndex, false)
 {
 	m_renderer = renderer;
 	m_pipelines = pipelines;
@@ -38,10 +38,10 @@ GBufferPass::~GBufferPass()
 
 }
 
-void GBufferPass::RecordCommandBuffer(uint32_t nPresentImageIndex, uint32_t nFrameIndex)
+void GBufferPass::RecordCommandBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, const VkFramebuffer& framebuffer, const VkCommandBuffer transferCmdBuf)
 {
 	// Set inheritence framebuffer.
-	m_inheritanceInfo.framebuffer = m_frameBuffers[nPresentImageIndex];
+	m_inheritanceInfo.framebuffer = framebuffer;
 
 	VkCommandBuffer cmdBuf = m_cmdBuffers[nFrameIndex];
 
@@ -65,7 +65,7 @@ void GBufferPass::RecordCommandBuffer(uint32_t nPresentImageIndex, uint32_t nFra
 			RenderObject& obj = *data.m_renderObjects[j];
 
 			// Request instance data update for next frame & draw current state of the renderobject.
-			obj.UpdateInstanceData(cmdBuf);
+			obj.UpdateInstanceData(transferCmdBuf);
 			obj.CommandDraw(cmdBuf);
 		}
 	}

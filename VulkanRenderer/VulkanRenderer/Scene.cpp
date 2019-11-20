@@ -52,11 +52,21 @@ void Scene::AddSubscene()
 	m_subScene = new SubScene(params);
 }
 
+SubScene* Scene::GetSubScenes()
+{
+	return m_subScene;
+}
+
+Renderer* Scene::GetRenderer()
+{
+	return m_renderer;
+}
+
 void Scene::DrawSubscenes(const uint32_t& nPresentImageIndex, const uint32_t nFrameIndex, DynamicArray<VkSemaphore>& waitSemaphores, DynamicArray<VkSemaphore>& renderFinishedSemaphores, VkFence& frameFence)
 {
 	VkPipelineStageFlags waitStages[2] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT };
 
-	m_subScene->DrawScene(nPresentImageIndex, nFrameIndex, waitSemaphores, waitStages, renderFinishedSemaphores, frameFence);
+	//m_subScene->DrawScene(nPresentImageIndex, nFrameIndex, waitSemaphores, waitStages, renderFinishedSemaphores, frameFence);
 }
 
 inline void Scene::ConstructSubScenes()

@@ -1,13 +1,12 @@
 #include "RenderModule.h"
 #include "Renderer.h"
 
-RenderModule::RenderModule(Renderer* renderer, VkCommandPool cmdPool, VkFramebuffer* frameBuffers, VkRenderPass pass, unsigned int nQueueFamilyIndex, bool bStatic)
+RenderModule::RenderModule(Renderer* renderer, VkCommandPool cmdPool, VkRenderPass pass, unsigned int nQueueFamilyIndex, bool bStatic)
 {
 	m_renderer = renderer;
 	m_nQueueFamilyIndex = nQueueFamilyIndex;
 	m_bStatic = bStatic;
 
-	std::memcpy(m_frameBuffers, frameBuffers, sizeof(VkFramebuffer) * MAX_FRAMES_IN_FLIGHT);
 	m_renderPass = pass;
 
 	m_cmdPool = cmdPool;

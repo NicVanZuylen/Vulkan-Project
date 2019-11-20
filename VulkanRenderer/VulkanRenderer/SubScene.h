@@ -4,6 +4,11 @@
 #include "VertexInfo.h"
 #include "Renderer.h"
 
+/*
+Description: A Render Pass & collection of modules & render objects for rendering a scene to a texture or swap chain image.
+Author: Nic Van Zuylen
+*/
+
 class RenderModule;
 class GBufferPass;
 class LightingManager;
@@ -69,6 +74,7 @@ struct PipelineData
 	VkPipelineLayout m_layout;
 	DynamicArray<EVertexAttribute> m_vertexAttributes;
 	DynamicArray<RenderObject*> m_renderObjects; // All objects using this pipeline.
+	uint32_t m_nReferenceCount; // Amount of subscenes referencing this pipeline.
 };
 
 struct PipelineDataPtr
@@ -78,10 +84,13 @@ struct PipelineDataPtr
 	PipelineData* m_ptr;
 };
 
-/*
-Description: A Render Pass and Collection of RenderObjects used for rendering a scene to a texture or swap chain image.
-Author: Nic Van Zuylen
-*/
+struct MVPUniformBuffer
+{
+	glm::mat4 m_model;
+	glm::mat4 m_view;
+	glm::mat4 m_proj;
+	glm::vec4 m_v4ViewPos;
+};
 
 class SubScene
 {
@@ -96,23 +105,38 @@ public:
 	Param:
 	    EGBufferImageTypeBit eImageBits: Bit field of the images to create & use for rendering.
     */
-	void SetImages(EGBufferAttachmentTypeBit eImageBits);
+	void CreateImages(EGBufferAttachmentTypeBit eImageBits);
 
 	/*
     Description: Draw this subscene.
 	Param:
 		const uint32_t nPresentImageIndex: Index of the swap chain image to render to.
 		const uint32_t nFrameIndex: Index of the current frame-in-flight.
+		VkCommandBuffer& transferCmdBuf: Command buffer to record all transfer commands to.
 		DynamicArray<VkSemaphore>& waitSemaphores: Sempahores to wait on before executing rendering commands.
 		VkPipelineStageFlags* waitStages: Array of stage maskes for wait semaphores to wait on.
 		DynamicArray<VkSemaphore>& signalSemaphores: Semaphores to signal once rendering is complete.
 		VkFence signalFence: Fence to signal once rendering is complete.
     */
-	void DrawScene(const uint32_t& nPresentImageIndex, const uint32_t nFrameIndex, DynamicArray<VkSemaphore>& waitSemaphores, VkPipelineStageFlags* waitStages, DynamicArray<VkSemaphore>& signalSemaphores, VkFence signalFence);
+	void DrawScene(const uint32_t& nPresentImageIndex, const uint32_t nFrameIndex, VkCommandBuffer& transferCmdBuf, DynamicArray<VkSemaphore>& waitSemaphores, VkPipelineStageFlags* waitStages, DynamicArray<VkSemaphore>& signalSemaphores, VkFence signalFence);
+
+	/*
+    Description: Add a graphics pipeline to this scene to render.
+	Param:
+	    PipelineData* pipeline: The pipeline to add.
+		const std::string& nameID: Unique name ID of the pipeline to add.
+	*/
+	void AddPipeline(PipelineData* pipeline, const std::string& nameID);
+
+	const VkRenderPass& GetRenderPass();
+
+	Table<PipelineDataPtr>& GetPipelineTable();
 
 	GBufferPass* GetGBufferPass();
 
 	LightingManager* GetLightingManager();
+
+	Renderer* GetRenderer();
 
 private:
 
@@ -120,9 +144,49 @@ private:
 	// Constructor extensions
 
 	/*
+	Description: Create the output image for this subscene. Gets swap chain images if this a primary subscene.
+	*/
+	inline void CreateOutputImage();
+
+	/*
+	Description: Create primary descriptor pool for this subscene.
+	*/
+	inline void CreateDescriptorPool();
+
+	/*
+    Description: Create Camera MVP UBO descriptor sets
+	*/
+	inline void CreateMVPUBODescriptors();
+
+	/*
+	Description: Create Camera MVP UBO descriptor sets
+	*/
+	inline void CreateInputAttachmentDescriptors();
+
+	/*
+	Description: Update all descriptor sets to reference the correct resources.
+	*/
+	inline void UpdateAllDescriptorSets();
+
+	/*
+	Description: Create MVP UBO Buffer objects.
+	*/
+	inline void CreateMVPUBOBuffers();
+
+	/*
+	Description: Create a VkAttachmentDescription for swap chain images.
+	*/
+	inline void CreateSwapChainAttachmentDesc(DynamicArray<VkAttachmentDescription>& attachments);
+
+	/*
 	Description: Create VkAttachmentDescription structures to aid in render pass creation.
 	*/
 	inline void CreateAttachmentDescriptions(const DynamicArray<Texture*>& targets, DynamicArray<VkAttachmentDescription>& attachments);
+
+	/*
+	Description: Create a VkAttachmentReference for swap chain images.
+	*/
+	inline void CreateSwapChainAttachRef(DynamicArray<VkAttachmentReference>& references);
 
 	/*
 	Description: Create VkAttachmentReference structures to aid in render pass creation.
@@ -159,13 +223,29 @@ private:
 	Param:
 	    const uint32_t nPresentImageIndex: Index of the swap chain image to render to.
 		const uint32_t nFrameIndex: Index of the current frame-in-flight.
+		VkCommandBuffer& transferCmdBuf: Command buffer to record all transfer commands to.
 	*/
-	inline void RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex);
+	inline void RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, VkCommandBuffer& transferCmdBuf);
+
+	// ---------------------------------------------------------------------------------
+	// Private runtime functions
+
+	inline void UpdateMVPUBO(const uint32_t& nFrameIndex);
 
 	// ---------------------------------------------------------------------------------
 	// Vulkan structure templates
 
-	// These are static Vulkan structure caches used to reduce the amount of code in the source file.
+	// These are static Vulkan structure caches used to reduce the amount of code in function definitions.
+
+	static VkDescriptorPoolCreateInfo m_poolCreateInfo;
+
+	static VkDescriptorSetLayoutBinding m_mvpUBOLayoutBinding;
+	static VkDescriptorSetLayoutCreateInfo m_mvpSetLayoutInfo;
+
+	static VkDescriptorSetLayoutBinding m_inAttachLayoutBinding;
+	static VkDescriptorSetLayoutCreateInfo m_inAttachSetLayoutInfo;
+	
+	static VkDescriptorSetAllocateInfo m_descAllocInfo; // Descriptor alloc info for descriptors for each frame in flight.
 
 	static VkAttachmentDescription m_swapChainAttachmentDescription;
 	static VkAttachmentDescription m_depthAttachmentDescription;
@@ -187,6 +267,23 @@ private:
 	Renderer* m_renderer; // Renderer reference.
 
 	// ---------------------------------------------------------------------------------
+	// Descriptors
+
+	VkDescriptorPool m_descPool;
+
+	// ---------------------------------------------------------------------------------
+	// Camera
+
+	MVPUniformBuffer m_localMVPData;
+
+	VkBuffer m_mvpUBOBuffers[MAX_FRAMES_IN_FLIGHT]; // Uniform buffer for the subscene camera.
+	VkDeviceMemory m_mvpUBOMemories[MAX_FRAMES_IN_FLIGHT];
+
+	// UBO descriptors.
+	VkDescriptorSetLayout m_mvpUBOSetLayout;
+	VkDescriptorSet m_mvpUBODescSets[MAX_FRAMES_IN_FLIGHT];
+
+	// ---------------------------------------------------------------------------------
 	// Modules
 
 	GBufferPass* m_gPass;
@@ -197,19 +294,32 @@ private:
 
 	EGBufferAttachmentTypeBit m_eGBufferImageBits;
 
-	Texture* m_colorImages[MAX_FRAMES_IN_FLIGHT];
-	Texture* m_depthImages[MAX_FRAMES_IN_FLIGHT];
-	Texture* m_posImages[MAX_FRAMES_IN_FLIGHT];
-	Texture* m_normalImages[MAX_FRAMES_IN_FLIGHT];
+	Texture* m_colorImage;
+	Texture* m_depthImage;
+	Texture* m_posImage;
+	Texture* m_normalImage;
 
-	DynamicArray<Texture*> m_gBufferImages[MAX_FRAMES_IN_FLIGHT];
-	DynamicArray<Texture*> m_allImages[MAX_FRAMES_IN_FLIGHT];
+	DynamicArray<Texture*> m_gBufferImages;
+	DynamicArray<Texture*> m_allImages;
 	DynamicArray<VkClearValue> m_clearValues;
+
+	// ---------------------------------------------------------------------------------
+	// Render target image descriptors
+
+	VkDescriptorSetLayout m_gBufferSetLayout;
+	VkDescriptorSetLayout m_outputSetLayout;
+
+	// Descriptor set for the G Buffer input attachments, used primarily in the lighting pass.
+	VkDescriptorSet m_gBufferDescSet;
+
+	// Descriptor set for subscene output input attachment (if not rendering to swap chain image).
+	VkDescriptorSet m_outputDescSet;
 
 	// ---------------------------------------------------------------------------------
 	// Framebuffer
 
-	VkFramebuffer m_framebuffers[MAX_FRAMES_IN_FLIGHT];
+	DynamicArray<VkImageView> m_swapchainImageViews;
+	DynamicArray<VkFramebuffer> m_framebuffers;
 
 	// ---------------------------------------------------------------------------------
 	// Render pass
@@ -238,5 +348,8 @@ private:
 	unsigned int m_nHeight;
 
 	Texture* m_outImage; // Output image of this scene.
+
+	bool m_bPrimary; // Whether or not this is a primary subscene (renders to swap chain image).
+	bool m_bOutputHDR; // Whether or not the output image is a HDR image.
 };
 

@@ -29,13 +29,14 @@ public:
 	/*
 	Constructor:
 	Param:
-	    Renderer* renderer: The renderer this render object associates with.
+	    Scene* scene: The scene this object will be rendered within.
 		Mesh* mesh: The mesh to render.
 		Material* material: The material to render with.
 		DynamicArray<EVertexAttribute>* instanceAttributes: Array of per-instance vertex attributes for the instance buffer.
-		unsigned int nMaxInstanceCount: Maximum amount of instances allowed for this render object.
+		uint32_t nMaxInstanceCount: Maximum amount of instances allowed for this render object.
+		uint32_t nSubSceneBits: Bit field containing bit indices of the subscenes this object will be rendered in.
 	*/
-	RenderObject(Renderer* renderer, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes = &m_defaultInstanceAttributes, unsigned int nMaxInstanceCount = 1);
+	RenderObject(Scene* scene, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes = &m_defaultInstanceAttributes, uint32_t nMaxInstanceCount = 1, uint32_t nSubScenebits = 1);
 
 	~RenderObject();
 
@@ -98,6 +99,8 @@ private:
 
 	std::string m_nameID;
 
+	Scene* m_scene;
+	SubScene* m_subScene;
 	Renderer* m_renderer;
 	Material* m_material;
 	Mesh* m_mesh;
@@ -116,5 +119,6 @@ private:
 
 	// Pipeline information.
 	PipelineData* m_pipelineData;
+	uint32_t m_nSubSceneBits;
 };
 

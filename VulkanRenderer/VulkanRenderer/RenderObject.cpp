@@ -4,12 +4,15 @@
 #include "Shader.h"
 #include "Material.h"
 #include "Renderer.h"
+#include "SubScene.h"
 
 DynamicArray<EVertexAttribute> RenderObject::m_defaultInstanceAttributes = { VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4 };
 
-RenderObject::RenderObject(Renderer* renderer, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes, unsigned int nMaxInstanceCount)
+RenderObject::RenderObject(Scene* scene, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes, uint32_t nMaxInstanceCount, uint32_t nSubScenebits)
 {
-	m_renderer = renderer;
+	m_scene = scene;
+	m_subScene = scene->GetSubScenes();
+	m_renderer = scene->GetRenderer();
 	m_mesh = mesh;
 	m_material = material;
 	m_pipelineData = nullptr;
@@ -20,6 +23,8 @@ RenderObject::RenderObject(Renderer* renderer, Mesh* mesh, Material* material, D
 	m_bInstancesModified = true;
 
 	m_nameID = "|" + material->GetName() + mesh->VertexFormat()->NameID();
+
+	m_nSubSceneBits = nSubScenebits;
 
 	CreateGraphicsPipeline(instanceAttributes);
 
@@ -209,9 +214,13 @@ void RenderObject::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertex
 	    m_renderer->CreateBuffer(m_nInstanceArraySize * sizeof(Instance), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_instanceBuffer, m_instanceMemory);
 
 	// -------------------------------------------------------------------------------------------------------------------
-	// Check for existing matching pipeline.
+	// Check for existing matching pipeline in any subscene.
 
-	PipelineData*& pipelineData = m_pipelineTable[{ m_nameID.c_str() }].m_ptr;
+	const uint32_t nSubSceneCount = 1;
+
+	Table<PipelineDataPtr>& pipelines = m_subScene->GetPipelineTable();
+
+	PipelineData*& pipelineData = pipelines[{ m_nameID.c_str() }].m_ptr;
 
 	if (pipelineData && !bRecreate)
 	{
@@ -374,19 +383,6 @@ void RenderObject::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertex
 	colorBlending.blendConstants[2] = 0.0f;
 	colorBlending.blendConstants[3] = 0.0f;
 
-	// Dynamic states
-	/*
-	VkDynamicState dynState = VK_DYNAMIC_STATE_VIEWPORT;
-
-	VkPipelineDynamicStateCreateInfo dynamicState = {};
-	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-	dynamicState.dynamicStateCount = 1;
-	dynamicState.pDynamicStates = &dynState;
-	*/
-
-	//VkDescriptorSetLayout uboSetLayout = m_renderer->MVPUBOSetLayout();
-
-
 	// If being recreated, the pipeline data structure is not reallocated and objects inside it remain.
 	if (!pipelineData)
 	{
@@ -402,8 +398,8 @@ void RenderObject::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertex
 		// Set local pointer.
 		m_pipelineData = pipelineData;
 
-		// Add pipeline data to array of all pipelines.
-		m_allPipelines.Push(pipelineData);
+		// Add pipeline data to the subscene it will be rendered in.
+		m_subScene->AddPipeline(pipelineData, m_nameID);
 	}
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
@@ -429,7 +425,7 @@ void RenderObject::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertex
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = nullptr;
 	pipelineInfo.layout = m_pipelineData->m_layout;
-	pipelineInfo.renderPass = m_renderer->MainRenderPass();
+	pipelineInfo.renderPass = m_subScene->GetRenderPass();
 	pipelineInfo.subpass = 0;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 	pipelineInfo.basePipelineIndex = -1;
