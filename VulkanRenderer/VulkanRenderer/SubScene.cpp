@@ -233,7 +233,7 @@ SubScene::SubScene(SubSceneParams& params)
 
 	// Modules
 
-	m_gPass = new GBufferPass(m_renderer, &m_allPipelines, m_commandPool, m_pass, m_nQueueFamilyIndex);
+	m_gPass = new GBufferPass(m_renderer, &m_allPipelines, m_commandPool, m_pass, m_mvpUBODescSets, m_nQueueFamilyIndex);
 	m_lightManager = new LightingManager
 	(
 		m_renderer,
@@ -376,6 +376,11 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits)
 
 	if(!m_bPrimary)
 	    m_allImages.Push(m_outImage);
+	else 
+	{
+		// Push swap chain clear value
+		m_clearValues.Push({ 0.0f, 0.0f, 0.0f, 1.0f });
+	}
 
 	m_allImages += m_gBufferImages;
 
@@ -384,32 +389,6 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits)
 
 	// Store image bit field information.
 	m_eGBufferImageBits = eImageBits;
-}
-
-void SubScene::DrawScene
-(
-	const uint32_t& nPresentImageIndex, 
-	const uint32_t nFrameIndex, 
-	VkCommandBuffer& transferCmdBuf,
-	DynamicArray<VkSemaphore>& waitSemaphores, 
-	VkPipelineStageFlags* waitStages, 
-	DynamicArray<VkSemaphore>& signalSemaphores, 
-	VkFence signalFence
-)
-{
-	// Record command buffers...
-	RecordPrimaryCmdBuffer(nPresentImageIndex, nFrameIndex, transferCmdBuf);
-
-	// Set command buffer to submit. Submit the command buffer for the current frame-in-flight.
-	m_renderSubmitInfo.pCommandBuffers = &m_primaryCmdBufs[nFrameIndex];
-	m_renderSubmitInfo.waitSemaphoreCount = waitSemaphores.Count();
-	m_renderSubmitInfo.pWaitSemaphores = waitSemaphores.Data();
-	m_renderSubmitInfo.signalSemaphoreCount = signalSemaphores.Count();
-	m_renderSubmitInfo.pSignalSemaphores = signalSemaphores.Data();
-	m_renderSubmitInfo.pWaitDstStageMask = waitStages;
-
-	// Submit commands...
-	vkQueueSubmit(m_renderQueue, 1, &m_renderSubmitInfo, signalFence);
 }
 
 void SubScene::AddPipeline(PipelineData* pipeline, const std::string& nameID)
@@ -442,9 +421,19 @@ void SubScene::AddPipeline(PipelineData* pipeline, const std::string& nameID)
 	++pipeline->m_nReferenceCount;
 }
 
+VkCommandBuffer& SubScene::GetCommandBuffer(const uint32_t nIndex) 
+{
+	return m_primaryCmdBufs[nIndex];
+}
+
 const VkRenderPass& SubScene::GetRenderPass()
 {
 	return m_pass;
+}
+
+VkDescriptorSetLayout SubScene::MVPUBOLayout() 
+{
+	return m_mvpUBOSetLayout;
 }
 
 Table<PipelineDataPtr>& SubScene::GetPipelineTable()
@@ -577,7 +566,6 @@ inline void SubScene::UpdateAllDescriptorSets()
 	// MVP UBO Updates
 
 	VkDescriptorBufferInfo mvpUBOBufferInfos[MAX_FRAMES_IN_FLIGHT];
-	VkWriteDescriptorSet mvpUBOWrites[MAX_FRAMES_IN_FLIGHT];
 
 	// Set buffer infos for each MVP UBO buffer.
 	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
@@ -921,6 +909,8 @@ inline void SubScene::CreateFramebuffers()
 		createInfo.pNext = nullptr;
 
 		RENDERER_SAFECALL(vkCreateFramebuffer(m_renderer->GetDevice(), &createInfo, nullptr, &m_framebuffers[i]), "SubScene Error: Failed to create framebuffer.");
+
+		m_framebuffers.Push(m_framebuffers[i]);
 	}
 }
 
@@ -959,7 +949,7 @@ inline void SubScene::GetQueue()
 	vkGetDeviceQueue(m_renderer->GetDevice(), m_nQueueFamilyIndex, 0, &m_renderQueue);
 }
 
-inline void SubScene::RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, VkCommandBuffer& transferCmdBuf)
+void SubScene::RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, VkCommandBuffer& transferCmdBuf)
 {
 	VkCommandBuffer cmdBuf = m_primaryCmdBufs[nFrameIndex];
 

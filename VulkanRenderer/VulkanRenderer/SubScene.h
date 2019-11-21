@@ -108,17 +108,13 @@ public:
 	void CreateImages(EGBufferAttachmentTypeBit eImageBits);
 
 	/*
-    Description: Draw this subscene.
+	Description: Record primary command buffer for this subscene.
 	Param:
 		const uint32_t nPresentImageIndex: Index of the swap chain image to render to.
 		const uint32_t nFrameIndex: Index of the current frame-in-flight.
 		VkCommandBuffer& transferCmdBuf: Command buffer to record all transfer commands to.
-		DynamicArray<VkSemaphore>& waitSemaphores: Sempahores to wait on before executing rendering commands.
-		VkPipelineStageFlags* waitStages: Array of stage maskes for wait semaphores to wait on.
-		DynamicArray<VkSemaphore>& signalSemaphores: Semaphores to signal once rendering is complete.
-		VkFence signalFence: Fence to signal once rendering is complete.
-    */
-	void DrawScene(const uint32_t& nPresentImageIndex, const uint32_t nFrameIndex, VkCommandBuffer& transferCmdBuf, DynamicArray<VkSemaphore>& waitSemaphores, VkPipelineStageFlags* waitStages, DynamicArray<VkSemaphore>& signalSemaphores, VkFence signalFence);
+	*/
+	void RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, VkCommandBuffer& transferCmdBuf);
 
 	/*
     Description: Add a graphics pipeline to this scene to render.
@@ -128,7 +124,16 @@ public:
 	*/
 	void AddPipeline(PipelineData* pipeline, const std::string& nameID);
 
+	/*
+	Description: Get the command buffer handle at the specified index.
+	Param:
+	    const uint32_t nIndex: Frame index of the command buffer to retreive.
+	*/
+	VkCommandBuffer& GetCommandBuffer(const uint32_t nIndex);
+
 	const VkRenderPass& GetRenderPass();
+
+	VkDescriptorSetLayout MVPUBOLayout();
 
 	Table<PipelineDataPtr>& GetPipelineTable();
 
@@ -217,15 +222,6 @@ private:
 	Description: Find the queue this subscene will submit commands to.
 	*/
 	inline void GetQueue();
-
-	/*
-	Description: Record primary command buffer for this subscene.
-	Param:
-	    const uint32_t nPresentImageIndex: Index of the swap chain image to render to.
-		const uint32_t nFrameIndex: Index of the current frame-in-flight.
-		VkCommandBuffer& transferCmdBuf: Command buffer to record all transfer commands to.
-	*/
-	inline void RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, VkCommandBuffer& transferCmdBuf);
 
 	// ---------------------------------------------------------------------------------
 	// Private runtime functions

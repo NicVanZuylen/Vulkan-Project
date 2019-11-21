@@ -41,9 +41,10 @@ public:
 	Param:
 	    VkCommandBuffer& cmdBuffer: The vulkan command buffer to issue commands to.
 		VkPipelineLayout& pipeline: The pipeline to bind this material's descriptor sets to.
+		VkDescriptorSet& mvpUBOSet: The MVP matrix UBO descriptor set to bind for this frame.
 		const unsigned int& nBufferIndex: The index of the swap chain image.
 	*/
-	void UseDescriptorSet(VkCommandBuffer& cmdBuffer, VkPipelineLayout& pipeline, const unsigned int& nBufferIndex);
+	void UseDescriptorSet(VkCommandBuffer& cmdBuffer, VkPipelineLayout& pipeline, VkDescriptorSet& mvpUBOSet, const unsigned int& nBufferIndex);
 
 	/*
 	Description: Set the texture sampler used by this material.

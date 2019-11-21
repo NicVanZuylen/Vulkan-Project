@@ -20,7 +20,7 @@ VkCommandBufferBeginInfo LightingManager::m_beginInfo =
 {
 	VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 	nullptr,
-	VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
+	VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
 	&LightingManager::m_inheritanceInfo
 };
 
@@ -197,6 +197,7 @@ void LightingManager::RecordCommandBuffer(const uint32_t& nPresentImageIndex, co
 {
 
 	// Set inheritence framebuffer.
+	m_inheritanceInfo.renderPass = m_renderPass;
 	m_inheritanceInfo.framebuffer = framebuffer;
 
 	VkCommandBuffer cmdBuf = m_cmdBuffers[nFrameIndex];

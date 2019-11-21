@@ -75,6 +75,8 @@ int Application::Init()
 
 void Application::Run() 
 {
+	Scene* scene = m_renderer->GetScene();
+
 	// Load shaders
 	Shader* modelShader = new Shader(m_renderer, "Shaders/SPIR-V/ModelIns_Vert.spv", "Shaders/SPIR-V/GModel_Frag.spv");
 
@@ -89,8 +91,6 @@ void Application::Run()
 	Mesh* bunnyMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Bunny.obj");
 	Mesh* sphereMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 	Mesh* planeMesh = new Mesh(m_renderer, "Assets/Primitives/plane.obj");
-
-	Scene* scene = nullptr;
 
 	// Create render objects.
 	RenderObject* bunnyObj = new RenderObject(scene, bunnyMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 100);

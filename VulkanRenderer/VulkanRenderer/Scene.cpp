@@ -1,60 +1,70 @@
 #include "Scene.h"
+
+#undef MAX_FRAMES_IN_FLIGHT // Undefine duplicate used in header.
 #include "Renderer.h"
-#include "Texture.h"
+
+#include "SubScene.h"
 #include "Shader.h"
 
-Scene::Scene(uint32_t nWindowWidth, uint32_t nWindowHeight, uint32_t nQueueFamilyIndex)
+Scene::Scene(Renderer* renderer, uint32_t nWindowWidth, uint32_t nWindowHeight, uint32_t nQueueFamilyIndex)
 {
+	m_renderer = renderer;
+
 	m_nWindowWidth = nWindowWidth;
 	m_nWindowHeight = nWindowHeight;
 
 	m_dirLightShader = new Shader(m_renderer, FS_QUAD_SHADER, DEFERRED_DIR_LIGHT_SHADER);
-	m_pointLightShader = new Shader(m_renderer, FS_QUAD_SHADER, DEFERRED_POINT_LIGHT_SHADER);
+	m_pointLightShader = new Shader(m_renderer, POINT_LIGHT_VERTEX_SHADER, DEFERRED_POINT_LIGHT_SHADER);
 
-	m_nGraphicsQueueFamilyIndex = nQueueFamilyIndex;
+	m_nQueueFamilyIndex = nQueueFamilyIndex;
 
-	ConstructRenderTargets();
-}
+	GetQueue();
+	CreateTransferCmdPool();
+	AllocateTransferCmdBufs();
+	CreateSyncObjects();
 
-Scene::~Scene() 
-{
-	// Destroy primary command buffers.
-	vkDestroyCommandPool(m_renderer->GetDevice(), m_cmdPool, nullptr);
-
-	// Destroy shared shaders.
-	delete m_dirLightShader;
-	delete m_pointLightShader;
-
-	// Destroy shared render target images.
-	delete m_normalImage;
-	delete m_posImage;
-	delete m_colorImage;
-	delete m_depthImage;
-}
-
-void Scene::AddSubscene()
-{
-	EGBufferAttachmentTypeBit eImageBits = (EGBufferAttachmentTypeBit)(GBUFFER_COLOR_BIT | GBUFFER_DEPTH_BIT | GBUFFER_POSITION_BIT | GBUFFER_NORMAL_BIT);
-
-	// Set up subscene constructor parameters...
-	SubSceneParams params = {};
-	params.eAttachmentBits = eImageBits;
-	params.m_bOutputHDR = true;
+	SubSceneParams params;
+	params.eAttachmentBits = (EGBufferAttachmentTypeBit)(GBUFFER_COLOR_BIT | GBUFFER_DEPTH_BIT | GBUFFER_POSITION_BIT | GBUFFER_NORMAL_BIT);
+	params.m_bOutputHDR = false;
 	params.m_bPrimary = true;
 	params.m_dirLightShader = m_dirLightShader;
 	params.m_pointLightShader = m_pointLightShader;
 	params.m_nFrameBufferWidth = m_nWindowWidth;
 	params.m_nFrameBufferHeight = m_nWindowHeight;
-	params.m_nQueueFamilyIndex = m_nGraphicsQueueFamilyIndex;
+	params.m_nQueueFamilyIndex = m_nQueueFamilyIndex;
 	params.m_renderer = m_renderer;
 
-	// Create subscene.
-	m_subScene = new SubScene(params);
+	m_primarySubscene = new SubScene(params);
 }
 
-SubScene* Scene::GetSubScenes()
+Scene::~Scene() 
 {
-	return m_subScene;
+	VkDevice device = m_renderer->GetDevice();
+
+	// Device needs to be idle before destroying resources it may otherwise be using.
+	vkDeviceWaitIdle(device);
+
+	// Destroy subscenes.
+	delete m_primarySubscene;
+
+	// Destroy shared shaders.
+	delete m_dirLightShader;
+	delete m_pointLightShader;
+
+	// Destroy command pool.
+	vkDestroyCommandPool(device, m_transferCmdPool, nullptr);
+
+	// Destroy sync objects.
+	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
+	{
+		vkDestroySemaphore(device, m_renderFinishedSemaphores[i], nullptr);
+		vkDestroySemaphore(device, m_transferCompleteSemaphores[i], nullptr);
+	}
+}
+
+SubScene* Scene::GetPrimarySubScene()
+{
+	return m_primarySubscene;
 }
 
 Renderer* Scene::GetRenderer()
@@ -62,60 +72,120 @@ Renderer* Scene::GetRenderer()
 	return m_renderer;
 }
 
-void Scene::DrawSubscenes(const uint32_t& nPresentImageIndex, const uint32_t nFrameIndex, DynamicArray<VkSemaphore>& waitSemaphores, DynamicArray<VkSemaphore>& renderFinishedSemaphores, VkFence& frameFence)
+void Scene::DrawSubscenes(const uint32_t& nPresentImageIndex, const uint64_t nElapsedFrames, const uint32_t& nFrameIndex, VkSemaphore& imageAvailableSemaphore, VkSemaphore& renderFinishedSemaphore, VkFence& frameFence)
 {
-	VkPipelineStageFlags waitStages[2] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT };
+	// ---------------------------------------------------------------------------------
+	// Frame indices
 
-	//m_subScene->DrawScene(nPresentImageIndex, nFrameIndex, waitSemaphores, waitStages, renderFinishedSemaphores, frameFence);
+	//m_nFrameIndex = m_nElapsedFrames++ % MAX_FRAMES_IN_FLIGHT;
+	uint32_t nTransferFrameIndex = (nElapsedFrames - 2) % MAX_FRAMES_IN_FLIGHT;
+
+	VkDevice device = m_renderer->GetDevice();
+
+	// ---------------------------------------------------------------------------------
+	// Begin recording of transfer commands
+
+	VkCommandBufferBeginInfo transferCmdBeginInfo = {};
+	transferCmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	transferCmdBeginInfo.pNext = nullptr;
+	transferCmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+	transferCmdBeginInfo.pInheritanceInfo = nullptr;
+
+	RENDERER_SAFECALL(vkBeginCommandBuffer(m_transferCmdBufs[nFrameIndex], &transferCmdBeginInfo), "Scene Error: Failed to begin recording of transfer command buffer.");
+
+	// ---------------------------------------------------------------------------------
+	// Record & Submit subscenes
+
+	VkPipelineStageFlags renderWaitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,  VK_PIPELINE_STAGE_TRANSFER_BIT }; // Wait for transfers to complete first before submitting render commands.
+
+	// Record subscene command bufer.
+	m_primarySubscene->RecordPrimaryCmdBuffer(nPresentImageIndex, nFrameIndex, m_transferCmdBufs[nFrameIndex]);
+
+	// Finish recording of transfer commands.
+	RENDERER_SAFECALL(vkEndCommandBuffer(m_transferCmdBufs[nFrameIndex]), "Scene Error: Failed to end recording of transfer command buffer.");
+
+	VkSemaphore renderWaitSemaphores[] = { imageAvailableSemaphore, m_transferCompleteSemaphores[nTransferFrameIndex] };
+
+	// Set render finished semaphore reference, used outside this function to wait for rendering to finish before aquiring the next swap chain image.
+	renderFinishedSemaphore = m_renderFinishedSemaphores[nFrameIndex];
+
+	VkSubmitInfo renderSubmitInfo = {};
+	renderSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	renderSubmitInfo.pNext = nullptr;
+	renderSubmitInfo.waitSemaphoreCount = 1 + (nElapsedFrames > 1); // Only wait on second semaphore after the first frame.
+	renderSubmitInfo.pWaitSemaphores = renderWaitSemaphores;
+	renderSubmitInfo.pWaitDstStageMask = renderWaitStages;
+	renderSubmitInfo.signalSemaphoreCount = 1;
+	renderSubmitInfo.pSignalSemaphores = &m_renderFinishedSemaphores[nFrameIndex];
+	renderSubmitInfo.commandBufferCount = 1;
+	renderSubmitInfo.pCommandBuffers = &m_primarySubscene->GetCommandBuffer(nFrameIndex);
+
+	// ---------------------------------------------------------------------------------
+	// Submit transfer commands
+
+	VkSubmitInfo transSubmitInfo;
+	transSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	transSubmitInfo.pNext = nullptr;
+	transSubmitInfo.waitSemaphoreCount = 0;
+	transSubmitInfo.pWaitSemaphores = nullptr;
+	transSubmitInfo.pWaitDstStageMask = nullptr;
+	transSubmitInfo.signalSemaphoreCount = 1;
+	transSubmitInfo.pSignalSemaphores = &m_transferCompleteSemaphores[nFrameIndex];
+	transSubmitInfo.commandBufferCount = 1;
+	transSubmitInfo.pCommandBuffers = &m_transferCmdBufs[nFrameIndex];
+
+	// Submit transfer commands...
+	RENDERER_SAFECALL(vkQueueSubmit(m_queue, 1, &transSubmitInfo, VK_NULL_HANDLE), "Scene Error: Failed to submit transfer commands.");
+
+	// Submit rendering commands for execution...
+	RENDERER_SAFECALL(vkQueueSubmit(m_queue, 1, &renderSubmitInfo, frameFence), "Scene Error: Failed to submit render commands.");
 }
 
-inline void Scene::ConstructSubScenes()
+inline void Scene::GetQueue()
 {
-	
+	// Obtain queue to submit commands to.
+	vkGetDeviceQueue(m_renderer->GetDevice(), m_nQueueFamilyIndex, 0, &m_queue);
 }
 
-inline void Scene::ConstructRenderTargets()
+inline void Scene::CreateTransferCmdPool()
 {
-	// Specify pool of depth formats and find the best available format.
-	DynamicArray<VkFormat> formats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
-	VkFormat depthFormat = RendererHelper::FindBestDepthFormat(m_renderer->GetPhysDevice(), formats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+	VkCommandPoolCreateInfo cmdPoolInfo = {};
+	cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	cmdPoolInfo.pNext = nullptr;
+	cmdPoolInfo.queueFamilyIndex = m_nQueueFamilyIndex;
+	cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
 
-	// Create the depth buffer image.
-	m_depthImage = new Texture(m_renderer, m_nWindowWidth, m_nWindowHeight, ATTACHMENT_DEPTH_STENCIL, depthFormat);
-
-	// Create G Buffer images.
-	m_colorImage = new Texture(m_renderer, m_nWindowWidth, m_nWindowHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_UNORM, true); // 8-bit 4 channel RGBA color buffer.
-	m_posImage = new Texture(m_renderer, m_nWindowWidth, m_nWindowHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true); // Signed 16-bit 4-channel float buffer.
-	m_normalImage = new Texture(m_renderer, m_nWindowWidth, m_nWindowHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true); // Signed 16-bit 4-channel float buffer.
+	RENDERER_SAFECALL(vkCreateCommandPool(m_renderer->GetDevice(), &cmdPoolInfo, nullptr, &m_transferCmdPool), "Scene Error: Failed to create transfer command pool!");
 }
 
-inline void Scene::CreateCommandPool()
+inline void Scene::AllocateTransferCmdBufs()
 {
-	VkCommandPoolCreateInfo cmdPoolCreatInfo =
+	VkCommandBufferAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool = m_transferCmdPool;
+	allocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.pNext = nullptr;
+
+	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_renderer->GetDevice(), &allocInfo, m_transferCmdBufs), "Scene Error: Failed to allocate transfer command buffers.");
+}
+
+inline void Scene::CreateSyncObjects()
+{
+	VkSemaphoreCreateInfo semaphoreCreateInfo = 
 	{
-		VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-		nullptr, 
-		VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-		m_nGraphicsQueueFamilyIndex
-	};
-
-	RENDERER_SAFECALL(vkCreateCommandPool(m_renderer->GetDevice(), &cmdPoolCreatInfo, nullptr, &m_cmdPool), "Scene Error: Failed to create scene command pool.");
-}
-
-inline void Scene::AllocateCmdBuffers()
-{
-	m_primaryCmdBuffers.SetSize(m_renderer->SwapChainImageCount());
-	m_primaryCmdBuffers.SetCount(m_primaryCmdBuffers.GetSize());
-
-	VkCommandBufferAllocateInfo allocInfo =
-	{
-		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
 		nullptr,
-		m_cmdPool,
-		VK_COMMAND_BUFFER_LEVEL_SECONDARY,
-		m_primaryCmdBuffers.Count()
+		0
 	};
 
-	RENDERER_SAFECALL(vkAllocateCommandBuffers(m_renderer->GetDevice(), &allocInfo, m_primaryCmdBuffers.Data()), "Scene Error: Failed to allocate primary command buffers.");
+	VkDevice device = m_renderer->GetDevice();
+
+	// Create sempahores...
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+	{
+		vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &m_renderFinishedSemaphores[i]);
+		vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &m_transferCompleteSemaphores[i]);
+	}
 }
 

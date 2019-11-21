@@ -9,7 +9,7 @@ class GBufferPass : public RenderModule
 {
 public:
 
-	GBufferPass(Renderer* renderer, DynamicArray<PipelineData*>* pipelines, VkCommandPool cmdPool, VkRenderPass pass, uint32_t nQueueFamilyIndex);
+	GBufferPass(Renderer* renderer, DynamicArray<PipelineData*>* pipelines, VkCommandPool cmdPool, VkRenderPass pass, VkDescriptorSet* mvpUBOSets, uint32_t nQueueFamilyIndex);
 
 	~GBufferPass();
 
@@ -22,6 +22,11 @@ private:
 
 	static VkCommandBufferInheritanceInfo m_inheritanceInfo;
 	static VkCommandBufferBeginInfo m_beginInfo;
+
+	// ---------------------------------------------------------------------------------
+	// Descriptors
+
+	VkDescriptorSet m_mvpUBODescSets[MAX_FRAMES_IN_FLIGHT];
 
 	// ---------------------------------------------------------------------------------
 	// Scene data

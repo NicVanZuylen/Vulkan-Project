@@ -23,6 +23,7 @@
 #define DYNAMIC_SUBPASS_INDEX 0
 #define LIGHTING_SUBPASS_INDEX 1
 
+class Scene;
 class LightingManager;
 class RenderObject;
 class Texture;
@@ -49,6 +50,9 @@ public:
 	void SetWindow(GLFWwindow* window, const unsigned int& nWidth, const unsigned int& nHeight);
 
 	void ResizeWindow(const unsigned int& nWidth, const unsigned int& nHeight, bool bNewSurface = false);
+
+	// Get the scene objects will be rendered in.
+	Scene* GetScene();
 
 	// Begin the main render pass.
 	void Begin();
@@ -152,9 +156,6 @@ private:
 	// Create command pools.
 	inline void CreateCommandPools();
 
-	// Create main command buffers.
-	inline void CreateCmdBuffers();
-
 	// Create semaphores & fences.
 	inline void CreateSyncObjects();
 
@@ -177,6 +178,7 @@ private:
 
 	// -----------------------------------------------------------------------------------------------------
 	// Validation layers
+
 	static const DynamicArray<const char*> m_validationLayers;
 	static const bool m_bEnableValidationLayers;
 
@@ -184,10 +186,12 @@ private:
 
 	// -----------------------------------------------------------------------------------------------------
 	// Device extensions
+
 	static const DynamicArray<const char*> m_deviceExtensions;
 
 	// -----------------------------------------------------------------------------------------------------
-	// Vulkan API
+	// Vulkan Instance & Devices
+
 	VkInstance m_instance;
 	VkPhysicalDevice m_physDevice;
 	VkDevice m_logicDevice;
@@ -221,34 +225,24 @@ private:
 	DynamicArray<VkImageView> m_swapChainImageViews;
 
 	// -----------------------------------------------------------------------------------------------------
-	// Lighting shaders
-
-	Shader* m_dirLightingShader;
-	Shader* m_pointLightingShader;
-
-	// -----------------------------------------------------------------------------------------------------
 	// Commands
 
 	VkCommandPool m_mainGraphicsCommandPool;
-	VkCommandPool m_transferCmdPool;
 
-	VkSubmitInfo m_transSubmitInfo;
-	DynamicArray<VkCommandBuffer> m_transferCmdBufs; // Command buffer for dedicated transfer operations.
     // -------------------------------------------------------------------------------------------------
 	// Rendering
 
 	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
-	DynamicArray<VkSemaphore> m_renderFinishedSemaphores;
-	DynamicArray<VkSemaphore> m_transferCompleteSemaphores;
-	DynamicArray<VkFence> m_copyReadyFences;
 	DynamicArray<VkFence> m_inFlightFences;
-	unsigned long long m_nCurrentFrame;
-	unsigned int m_nCurrentFrameIndex;
-	unsigned int m_nLastFrameIndex;
-	unsigned int m_nPresentImageIndex;
+	uint64_t m_nElapsedFrames;
+	uint32_t m_nFrameIndex;
+	uint32_t m_nPresentImageIndex;
 	
 	DynamicArray<DynamicArray<CopyRequest>> m_transferBuffers; // Arrays of transfer request buffer arrays for each frame in flight.
 
+	Scene* m_scene;
+
+	// -------------------------------------------------------------------------------------------------
 	// Misc
 	bool m_bMinimized;
 

@@ -19,16 +19,17 @@ VkCommandBufferBeginInfo GBufferPass::m_beginInfo =
 {
 	VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
 	nullptr,
-	VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
+	VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
 	&GBufferPass::m_inheritanceInfo
 }; 
 
-GBufferPass::GBufferPass(Renderer* renderer, DynamicArray<PipelineData*>* pipelines, VkCommandPool cmdPool, VkRenderPass pass, uint32_t nQueueFamilyIndex)
+GBufferPass::GBufferPass(Renderer* renderer, DynamicArray<PipelineData*>* pipelines, VkCommandPool cmdPool, VkRenderPass pass, VkDescriptorSet* mvpUBOSets, uint32_t nQueueFamilyIndex)
 	: RenderModule(renderer, cmdPool, pass, nQueueFamilyIndex, false)
 {
 	m_renderer = renderer;
 	m_pipelines = pipelines;
 	m_nQueueFamilyIndex = nQueueFamilyIndex;
+	std::memcpy(m_mvpUBODescSets, mvpUBOSets, sizeof(VkDescriptorSet) * MAX_FRAMES_IN_FLIGHT);
 
 	m_inheritanceInfo.renderPass = m_renderPass;
 }
@@ -51,16 +52,16 @@ void GBufferPass::RecordCommandBuffer(const uint32_t& nPresentImageIndex, const 
 	DynamicArray<PipelineData*>& pipelines = *m_pipelines;
 
 	// Iterate through all pipelines for the subscene and draw their renderobjects.
-	for (int i = 0; i < pipelines.Count(); ++i)
+	for (uint32_t i = 0; i < pipelines.Count(); ++i)
 	{
 		PipelineData& data = *pipelines[i];
 
 		// Bind pipelines...
 		vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, data.m_handle);
 
-		data.m_material->UseDescriptorSet(cmdBuf, data.m_layout, nFrameIndex);
+		data.m_material->UseDescriptorSet(cmdBuf, data.m_layout, m_mvpUBODescSets[nFrameIndex], nFrameIndex);
 
-		for (int j = 0; j < data.m_renderObjects.Count(); ++j)
+		for (uint32_t j = 0; j < data.m_renderObjects.Count(); ++j)
 		{
 			RenderObject& obj = *data.m_renderObjects[j];
 

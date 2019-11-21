@@ -68,9 +68,11 @@ Material::Material(Renderer* renderer, Shader* shader, const std::initializer_li
 	CreateDescriptorObjects();
 }
 
-void Material::UseDescriptorSet(VkCommandBuffer& cmdBuffer, VkPipelineLayout& pipeline, const unsigned int& nBufferIndex)
+void Material::UseDescriptorSet(VkCommandBuffer& cmdBuffer, VkPipelineLayout& pipeline, VkDescriptorSet& mvpUBOSet, const unsigned int& nBufferIndex)
 {
-	vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline, 0, 1, &m_descriptorSets[nBufferIndex], 0, nullptr);
+	VkDescriptorSet sets[2] = { mvpUBOSet, m_descriptorSets[nBufferIndex] };
+
+	vkCmdBindDescriptorSets(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline, 0, 2, sets, 0, nullptr);
 }
 
 Material::~Material()

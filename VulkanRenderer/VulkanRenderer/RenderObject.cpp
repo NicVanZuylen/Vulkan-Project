@@ -11,7 +11,7 @@ DynamicArray<EVertexAttribute> RenderObject::m_defaultInstanceAttributes = { VER
 RenderObject::RenderObject(Scene* scene, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes, uint32_t nMaxInstanceCount, uint32_t nSubScenebits)
 {
 	m_scene = scene;
-	m_subScene = scene->GetSubScenes();
+	m_subScene = scene->GetPrimarySubScene();
 	m_renderer = scene->GetRenderer();
 	m_mesh = mesh;
 	m_material = material;
@@ -402,10 +402,13 @@ void RenderObject::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertex
 		m_subScene->AddPipeline(pipelineData, m_nameID);
 	}
 
+	// Get descriptor layouts for MVP UBO & Material properties
+	VkDescriptorSetLayout setLayouts[] = { m_subScene->MVPUBOLayout(), m_material->GetDescriptorLayout() };
+
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 1;
-	pipelineLayoutInfo.pSetLayouts = &m_material->GetDescriptorLayout(); // MVP UBO
+	pipelineLayoutInfo.setLayoutCount = 2;
+	pipelineLayoutInfo.pSetLayouts = setLayouts;
 	pipelineLayoutInfo.pushConstantRangeCount = 0;
 	pipelineLayoutInfo.pPushConstantRanges = nullptr;
 

@@ -5,7 +5,7 @@ layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outPos;
 layout(location = 2) out vec4 outNormal;
 
-layout(binding = 1) uniform sampler2D textures[2];
+layout(set = 1, binding = 0) uniform sampler2D textures[2];
 
 layout(location = 0) in vec4 finalPos;
 layout(location = 1) in vec4 finalNormal;
