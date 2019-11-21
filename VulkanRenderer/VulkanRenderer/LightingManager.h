@@ -81,9 +81,9 @@ public:
 	/*
 	Description: Add a directional light to the scene.
 	Param:
-		const DirectionalLight& data: The data for the new directional light.
+		DirectionalLight data: The data for the new directional light.
 	*/
-	void AddDirLight(const DirectionalLight& data);
+	void AddDirLight(DirectionalLight data);
 
 	/*
 	Description: Update the data on a directional light.
@@ -96,9 +96,9 @@ public:
 	/*
 	Description: Add a new point light to the scene.
 	Param:
-		const PointLight& data: The data for the new point light.
+		PointLight data: The data for the new point light.
 	*/
-	void AddPointLight(const PointLight& data);
+	void AddPointLight(PointLight data);
 
 	/*
 	Description: Update the data on a point light.
@@ -133,6 +133,11 @@ public:
 	void UpdatePointLights(VkCommandBuffer cmdBuffer);
 
 	/*
+	Description: Run when the subscene output resolution is modified.
+	*/
+	void OnOutputResize(const RenderModuleResizeData& resizeData) override;
+
+	/*
 	Description: Re-create lighting graphics pipelines.
 	*/
 	void RecreatePipelines(Shader* dirLightShader, Shader* pointLightShader, const unsigned int& nWindowWidth, const unsigned int& nWindowHeight);
@@ -152,9 +157,9 @@ private:
 
 	inline void CreateDescriptorSets();
 
-	inline void CreateDirLightingPipeline(Shader* dirLightShader, const unsigned int& nWindowWidth, const unsigned int& nWindowHeight);
+	inline void CreateDirLightingPipeline(const unsigned int& nWindowWidth, const unsigned int& nWindowHeight);
 
-	inline void CreatePointLightingPipeline(Shader* pLightShader, const unsigned int& nWindowWidth, const unsigned int& nWindowHeight);
+	inline void CreatePointLightingPipeline(const unsigned int& nWindowWidth, const unsigned int& nWindowHeight);
 
 	// ---------------------------------------------------------------------------------
 	// Template Vulkan Structures
@@ -166,6 +171,9 @@ private:
 	// Lights
 
 	Mesh* m_pointLightVolMesh;
+
+	Shader* m_dirLightShader;
+	Shader* m_pointLightShader;
 
 	DynamicArray<DirectionalLight> m_dirLights;
 	GlobalDirLightData m_globalDirData;

@@ -55,12 +55,15 @@ LightingManager::LightingManager(Renderer* renderer, Shader* dirLightShader, Sha
 	m_nChangePLightEnd = 1U;
 	m_bPointLightChange = false;
 
+	m_dirLightShader = dirLightShader;
+	m_pointLightShader = pointLightShader;
+
 	CreatePointLightBuffers();
 	CreateDescriptorPool();
 	CreateSetLayouts();
 	CreateDescriptorSets();
-	CreateDirLightingPipeline(dirLightShader, nWindowWidth, nWindowHeight);
-	CreatePointLightingPipeline(pointLightShader, nWindowWidth, nWindowHeight);
+	CreateDirLightingPipeline(nWindowWidth, nWindowHeight);
+	CreatePointLightingPipeline(nWindowWidth, nWindowHeight);
 
 	UpdateDirLights();
 
@@ -126,7 +129,7 @@ const VkPipelineLayout& LightingManager::PointLightPipelineLayout()
 	return m_pointLightPipelineLayout;
 }
 
-void LightingManager::AddDirLight(const DirectionalLight& data) 
+void LightingManager::AddDirLight(DirectionalLight data) 
 {
 	if (m_globalDirData.m_nCount >= MAX_DIRECTIONAL_LIGHTS)
 		return;
@@ -150,7 +153,7 @@ void LightingManager::UpdateDirLight(const DirectionalLight& data, const unsigne
 	m_bDirLightChange = true;
 }
 
-void LightingManager::AddPointLight(const PointLight& data) 
+void LightingManager::AddPointLight(PointLight data) 
 {
 	// Update start of update region.
 	m_nChangePLightStart = glm::min<unsigned int>(m_nChangePLightStart, m_pointLights.Count());
@@ -188,15 +191,18 @@ void LightingManager::RecreatePipelines(Shader* dirLightShader, Shader* pointLig
 	vkDestroyPipeline(m_renderer->GetDevice(), m_pointLightPipeline, nullptr);
 	vkDestroyPipelineLayout(m_renderer->GetDevice(), m_pointLightPipelineLayout, nullptr);
 
+	// Set new shaders.
+	m_dirLightShader = dirLightShader;
+	m_pointLightShader = pointLightShader;
+
 	// Re-create pipelines.
-	CreateDirLightingPipeline(dirLightShader, nWindowWidth, nWindowHeight);
-	CreatePointLightingPipeline(pointLightShader, nWindowWidth, nWindowHeight);
+	CreateDirLightingPipeline(nWindowWidth, nWindowHeight);
+	CreatePointLightingPipeline(nWindowWidth, nWindowHeight);
 }
 
 void LightingManager::RecordCommandBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, const VkFramebuffer& framebuffer, const VkCommandBuffer transferCmdBuf)
 {
-
-	// Set inheritence framebuffer.
+	// Set inheritence framebuffer & render pass.
 	m_inheritanceInfo.renderPass = m_renderPass;
 	m_inheritanceInfo.framebuffer = framebuffer;
 
@@ -306,6 +312,19 @@ void LightingManager::UpdatePointLights(VkCommandBuffer cmdBuffer)
 	m_bPointLightChange = false;
 }
 
+void LightingManager::OnOutputResize(const RenderModuleResizeData& resizeData)
+{
+	// Update render pass handle.
+	m_renderPass = resizeData.m_renderPass;
+
+	// Update descriptor set references.
+	std::memcpy(m_mvpUBOSets, resizeData.m_mvpUBOSets, sizeof(VkDescriptorSet) * MAX_FRAMES_IN_FLIGHT);
+	m_gBufferInputSet = *resizeData.m_gBufferSets;
+
+	// Re-create lighting graphics pipelines for the new output resolution.
+	RecreatePipelines(m_dirLightShader, m_pointLightShader, resizeData.m_nWidth, resizeData.m_nHeight);
+}
+
 void LightingManager::CreatePointLightBuffers() 
 {
 	// Create point light staging buffer, with enough memory for MAX_POINT_LIGHT_COUNT lights.
@@ -386,20 +405,20 @@ void LightingManager::CreateDescriptorSets()
 	vkUpdateDescriptorSets(m_renderer->GetDevice(), 1, &dirLightUBOWrite, 0, nullptr);
 }
 
-void LightingManager::CreateDirLightingPipeline(Shader* dirLightShader, const unsigned int& nWindowWidth, const unsigned int& nWindowHeight)
+void LightingManager::CreateDirLightingPipeline(const unsigned int& nWindowWidth, const unsigned int& nWindowHeight)
 {
 	// Vertex shader stage information.
 	VkPipelineShaderStageCreateInfo vertStageInfo = {};
 	vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-	vertStageInfo.module = dirLightShader->m_vertModule;
+	vertStageInfo.module = m_dirLightShader->m_vertModule;
 	vertStageInfo.pName = "main";
 
 	// Fragment shader stage information.
 	VkPipelineShaderStageCreateInfo fragStageInfo = {};
 	fragStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	fragStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-	fragStageInfo.module = dirLightShader->m_fragModule;
+	fragStageInfo.module = m_dirLightShader->m_fragModule;
 	fragStageInfo.pName = "main";
 
 	// Array of shader stage information.
@@ -536,20 +555,20 @@ void LightingManager::CreateDirLightingPipeline(Shader* dirLightShader, const un
 	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_renderer->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_dirLightPipeline), "Renderer Error: Failed to create lighting graphics pipeline.");
 }
 
-inline void LightingManager::CreatePointLightingPipeline(Shader* pLightShader, const unsigned int& nWindowWidth, const unsigned int& nWindowHeight)
+inline void LightingManager::CreatePointLightingPipeline(const unsigned int& nWindowWidth, const unsigned int& nWindowHeight)
 {
 	// Vertex shader stage information.
 	VkPipelineShaderStageCreateInfo vertStageInfo = {};
 	vertStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	vertStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-	vertStageInfo.module = pLightShader->m_vertModule;
+	vertStageInfo.module = m_pointLightShader->m_vertModule;
 	vertStageInfo.pName = "main";
 
 	// Fragment shader stage information.
 	VkPipelineShaderStageCreateInfo fragStageInfo = {};
 	fragStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	fragStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-	fragStageInfo.module = pLightShader->m_fragModule;
+	fragStageInfo.module = m_pointLightShader->m_fragModule;
 	fragStageInfo.pName = "main";
 
 	// Array of shader stage information.

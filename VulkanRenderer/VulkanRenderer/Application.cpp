@@ -17,6 +17,8 @@
 #include "Texture.h"
 #include "Material.h"
 #include "RenderObject.h"
+#include "SubScene.h"
+#include "LightingManager.h"
 
 #include "Camera.h"
 
@@ -76,6 +78,7 @@ int Application::Init()
 void Application::Run() 
 {
 	Scene* scene = m_renderer->GetScene();
+	SubScene* subScene = scene->GetPrimarySubScene();
 
 	// Load shaders
 	Shader* modelShader = new Shader(m_renderer, "Shaders/SPIR-V/ModelIns_Vert.spv", "Shaders/SPIR-V/GModel_Frag.spv");
@@ -121,14 +124,16 @@ void Application::Run()
 	// Model matrix for new object instances.
 	glm::mat4 instanceModelMat;
 
+	LightingManager* lightManager = subScene->GetLightingManager();
+
 	// Update directional lights.
-	//m_renderer->AddDirectionalLight(glm::normalize(glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)), glm::vec4(1.0f));
-	//m_renderer->AddDirectionalLight(glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+	//lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)), glm::vec4(1.0f) });
+	//lightManager->AddDirLight({ glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
 	// Add point lights to the scene.
-	//m_renderer->AddPointLight(glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 3.0f);
-	//m_renderer->AddPointLight(glm::vec4(-3.0f, 3.5f, 3.5f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 3.0f);
-	//m_renderer->AddPointLight(glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f);
+	lightManager->AddPointLight({ glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 3.0f });
+	lightManager->AddPointLight({ glm::vec4(-3.0f, 3.5f, 3.5f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 3.0f });
+	lightManager->AddPointLight({ glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f });
 
 	while(!glfwWindowShouldClose(m_window)) 
 	{
@@ -173,7 +178,6 @@ void Application::Run()
 				m_renderer->SetWindow(m_window, WINDOW_WIDTH, WINDOW_HEIGHT);
 			}
 
-
 			m_input->ResetStates();
 		}
 
@@ -200,6 +204,7 @@ void Application::Run()
 
 		// Set rendering view matrix.
 		//m_renderer->SetViewMatrix(viewMat, v4ViewPos);
+		subScene->UpdateCameraView(viewMat, glm::vec4(v4ViewPos, 1.0f));
 
 		// End frame.
 		m_renderer->End();

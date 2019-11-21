@@ -1,6 +1,6 @@
 #pragma once
 #include <vulkan/vulkan.h>
-
+#include "glm.hpp"
 #include "DynamicArray.h"
 
 class SubScene;
@@ -34,6 +34,10 @@ public:
 	Scene(Renderer* renderer, uint32_t nWindowWidth, uint32_t nWindowHeight, uint32_t nQueueFamilyIndex);
 
 	~Scene();
+
+	void ResizeOutput(const uint32_t nWidth, const uint32_t nHeight);
+
+	void UpdateCameraView(const glm::mat4& view, const glm::vec4& v4ViewPos);
 
 	void DrawSubscenes(const uint32_t& nPresentImageIndex, const uint64_t nElapsedFrames, const uint32_t& nFrameIndex, VkSemaphore& imageAvailableSemaphore, VkSemaphore& renderFinishedSemaphor, VkFence& frameFence);
 

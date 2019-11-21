@@ -3,7 +3,6 @@
 
 layout (set = 0, binding = 0) uniform UniformBuffer 
 {
-    mat4 model;
 	mat4 view;
 	mat4 proj;
 	vec4 viewPos;

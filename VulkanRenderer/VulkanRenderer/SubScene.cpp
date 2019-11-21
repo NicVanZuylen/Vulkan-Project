@@ -207,10 +207,7 @@ SubScene::SubScene(SubSceneParams& params)
 	m_bPrimary = params.m_bPrimary;
 	m_bOutputHDR = params.m_bOutputHDR;
 
-	// Create output color image if not a primary subscene. HDR if specified.
-	CreateOutputImage();
-
-	// Create G Buffer images.
+	// Create images that will be rendered to.
 	CreateImages(params.eAttachmentBits);
 
 	// Create MVP UBO buffers
@@ -313,14 +310,19 @@ SubScene::~SubScene()
 
 void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits)
 {
-	// Remove existing G Buffer images.
-	for (uint32_t i = 0; i < m_gBufferImages.Count(); ++i)
-		delete m_gBufferImages[i];
+	// Remove existing images.
+	for(int i = 0; i < m_allImages.Count(); ++i) 
+		delete m_allImages[i];
+
+	CreateOutputImage();
 
 	m_gBufferImages.Clear();
 	m_depthImage = nullptr;
 
 	m_clearValues.Clear();
+
+	// Push output clear value.
+	m_clearValues.Push({ 0.0f, 0.0f, 0.0f, 1.0f });
 
 	// Create images the bit field contains...
 	if (eImageBits & GBUFFER_COLOR_BIT)
@@ -335,19 +337,6 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits)
 
 		// Clear value
 		VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
-		m_clearValues.Push(clearVal);
-	}
-
-	if (eImageBits & GBUFFER_DEPTH_BIT)
-	{
-		// Specify pool of depth formats and find the best available format.
-		DynamicArray<VkFormat> depthFormats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
-		VkFormat depthFormat = RendererHelper::FindBestDepthFormat(m_renderer->GetPhysDevice(), depthFormats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-
-		m_depthImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_DEPTH_STENCIL, depthFormat);
-
-		// Clear value
-		VkClearValue clearVal = { 1.0f, 1.0f, 1.0f, 1.0f };
 		m_clearValues.Push(clearVal);
 	}
 
@@ -371,16 +360,24 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits)
 		m_clearValues.Push(clearVal);
 	}
 
+	if (eImageBits & GBUFFER_DEPTH_BIT)
+	{
+		// Specify pool of depth formats and find the best available format.
+		DynamicArray<VkFormat> depthFormats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
+		VkFormat depthFormat = RendererHelper::FindBestDepthFormat(m_renderer->GetPhysDevice(), depthFormats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+
+		m_depthImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_DEPTH_STENCIL, depthFormat);
+
+		// Clear value
+		VkClearValue clearVal = { 1.0f, 1.0f, 1.0f, 1.0f };
+		m_clearValues.Push(clearVal);
+	}
+
 	// Update images array.
 	m_allImages.Clear();
 
 	if(!m_bPrimary)
 	    m_allImages.Push(m_outImage);
-	else 
-	{
-		// Push swap chain clear value
-		m_clearValues.Push({ 0.0f, 0.0f, 0.0f, 1.0f });
-	}
 
 	m_allImages += m_gBufferImages;
 
@@ -391,34 +388,54 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits)
 	m_eGBufferImageBits = eImageBits;
 }
 
-void SubScene::AddPipeline(PipelineData* pipeline, const std::string& nameID)
+void SubScene::ResizeOutput(uint32_t nNewWidth, uint32_t nNewHeight)
 {
-	PipelineData*& ptr = m_pipelines[nameID.c_str()].m_ptr;
+	m_nWidth = nNewWidth;
+	m_nHeight = nNewHeight;
 
-	// Prevent adding duplicate by checking if the pipeline exists first.
-	if (ptr == nullptr)
-	{
-		m_allPipelines.Push(pipeline);
-	}
-	else if (ptr == pipeline)
-		return;
-	else 
-	{
-		// Ptr is not null and the new pipeline pointer doesn't match. Destroy the old one if it has no more references.
-		if (ptr->m_nReferenceCount < 2)
-		{
-			// Destroy old pipeline.
-			vkDestroyPipelineLayout(m_renderer->GetDevice(), ptr->m_layout, nullptr);
-			vkDestroyPipeline(m_renderer->GetDevice(), ptr->m_handle, nullptr);
+	VkDevice device = m_renderer->GetDevice();
 
-			delete ptr;
-		}
-		else // Remove one reference.
-			--ptr->m_nReferenceCount;
-	}
+	// ---------------------------------------------------------------------------------
+	// Free descriptor sets.
 
-	ptr = pipeline;
-	++pipeline->m_nReferenceCount;
+	vkResetDescriptorPool(device, m_descPool, 0);
+
+	// ---------------------------------------------------------------------------------
+	// Re-creation
+
+	CreateOutputImage();
+	CreateImages(m_eGBufferImageBits); // Re-create subscene image.
+	CreateRenderPass(); // Re-create render pass.
+	CreateFramebuffers(); // Re-create framebuffers.
+	CreateMVPUBODescriptors(false); // Re-create descriptor sets for the MVP UBO buffers.
+	CreateInputAttachmentDescriptors(false); // Re-create descriptor sets for G Buffer & ouput input attachments.
+	UpdateAllDescriptorSets(); // Update descriptors in the sets.
+
+	// Re-create pipelines.
+	for (int i = 0; i < m_allPipelines.Count(); ++i)
+		m_allPipelines[i]->m_renderObjects[0]->RecreatePipeline();
+
+	// Have modules re-create resources if necessary & give them the updated descriptor sets.
+	RenderModuleResizeData resizeData;
+	resizeData.m_nWidth = m_nWidth;
+	resizeData.m_nHeight = m_nHeight;
+	resizeData.m_mvpUBOSets = m_mvpUBODescSets;
+	resizeData.m_gBufferSets = &m_gBufferDescSet;
+	resizeData.m_renderPass = m_pass;
+
+	m_gPass->OnOutputResize(resizeData);
+	m_lightManager->OnOutputResize(resizeData);
+}
+
+void SubScene::UpdateCameraView(const glm::mat4& view, const glm::vec4& v4ViewPos)
+{
+	m_localMVPData.m_view = view;
+	m_localMVPData.m_v4ViewPos = v4ViewPos;
+}
+
+void SubScene::AddPipeline(PipelineData* pipeline)
+{
+	m_allPipelines.Push(pipeline);
 }
 
 VkCommandBuffer& SubScene::GetCommandBuffer(const uint32_t nIndex) 
@@ -494,12 +511,13 @@ inline void SubScene::CreateDescriptorPool()
 	RENDERER_SAFECALL(vkCreateDescriptorPool(m_renderer->GetDevice(), &m_poolCreateInfo, nullptr, &m_descPool), "SubScene Error: Failed to create MVP UBO descriptor pool.");
 }
 
-inline void SubScene::CreateMVPUBODescriptors()
+inline void SubScene::CreateMVPUBODescriptors(bool bCreateLayout)
 {
 	// ---------------------------------------------------------------------------------
 	// MVP UBO Set layout
 
-	RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_renderer->GetDevice(), &m_mvpSetLayoutInfo, nullptr, &m_mvpUBOSetLayout), "SubScene Error: Failed to create MVP UBO descriptor set layout.");
+	if (bCreateLayout)
+	    RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_renderer->GetDevice(), &m_mvpSetLayoutInfo, nullptr, &m_mvpUBOSetLayout), "SubScene Error: Failed to create MVP UBO descriptor set layout.");
 
 	// ---------------------------------------------------------------------------------
 	// Descriptor set allocation.
@@ -516,21 +534,24 @@ inline void SubScene::CreateMVPUBODescriptors()
 	RENDERER_SAFECALL(vkAllocateDescriptorSets(m_renderer->GetDevice(), &m_descAllocInfo, m_mvpUBODescSets), "SubScene Error: Failed to allocate MVP UBO descriptor sets.");
 }
 
-inline void SubScene::CreateInputAttachmentDescriptors()
+inline void SubScene::CreateInputAttachmentDescriptors(bool bCreateLayout)
 {
 	// ---------------------------------------------------------------------------------
 	// Set layouts
 
-	m_inAttachLayoutBinding.descriptorCount = m_gBufferImages.Count();
+	if(bCreateLayout) 
+	{
+		m_inAttachLayoutBinding.descriptorCount = m_gBufferImages.Count();
 
-	// G Buffer set layout
-	RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_renderer->GetDevice(), &m_inAttachSetLayoutInfo, nullptr, &m_gBufferSetLayout), "SubScene Error: Failed to create G Buffer descriptor set layout.");
+		// G Buffer set layout
+		RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_renderer->GetDevice(), &m_inAttachSetLayoutInfo, nullptr, &m_gBufferSetLayout), "SubScene Error: Failed to create G Buffer descriptor set layout.");
 
-	m_inAttachLayoutBinding.descriptorCount = 1;
+		m_inAttachLayoutBinding.descriptorCount = 1;
 
-	// Output set layout
-	if(!m_bPrimary)
-	    RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_renderer->GetDevice(), &m_inAttachSetLayoutInfo, nullptr, &m_outputSetLayout), "SubScene Error: Failed to create G Buffer descriptor set layout.");
+		// Output set layout
+		if (!m_bPrimary)
+			RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_renderer->GetDevice(), &m_inAttachSetLayoutInfo, nullptr, &m_outputSetLayout), "SubScene Error: Failed to create G Buffer descriptor set layout.");
+	}
 
 	// ---------------------------------------------------------------------------------
 	// Descriptor set allocation.
@@ -869,9 +890,14 @@ inline void SubScene::CreateFramebuffers()
 	// Destroy previous framebuffers if they exist.
 	for (uint32_t i = 0; i < m_framebuffers.Count(); ++i) 
 	{
-	    if(m_framebuffers[i])
+		if (m_framebuffers[i]) 
+		{
 	        vkDestroyFramebuffer(m_renderer->GetDevice(), m_framebuffers[i], nullptr);
+			m_framebuffers[i] = nullptr;
+		}
 	}
+
+	m_framebuffers.Clear();
 
 	uint32_t nFrameBufferCount = 1;
 
@@ -1005,7 +1031,6 @@ inline void SubScene::UpdateMVPUBO(const uint32_t& nFrameIndex)
 	axisCorrection[3][3] = 1.0f;
 
 	// Update local projection matrix.
-	m_localMVPData.m_model = glm::mat4();
 	m_localMVPData.m_proj = axisCorrection * glm::perspective(45.0f, static_cast<float>(m_nWidth) / static_cast<float>(m_nHeight), 0.1f, 1000.0f);
 
 	uint32_t nBufferSize = sizeof(MVPUniformBuffer);

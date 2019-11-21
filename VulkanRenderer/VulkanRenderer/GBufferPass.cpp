@@ -41,8 +41,9 @@ GBufferPass::~GBufferPass()
 
 void GBufferPass::RecordCommandBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, const VkFramebuffer& framebuffer, const VkCommandBuffer transferCmdBuf)
 {
-	// Set inheritence framebuffer.
+	// Set inheritence framebuffer & render pass.
 	m_inheritanceInfo.framebuffer = framebuffer;
+	m_inheritanceInfo.renderPass = m_renderPass;
 
 	VkCommandBuffer cmdBuf = m_cmdBuffers[nFrameIndex];
 
@@ -73,4 +74,13 @@ void GBufferPass::RecordCommandBuffer(const uint32_t& nPresentImageIndex, const 
 
 	// End recording...
 	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuf), "GBufferPass Error: Failed to end recording of draw commands.");
+}
+
+void GBufferPass::OnOutputResize(const RenderModuleResizeData& resizeData)
+{
+	// Update render pass handle.
+	m_renderPass = resizeData.m_renderPass;
+
+	// Update MVP UBO descriptor sets.
+	std::memcpy(m_mvpUBODescSets, resizeData.m_mvpUBOSets, sizeof(VkDescriptorSet) * MAX_FRAMES_IN_FLIGHT);
 }

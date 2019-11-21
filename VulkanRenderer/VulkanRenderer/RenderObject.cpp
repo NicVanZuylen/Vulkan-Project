@@ -399,7 +399,7 @@ void RenderObject::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertex
 		m_pipelineData = pipelineData;
 
 		// Add pipeline data to the subscene it will be rendered in.
-		m_subScene->AddPipeline(pipelineData, m_nameID);
+		m_subScene->AddPipeline(pipelineData);
 	}
 
 	// Get descriptor layouts for MVP UBO & Material properties

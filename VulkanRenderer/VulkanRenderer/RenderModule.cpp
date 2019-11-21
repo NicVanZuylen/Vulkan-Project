@@ -19,6 +19,11 @@ RenderModule::~RenderModule()
 
 }
 
+void RenderModule::OnOutputResize(const RenderModuleResizeData& resizeData)
+{
+	m_renderPass = resizeData.m_renderPass;
+}
+
 const VkCommandBuffer* RenderModule::GetCommandBuffer(unsigned int nBufferIndex)
 {
 	return &m_cmdBuffers[nBufferIndex];

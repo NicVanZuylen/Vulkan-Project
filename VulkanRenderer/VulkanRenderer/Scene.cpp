@@ -24,7 +24,7 @@ Scene::Scene(Renderer* renderer, uint32_t nWindowWidth, uint32_t nWindowHeight, 
 	CreateSyncObjects();
 
 	SubSceneParams params;
-	params.eAttachmentBits = (EGBufferAttachmentTypeBit)(GBUFFER_COLOR_BIT | GBUFFER_DEPTH_BIT | GBUFFER_POSITION_BIT | GBUFFER_NORMAL_BIT);
+	params.eAttachmentBits = (EGBufferAttachmentTypeBit)(GBUFFER_COLOR_BIT | GBUFFER_COLOR_HDR_BIT | GBUFFER_DEPTH_BIT | GBUFFER_POSITION_BIT | GBUFFER_NORMAL_BIT);
 	params.m_bOutputHDR = false;
 	params.m_bPrimary = true;
 	params.m_dirLightShader = m_dirLightShader;
@@ -62,6 +62,27 @@ Scene::~Scene()
 	}
 }
 
+void Scene::ResizeOutput(const uint32_t nWidth, const uint32_t nHeight)
+{
+	VkDevice device = m_renderer->GetDevice();
+
+	// Reset sync objects.
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
+	{
+		vkDestroySemaphore(device, m_renderFinishedSemaphores[i], nullptr);
+		vkDestroySemaphore(device, m_transferCompleteSemaphores[i], nullptr);
+	}
+
+	CreateSyncObjects();
+
+	m_primarySubscene->ResizeOutput(nWidth, nHeight);
+}
+
+void Scene::UpdateCameraView(const glm::mat4& view, const glm::vec4& v4ViewPos)
+{
+	m_primarySubscene->UpdateCameraView(view, v4ViewPos);
+}
+
 SubScene* Scene::GetPrimarySubScene()
 {
 	return m_primarySubscene;
@@ -77,7 +98,6 @@ void Scene::DrawSubscenes(const uint32_t& nPresentImageIndex, const uint64_t nEl
 	// ---------------------------------------------------------------------------------
 	// Frame indices
 
-	//m_nFrameIndex = m_nElapsedFrames++ % MAX_FRAMES_IN_FLIGHT;
 	uint32_t nTransferFrameIndex = (nElapsedFrames - 2) % MAX_FRAMES_IN_FLIGHT;
 
 	VkDevice device = m_renderer->GetDevice();

@@ -60,9 +60,6 @@ public:
 	// Submit a copy operation to the GPU.
 	void SubmitCopyOperation(VkCommandBuffer commandBuffer);
 
-	// Request a dedicated transfer operation.
-	void RequestCopy(const CopyRequest& request);
-
 	// End the main render pass.
 	void End();
 
@@ -232,14 +229,12 @@ private:
     // -------------------------------------------------------------------------------------------------
 	// Rendering
 
-	DynamicArray<VkSemaphore> m_imageAvailableSemaphores;
-	DynamicArray<VkFence> m_inFlightFences;
+	VkSemaphore m_imageAvailableSemaphores[MAX_FRAMES_IN_FLIGHT];
+	VkFence m_inFlightFences[MAX_FRAMES_IN_FLIGHT];
 	uint64_t m_nElapsedFrames;
 	uint32_t m_nFrameIndex;
 	uint32_t m_nPresentImageIndex;
 	
-	DynamicArray<DynamicArray<CopyRequest>> m_transferBuffers; // Arrays of transfer request buffer arrays for each frame in flight.
-
 	Scene* m_scene;
 
 	// -------------------------------------------------------------------------------------------------

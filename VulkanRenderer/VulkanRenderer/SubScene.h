@@ -86,7 +86,6 @@ struct PipelineDataPtr
 
 struct MVPUniformBuffer
 {
-	glm::mat4 m_model;
 	glm::mat4 m_view;
 	glm::mat4 m_proj;
 	glm::vec4 m_v4ViewPos;
@@ -108,6 +107,21 @@ public:
 	void CreateImages(EGBufferAttachmentTypeBit eImageBits);
 
 	/*
+	Description: Resize the output framebuffer of this subscene
+	Param:
+	    uint32_t nNewWidth: The new width of the rendering output.
+		uint32_t nNewHeight: The new height of the rendering output.
+	*/
+	void ResizeOutput(uint32_t nNewWidth, uint32_t nNewHeight);
+
+	/*
+	Description: Update the camera view matrix for this subscene.
+	Param:
+	    const glm::mat4& view
+	*/
+	void UpdateCameraView(const glm::mat4& view, const glm::vec4& v4ViewPos);
+
+	/*
 	Description: Record primary command buffer for this subscene.
 	Param:
 		const uint32_t nPresentImageIndex: Index of the swap chain image to render to.
@@ -120,9 +134,8 @@ public:
     Description: Add a graphics pipeline to this scene to render.
 	Param:
 	    PipelineData* pipeline: The pipeline to add.
-		const std::string& nameID: Unique name ID of the pipeline to add.
 	*/
-	void AddPipeline(PipelineData* pipeline, const std::string& nameID);
+	void AddPipeline(PipelineData* pipeline);
 
 	/*
 	Description: Get the command buffer handle at the specified index.
@@ -161,12 +174,12 @@ private:
 	/*
     Description: Create Camera MVP UBO descriptor sets
 	*/
-	inline void CreateMVPUBODescriptors();
+	inline void CreateMVPUBODescriptors(bool bCreateLayout = true);
 
 	/*
 	Description: Create Camera MVP UBO descriptor sets
 	*/
-	inline void CreateInputAttachmentDescriptors();
+	inline void CreateInputAttachmentDescriptors(bool bCreateLayout = true);
 
 	/*
 	Description: Update all descriptor sets to reference the correct resources.

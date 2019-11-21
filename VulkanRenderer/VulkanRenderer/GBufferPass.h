@@ -15,6 +15,8 @@ public:
 
 	void RecordCommandBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, const VkFramebuffer& framebuffer, const VkCommandBuffer transferCmdBuf) override;
 
+	void OnOutputResize(const RenderModuleResizeData& resizeData) override;
+
 private:
 
 	// ---------------------------------------------------------------------------------
