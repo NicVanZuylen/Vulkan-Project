@@ -157,9 +157,9 @@ private:
 
 	inline void CreateDescriptorSets();
 
-	inline void CreateDirLightingPipeline(const unsigned int& nWindowWidth, const unsigned int& nWindowHeight);
+	inline void CreateDirLightingPipeline(const unsigned int& nWindowWidth, const unsigned int& nWindowHeight, bool bCreateLayout = true);
 
-	inline void CreatePointLightingPipeline(const unsigned int& nWindowWidth, const unsigned int& nWindowHeight);
+	inline void CreatePointLightingPipeline(const unsigned int& nWindowWidth, const unsigned int& nWindowHeight, bool bCreateLayout = true);
 
 	// ---------------------------------------------------------------------------------
 	// Template Vulkan Structures

@@ -184,20 +184,17 @@ void LightingManager::UpdatePointLight(const PointLight& data, const unsigned in
 
 void LightingManager::RecreatePipelines(Shader* dirLightShader, Shader* pointLightShader, const unsigned int& nWindowWidth, const unsigned int& nWindowHeight)
 {
-	// Destroy pipelines.
+	// Destroy pipelines but not pipeline layouts.
 	vkDestroyPipeline(m_renderer->GetDevice(), m_dirLightPipeline, nullptr);
-	vkDestroyPipelineLayout(m_renderer->GetDevice(), m_dirLightPipelineLayout, nullptr);
-
 	vkDestroyPipeline(m_renderer->GetDevice(), m_pointLightPipeline, nullptr);
-	vkDestroyPipelineLayout(m_renderer->GetDevice(), m_pointLightPipelineLayout, nullptr);
 
 	// Set new shaders.
 	m_dirLightShader = dirLightShader;
 	m_pointLightShader = pointLightShader;
 
-	// Re-create pipelines.
-	CreateDirLightingPipeline(nWindowWidth, nWindowHeight);
-	CreatePointLightingPipeline(nWindowWidth, nWindowHeight);
+	// Re-create pipelines. Without re-creating the layouts.
+	CreateDirLightingPipeline(nWindowWidth, nWindowHeight, false);
+	CreatePointLightingPipeline(nWindowWidth, nWindowHeight, false);
 }
 
 void LightingManager::RecordCommandBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, const VkFramebuffer& framebuffer, const VkCommandBuffer transferCmdBuf)
@@ -405,7 +402,7 @@ void LightingManager::CreateDescriptorSets()
 	vkUpdateDescriptorSets(m_renderer->GetDevice(), 1, &dirLightUBOWrite, 0, nullptr);
 }
 
-void LightingManager::CreateDirLightingPipeline(const unsigned int& nWindowWidth, const unsigned int& nWindowHeight)
+void LightingManager::CreateDirLightingPipeline(const unsigned int& nWindowWidth, const unsigned int& nWindowHeight, bool bCreateLayout)
 {
 	// Vertex shader stage information.
 	VkPipelineShaderStageCreateInfo vertStageInfo = {};
@@ -524,14 +521,18 @@ void LightingManager::CreateDirLightingPipeline(const unsigned int& nWindowWidth
 
 	VkDescriptorSetLayout setLayouts[] = { m_mvpUBOSetLayout, m_gBufferSetLayout, m_dirLightUBOLayout };
 
-	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 3;
-	pipelineLayoutInfo.pSetLayouts = setLayouts; // Lighting pass descriptor sets...
-	pipelineLayoutInfo.pushConstantRangeCount = 0;
-	pipelineLayoutInfo.pPushConstantRanges = nullptr;
+	// Only create layout if allowed.
+	if (bCreateLayout)
+	{
+		VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipelineLayoutInfo.setLayoutCount = 3;
+		pipelineLayoutInfo.pSetLayouts = setLayouts; // Lighting pass descriptor sets...
+		pipelineLayoutInfo.pushConstantRangeCount = 0;
+		pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
-	RENDERER_SAFECALL(vkCreatePipelineLayout(m_renderer->GetDevice(), &pipelineLayoutInfo, nullptr, &m_dirLightPipelineLayout), "Renderer Error: Failed to create lighting graphics pipeline layout.");
+	    RENDERER_SAFECALL(vkCreatePipelineLayout(m_renderer->GetDevice(), &pipelineLayoutInfo, nullptr, &m_dirLightPipelineLayout), "Renderer Error: Failed to create lighting graphics pipeline layout.");
+	}
 
 	// Create pipeline.
 	VkGraphicsPipelineCreateInfo pipelineInfo = {};
@@ -555,7 +556,7 @@ void LightingManager::CreateDirLightingPipeline(const unsigned int& nWindowWidth
 	RENDERER_SAFECALL(vkCreateGraphicsPipelines(m_renderer->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_dirLightPipeline), "Renderer Error: Failed to create lighting graphics pipeline.");
 }
 
-inline void LightingManager::CreatePointLightingPipeline(const unsigned int& nWindowWidth, const unsigned int& nWindowHeight)
+inline void LightingManager::CreatePointLightingPipeline(const unsigned int& nWindowWidth, const unsigned int& nWindowHeight, bool bCreateLayout)
 {
 	// Vertex shader stage information.
 	VkPipelineShaderStageCreateInfo vertStageInfo = {};
@@ -697,14 +698,18 @@ inline void LightingManager::CreatePointLightingPipeline(const unsigned int& nWi
 
 	VkDescriptorSetLayout setLayouts[] = { m_mvpUBOSetLayout, m_gBufferSetLayout };
 
-	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 2;
-	pipelineLayoutInfo.pSetLayouts = setLayouts; // Lighting pass descriptor sets...
-	pipelineLayoutInfo.pushConstantRangeCount = 0;
-	pipelineLayoutInfo.pPushConstantRanges = nullptr;
+	// Only create layout if allowed.
+	if(bCreateLayout) 
+	{
+		VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipelineLayoutInfo.setLayoutCount = 2;
+		pipelineLayoutInfo.pSetLayouts = setLayouts; // Lighting pass descriptor sets...
+		pipelineLayoutInfo.pushConstantRangeCount = 0;
+		pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
-	RENDERER_SAFECALL(vkCreatePipelineLayout(m_renderer->GetDevice(), &pipelineLayoutInfo, nullptr, &m_pointLightPipelineLayout), "Renderer Error: Failed to create lighting graphics pipeline layout.");
+		RENDERER_SAFECALL(vkCreatePipelineLayout(m_renderer->GetDevice(), &pipelineLayoutInfo, nullptr, &m_pointLightPipelineLayout), "Renderer Error: Failed to create lighting graphics pipeline layout.");
+	}
 
 	// Create pipeline.
 	VkGraphicsPipelineCreateInfo pipelineInfo = {};

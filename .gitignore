@@ -391,3 +391,4 @@ ProjectNStream/ProjectNStream/CollisionManager - Copy.cpp
 GraphicsProject/GraphicsProject/x64/Debug/
 GraphicsProject/x64/
 VulkanRenderer/VulkanRenderer/Shaders/Raw/compile.bat
+VulkanRenderer/VulkanRenderer/VulkanRenderer.vcxproj

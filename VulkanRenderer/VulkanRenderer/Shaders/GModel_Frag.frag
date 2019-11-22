@@ -4,22 +4,26 @@
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outPos;
 layout(location = 2) out vec4 outNormal;
+layout(location = 3) out vec4 outEmission;
 
-layout(set = 1, binding = 0) uniform sampler2D textures[2];
+layout(set = 1, binding = 0) uniform sampler2D textures[3];
 
-layout(location = 0) in vec4 finalPos;
-layout(location = 1) in vec4 finalNormal;
-layout(location = 2) in vec2 finalTexCoords;
+layout(location = 0) in vec4 f_finalPos;
+layout(location = 1) in vec2 f_texCoords;
+layout(location = 2) in mat3 f_tbn;
 
 void main() 
 {
     // Color G Buffer output.
-    outColor = texture(textures[0], finalTexCoords) * texture(textures[1], finalTexCoords);
+    outColor = texture(textures[0], f_texCoords);
 
     // Position G Buffer ouput.
-    outPos = finalPos;
+    outPos = f_finalPos;
 
     // Normal G Buffer output.
-    outNormal = finalNormal;
+    outNormal = vec4(normalize(f_tbn * (texture(textures[1], f_texCoords).xyz * 2.0f - 1.0f)), 1.0f);
+
+	// Emissive output.
+	outEmission = texture(textures[2], f_texCoords);
 }
 

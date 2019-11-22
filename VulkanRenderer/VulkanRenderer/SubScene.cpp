@@ -208,7 +208,7 @@ SubScene::SubScene(SubSceneParams& params)
 	m_bOutputHDR = params.m_bOutputHDR;
 
 	// Create images that will be rendered to.
-	CreateImages(params.eAttachmentBits);
+	CreateImages(params.eAttachmentBits, params.m_miscGAttachments);
 
 	// Create MVP UBO buffers
 	CreateMVPUBOBuffers();
@@ -308,7 +308,7 @@ SubScene::~SubScene()
 	    delete m_outImage;
 }
 
-void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits)
+void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicArray<MiscGBufferDesc>& miscGAttachments)
 {
 	// Remove existing images.
 	for(int i = 0; i < m_allImages.Count(); ++i) 
@@ -317,6 +317,7 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits)
 	CreateOutputImage();
 
 	m_gBufferImages.Clear();
+	m_gBufferImages.SetSize(3 + miscGAttachments.Count());
 	m_depthImage = nullptr;
 
 	m_clearValues.Clear();
@@ -360,6 +361,45 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits)
 		m_clearValues.Push(clearVal);
 	}
 
+	m_miscGAttachments = miscGAttachments;
+
+	// Create misc G buffer images...
+	for (uint32_t i = 0; i < m_miscGAttachments.Count(); ++i)
+	{
+		Texture* miscTex = nullptr;
+
+		// Create image with provided format.
+		switch (m_miscGAttachments[i].m_eType)
+		{
+		case EMiscGBufferType::GBUFFER_MISC_8_BIT:
+			miscTex = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_UNORM, true);
+			break;
+
+		case EMiscGBufferType::GBUFFER_MISC_16_BIT_FLOAT:
+			miscTex = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true);
+			break;
+
+		case EMiscGBufferType::GBUFFER_MISC_32_BIT_FLOAT:
+			miscTex = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R32G32B32_SFLOAT, true);
+			break;
+
+		default:
+
+			break;
+		}
+
+		// Add new image to G buffer image array.
+		if (miscTex)
+		{
+			m_gBufferImages.Push(miscTex);
+
+			glm::vec4 v4ClearColor = m_miscGAttachments[i].m_v4ClearColor;
+
+			// Add corresponding clear value.
+			m_clearValues.Push({ v4ClearColor.x, v4ClearColor.y, v4ClearColor.z, v4ClearColor.w });
+		}
+	}
+
 	if (eImageBits & GBUFFER_DEPTH_BIT)
 	{
 		// Specify pool of depth formats and find the best available format.
@@ -375,6 +415,7 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits)
 
 	// Update images array.
 	m_allImages.Clear();
+	m_allImages.SetSize(2 + m_gBufferImages.Count());
 
 	if(!m_bPrimary)
 	    m_allImages.Push(m_outImage);
@@ -404,7 +445,7 @@ void SubScene::ResizeOutput(uint32_t nNewWidth, uint32_t nNewHeight)
 	// Re-creation
 
 	CreateOutputImage();
-	CreateImages(m_eGBufferImageBits); // Re-create subscene image.
+	CreateImages(m_eGBufferImageBits, m_miscGAttachments); // Re-create subscene image.
 	CreateRenderPass(); // Re-create render pass.
 	CreateFramebuffers(); // Re-create framebuffers.
 	CreateMVPUBODescriptors(false); // Re-create descriptor sets for the MVP UBO buffers.
@@ -461,6 +502,11 @@ Table<PipelineDataPtr>& SubScene::GetPipelineTable()
 GBufferPass* SubScene::GetGBufferPass()
 {
 	return m_gPass;
+}
+
+const uint32_t& SubScene::GetGBufferCount() 
+{
+	return m_gBufferImages.Count();
 }
 
 LightingManager* SubScene::GetLightingManager()

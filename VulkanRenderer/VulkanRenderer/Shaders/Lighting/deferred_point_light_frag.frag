@@ -47,7 +47,7 @@ void main()
 
     // Add to final lighting.
     vec3 lighting = normalDotLight * finalLightColor * BRIGHTNESS_MULT; // Lighting component.
-    lighting += pow(specTerm, SPECULAR_EXPONENT) * SPECULAR_POWER * finalLightColor;
+    lighting += pow(specTerm, SPECULAR_EXPONENT) * SPECULAR_POWER * finalLightColor * normalDotLight;
 
     outColor = vec4(color.rgb * lighting * attenuation, 1.0f); // Multiply color by lighting level as output.
 }

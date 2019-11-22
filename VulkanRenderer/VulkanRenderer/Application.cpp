@@ -86,9 +86,12 @@ void Application::Run()
 	// Load textures.
 	Texture* testTexture = new Texture(m_renderer, "Assets/Objects/Metal/diffuse.tga");
 	Texture* testTexture2 = new Texture(m_renderer, "Assets/Objects/Metal/normal.tga");
+	Texture* testTexture3 = new Texture(m_renderer, "Assets/Objects/Metal/glow.tga");
+	//Texture* testTexture = new Texture(m_renderer, "Assets/Objects/Viking Tiles/Base_basecolor.tga");
+	//Texture* testTexture2 = new Texture(m_renderer, "Assets/Objects/Viking Tiles/Base_normal.tga");
 
 	// Construct materials
-	Material* testMat = new Material(m_renderer, modelShader, { testTexture, testTexture2 });
+	Material* testMat = new Material(m_renderer, modelShader, { testTexture, testTexture2, testTexture3 });
 
 	// Load meshes.
 	Mesh* bunnyMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Bunny.obj");
@@ -96,7 +99,7 @@ void Application::Run()
 	Mesh* planeMesh = new Mesh(m_renderer, "Assets/Primitives/plane.obj");
 
 	// Create render objects.
-	RenderObject* bunnyObj = new RenderObject(scene, bunnyMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 100);
+	//RenderObject* bunnyObj = new RenderObject(scene, bunnyMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 100);
 	RenderObject* sphereObj = new RenderObject(scene, sphereMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 100);
 	RenderObject* floorObj = new RenderObject(scene, planeMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 1);
 
@@ -117,7 +120,8 @@ void Application::Run()
 	sphereObj->SetInstance(0, ins);
 
 	// Double floor object scale.
-	ins.m_modelMat = glm::scale(glm::mat4(), glm::vec3(2.0f, 1.0f, 2.0f));
+	//ins.m_modelMat = glm::rotate(glm::mat4(), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	ins.m_modelMat = glm::scale(glm::mat4(), glm::vec3(5.0f, 5.0f, 5.0f));
 
 	floorObj->SetInstance(0, ins);
 
@@ -127,13 +131,13 @@ void Application::Run()
 	LightingManager* lightManager = subScene->GetLightingManager();
 
 	// Update directional lights.
-	//lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)), glm::vec4(1.0f) });
+	lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(1.0f, 0.8f, 0.5f, 1.0f) });
 	//lightManager->AddDirLight({ glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
 	// Add point lights to the scene.
-	lightManager->AddPointLight({ glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), 3.0f });
-	lightManager->AddPointLight({ glm::vec4(-3.0f, 3.5f, 3.5f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 3.0f });
-	lightManager->AddPointLight({ glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f });
+	//lightManager->AddPointLight({ glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(1.0f), 10.0f });
+	//lightManager->AddPointLight({ glm::vec4(-3.0f, 3.5f, 3.5f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 3.0f });
+	//lightManager->AddPointLight({ glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f });
 
 	while(!glfwWindowShouldClose(m_window)) 
 	{
@@ -183,7 +187,7 @@ void Application::Run()
 
 		// Rotate bunny model.
 		bunnyIns.m_modelMat = glm::rotate(glm::mat4(), fElapsedTime, glm::vec3(0.0f, 1.0f, 0.0f));
-		bunnyObj->SetInstance(0, bunnyIns);
+		floorObj->SetInstance(0, bunnyIns);
 
 		// Draw...
 		m_renderer->Begin();
@@ -195,8 +199,8 @@ void Application::Run()
 
 			instanceModelMat = glm::translate(instanceModelMat, glm::vec3(0.0f, 0.0f, -3.0f));
 
-			Instance newInstance = { instanceModelMat };
-			bunnyObj->AddInstance(newInstance);
+			//Instance newInstance = { instanceModelMat };
+			//bunnyObj->AddInstance(newInstance);
 		}
 
 		glm::mat4 viewMat = camera.GetViewMatrix();
@@ -242,11 +246,11 @@ void Application::Run()
 		}
 	}
 
-
+	delete testTexture3;
 	delete testTexture2;
 	delete testTexture;
 
-	delete bunnyObj;
+	//delete bunnyObj;
 	delete sphereObj;
 	delete floorObj;
 

@@ -6,7 +6,10 @@
 #include "Renderer.h"
 #include "SubScene.h"
 
-DynamicArray<EVertexAttribute> RenderObject::m_defaultInstanceAttributes = { VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4 };
+DynamicArray<EVertexAttribute> RenderObject::m_defaultInstanceAttributes = 
+{ 
+	VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, VERTEX_ATTRIB_FLOAT4, // Model matrix
+};
 
 RenderObject::RenderObject(Scene* scene, Mesh* mesh, Material* material, DynamicArray<EVertexAttribute>* instanceAttributes, uint32_t nMaxInstanceCount, uint32_t nSubScenebits)
 {
@@ -145,35 +148,8 @@ void RenderObject::UpdateInstanceData(VkCommandBuffer cmdBuffer)
 	insCopyRegion.dstOffset = 0;
 	insCopyRegion.size = sizeof(Instance) * m_nInstanceCount;
 
+	// Record copy command.
 	vkCmdCopyBuffer(cmdBuffer, m_instanceStagingBuffer, m_instanceBuffer, 1, &insCopyRegion);
-
-	// Create and submit copy request.
-	//CopyRequest bufferCopyRequest = { m_instanceStagingBuffer, m_instanceBuffer, insCopyRegion };
-	//m_renderer->RequestCopy(bufferCopyRequest);
-
-	/*
-	Renderer::TempCmdBuffer tempCmdBuf = m_renderer->CreateTempCommandBuffer();
-
-	VkCommandBufferBeginInfo beginInfo = {};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = 0;
-	beginInfo.pInheritanceInfo = nullptr;
-	beginInfo.pNext = nullptr;
-
-	vkBeginCommandBuffer(tempCmdBuf.m_handle, &beginInfo);
-
-	VkBufferCopy copyRegion;
-	copyRegion.srcOffset = 0;
-	copyRegion.dstOffset = 0;
-	copyRegion.size = sizeof(Instance) * m_nInstanceCount;
-
-	vkCmdCopyBuffer(tempCmdBuf.m_handle, m_instanceStagingBuffer, m_instanceBuffer, 1, &copyRegion);
-
-	vkEndCommandBuffer(tempCmdBuf.m_handle);
-
-	m_renderer->UseAndDestroyTempCommandBuffer(tempCmdBuf);
-	*/
-	
 
 	m_bInstancesModified = false;
 }
@@ -370,14 +346,18 @@ void RenderObject::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertex
 	colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
 	colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
-	VkPipelineColorBlendAttachmentState colorBlendAttachments[] = { colorBlendAttachment, colorBlendAttachment, colorBlendAttachment };
+	uint32_t nGBufferCount = m_subScene->GetGBufferCount();
+
+	DynamicArray<VkPipelineColorBlendAttachmentState> colorBlendAttachments(nGBufferCount, 1);
+	for (int i = 0; i < nGBufferCount; ++i)
+		colorBlendAttachments.Push(colorBlendAttachment);
 
 	VkPipelineColorBlendStateCreateInfo colorBlending = {};
 	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 	colorBlending.logicOpEnable = VK_FALSE;
 	colorBlending.logicOp = VK_LOGIC_OP_COPY;
-	colorBlending.attachmentCount = 3; // Blending for Color, Positions, and Normals attachments.
-	colorBlending.pAttachments = colorBlendAttachments;
+	colorBlending.attachmentCount = nGBufferCount; // Blending for Color, Positions, and Normals attachments.
+	colorBlending.pAttachments = colorBlendAttachments.Data();
 	colorBlending.blendConstants[0] = 0.0f;
 	colorBlending.blendConstants[1] = 0.0f;
 	colorBlending.blendConstants[2] = 0.0f;

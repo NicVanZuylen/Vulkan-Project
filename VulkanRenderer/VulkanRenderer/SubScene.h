@@ -36,19 +36,10 @@ enum EMiscGBufferType
 	GBUFFER_MISC_32_BIT_FLOAT
 };
 
-enum EGBufferChannels 
-{
-	GBUFFER_CHANNEL_R,
-	GBUFFER_CHANNEL_RG,
-	GBUFFER_CHANNEL_RGB,
-	GBUFFER_CHANNEL_RGBA
-};
-
-struct MiscGBufferDescription 
+struct MiscGBufferDesc 
 {
 	EMiscGBufferType m_eType;
-	EGBufferChannels m_eChannels;
-	bool m_bInput;
+	glm::vec4 m_v4ClearColor;
 };
 
 struct SubSceneParams 
@@ -60,6 +51,7 @@ struct SubSceneParams
 	Shader* m_dirLightShader;
 	Shader* m_pointLightShader;
 	EGBufferAttachmentTypeBit eAttachmentBits;
+	DynamicArray<MiscGBufferDesc> m_miscGAttachments; // Misc G-Buffer attachments to add.
 	bool m_bPrimary;
 	bool m_bOutputHDR;
 };
@@ -103,8 +95,9 @@ public:
 	Description: Set which G Buffer images this Subscene will create & use. 
 	Param:
 	    EGBufferImageTypeBit eImageBits: Bit field of the images to create & use for rendering.
+		const DynamicArray<EMiscGBufferType>& miscGBuffers: Formats for extra g buffer images to create.
     */
-	void CreateImages(EGBufferAttachmentTypeBit eImageBits);
+	void CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicArray<MiscGBufferDesc>& miscGBuffers);
 
 	/*
 	Description: Resize the output framebuffer of this subscene
@@ -151,6 +144,8 @@ public:
 	Table<PipelineDataPtr>& GetPipelineTable();
 
 	GBufferPass* GetGBufferPass();
+
+	const uint32_t& GetGBufferCount();
 
 	LightingManager* GetLightingManager();
 
@@ -302,6 +297,7 @@ private:
 	// Render target images.
 
 	EGBufferAttachmentTypeBit m_eGBufferImageBits;
+	DynamicArray<MiscGBufferDesc> m_miscGAttachments;
 
 	Texture* m_colorImage;
 	Texture* m_depthImage;
