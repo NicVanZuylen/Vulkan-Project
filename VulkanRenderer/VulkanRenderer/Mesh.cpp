@@ -396,8 +396,8 @@ void Mesh::LoadOBJ(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned 
 
 	int chunkCount = static_cast<int>(shapes.size());
 
-	int nTotalVertexCount = 0;
-	int nTotalIndexCount = 0;
+	size_t nTotalVertexCount = 0;
+	size_t nTotalIndexCount = 0;
 
 	// Determine size of whole mesh and allocate memory.
 	for (int i = 0; i < chunkCount; ++i)
@@ -406,8 +406,8 @@ void Mesh::LoadOBJ(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned 
 		nTotalIndexCount += shapes[i].mesh.indices.size();
 	}
 
-	vertices.SetSize(nTotalVertexCount);
-	indices.SetSize(nTotalIndexCount);
+	vertices.SetSize(static_cast<uint32_t>(nTotalVertexCount));
+	indices.SetSize(static_cast<uint32_t>(nTotalIndexCount));
 
 	for (int i = 0; i < chunkCount; ++i)
 	{

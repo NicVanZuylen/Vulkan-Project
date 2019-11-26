@@ -6,10 +6,12 @@ layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outPos;
 layout(location = 2) out vec4 outNormal;
 layout(location = 3) out vec4 outEmission;
+layout(location = 4) out vec4 outRoughness;
 
 layout(set = 1, binding = 0) uniform Properties 
 {
     vec4 colorTint;
+	float roughness;
 } properties;
 
 layout(set = 1, binding = 1) uniform sampler2D textures[3];
@@ -30,6 +32,9 @@ void main()
     outNormal = vec4(normalize(f_tbn * (texture(textures[1], f_texCoords).xyz * 2.0f - 1.0f)), 1.0f);
 
 	// Emissive output.
-	outEmission = vec4(texture(textures[2], f_texCoords).rgb, 1.0f);
+	outEmission = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+
+	// Roughness output.
+	outRoughness = vec4(properties.roughness, 0.0f, 0.0f, 1.0f);
 }
 

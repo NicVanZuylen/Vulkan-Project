@@ -25,7 +25,7 @@ enum EMatPropType
 struct MaterialProperty 
 {
 	EMatPropType type;
-	std::string name;
+	const char* name;
 };
 
 class Material
@@ -74,15 +74,15 @@ public:
 	*/
 	void SetSampler(Sampler* sampler);
 
-	void SetFloat(const std::string& name, float fVal);
-	void SetFloat2(const std::string& name, const float* fVal);
-	void SetFloat3(const std::string& name, const float* fVal);
-	void SetFloat4(const std::string& name, const float* fVal);
+	void SetFloat(const char*name, float fVal);
+	void SetFloat2(const char* name, const float* fVal);
+	void SetFloat3(const char* name, const float* fVal);
+	void SetFloat4(const char* name, const float* fVal);
 
-	float GetFloat(const std::string& name);
-	glm::vec2 GetFloat2(const std::string& name);
-	glm::vec3 GetFloat3(const std::string& name);
-	glm::vec4 GetFloat4(const std::string& name);
+	float GetFloat(const char* name);
+	glm::vec2 GetFloat2(const char* name);
+	glm::vec3 GetFloat3(const char* name);
+	glm::vec4 GetFloat4(const char* name);
 
 	/*
 	Description: Get a reference to the shader used by this material.
@@ -118,9 +118,9 @@ private:
     Description: Add a property to this material accessible in it's shaders.
 	Param:
         EMatPropType type: The data type of the property to add.
-        const std::string& name: The name of the material property.
+        const char* name: The name of the material property.
     */
-	void AddProperty(EMatPropType type, const std::string& name);
+	void AddProperty(EMatPropType type, const char* name);
 
 	// Create material property uniform buffer.
 	inline void CreateMatPropertyUBO();

@@ -186,13 +186,17 @@ void Material::AddTextureMap(Texture* texture)
 	m_textures.Push(texture);
 }
 
-void Material::AddProperty(EMatPropType type, const std::string& name)
+void Material::AddProperty(EMatPropType type, const char* name)
 {
 	// Allocate memory for the property.
-	m_matPropSearchIndices[name.c_str()] = m_matPropData.Count(); // Assign search index.
+	m_matPropSearchIndices[name] = m_matPropData.Count(); // Assign search index.
 
 	// Allocate property memory.
-	m_matPropData.SetSize(m_matPropData.GetSize() + ((type + 1) * sizeof(float)));
+	uint32_t nSize = m_matPropData.GetSize();
+	if (nSize == 1)
+		nSize = 0;
+
+	m_matPropData.SetSize(nSize + ((type + 1) * sizeof(float)));
 	m_matPropData.SetCount(m_matPropData.GetSize());
 }
 
@@ -206,9 +210,9 @@ inline void Material::CreateMatPropertyUBO()
 	}
 }
 
-void Material::SetFloat(const std::string& name, float fVal)
+void Material::SetFloat(const char* name, float fVal)
 {
-	int nDataIndex = m_matPropSearchIndices[name.c_str()];
+	int nDataIndex = m_matPropSearchIndices[name];
 
 	// Find value pointer.
 	float* ptr = (float*)(&m_matPropData[nDataIndex]);
@@ -217,9 +221,9 @@ void Material::SetFloat(const std::string& name, float fVal)
 	m_nUpdateProperties = MAX_FRAMES_IN_FLIGHT;
 }
 
-void Material::SetFloat2(const std::string& name, const float* fVal)
+void Material::SetFloat2(const char* name, const float* fVal)
 {
-	int nDataIndex = m_matPropSearchIndices[name.c_str()];
+	int nDataIndex = m_matPropSearchIndices[name];
 
 	// Find value pointer.
 	char* ptr = &m_matPropData[nDataIndex];
@@ -230,9 +234,9 @@ void Material::SetFloat2(const std::string& name, const float* fVal)
 	m_nUpdateProperties = MAX_FRAMES_IN_FLIGHT;
 }
 
-void Material::SetFloat3(const std::string& name, const float* fVal)
+void Material::SetFloat3(const char* name, const float* fVal)
 {
-	int nDataIndex = m_matPropSearchIndices[name.c_str()];
+	int nDataIndex = m_matPropSearchIndices[name];
 
 	// Find value pointer.
 	char* ptr = &m_matPropData[nDataIndex];
@@ -243,9 +247,9 @@ void Material::SetFloat3(const std::string& name, const float* fVal)
 	m_nUpdateProperties = MAX_FRAMES_IN_FLIGHT;
 }
 
-void Material::SetFloat4(const std::string& name, const float* fVal)
+void Material::SetFloat4(const char* name, const float* fVal)
 {
-	int nDataIndex = m_matPropSearchIndices[name.c_str()];
+	int nDataIndex = m_matPropSearchIndices[name];
 
 	// Find value pointer.
 	char* ptr = &m_matPropData[nDataIndex];
@@ -256,36 +260,36 @@ void Material::SetFloat4(const std::string& name, const float* fVal)
 	m_nUpdateProperties = MAX_FRAMES_IN_FLIGHT;
 }
 
-float Material::GetFloat(const std::string& name)
+float Material::GetFloat(const char* name)
 {
-	int nDataIndex = m_matPropSearchIndices[name.c_str()];
+	int nDataIndex = m_matPropSearchIndices[name];
 
 	// Find value pointer.
 	float* ptr = (float*)(&m_matPropData[nDataIndex]);
 	return *ptr;
 }
 
-glm::vec2 Material::GetFloat2(const std::string& name)
+glm::vec2 Material::GetFloat2(const char* name)
 {
-	int nDataIndex = m_matPropSearchIndices[name.c_str()];
+	int nDataIndex = m_matPropSearchIndices[name];
 
 	// Find value pointer.
 	glm::vec2* ptr = (glm::vec2*)(&m_matPropData[nDataIndex]);
 	return *ptr;
 }
 
-glm::vec3 Material::GetFloat3(const std::string& name)
+glm::vec3 Material::GetFloat3(const char* name)
 {
-	int nDataIndex = m_matPropSearchIndices[name.c_str()];
+	int nDataIndex = m_matPropSearchIndices[name];
 
 	// Find value pointer.
 	glm::vec3* ptr = (glm::vec3*)(&m_matPropData[nDataIndex]);
 	return *ptr;
 }
 
-glm::vec4 Material::GetFloat4(const std::string& name)
+glm::vec4 Material::GetFloat4(const char* name)
 {
-	int nDataIndex = m_matPropSearchIndices[name.c_str()];
+	int nDataIndex = m_matPropSearchIndices[name];
 
 	// Find value pointer.
 	glm::vec4* ptr = (glm::vec4*)(&m_matPropData[nDataIndex]);
