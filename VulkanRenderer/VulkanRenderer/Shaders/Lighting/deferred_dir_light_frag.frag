@@ -30,9 +30,10 @@ layout(set = 2, binding = 0) uniform DirectionalLightArray
     GlobalDirLightData globalData;
 } dirLights;
 
+#define DIFFUSE_POWER 1
 #define BRIGHTNESS_MULT 1
-#define SPECULAR_FOCUS 8
-#define SPECULAR_POWER 5
+#define SPECULAR_FOCUS 32
+#define SPECULAR_POWER 3
 
 layout(location = 0) out vec4 outColor;
 
@@ -65,10 +66,10 @@ void main()
         float specTerm = max(dot(lightReflected, viewDir), 0.0f);
 
         // Add to final lighting.
-        vec3 diffuse = normalDotLight * lightColor.rgb * BRIGHTNESS_MULT; // Lighting component.
+        vec3 diffuse = normalDotLight * lightColor.rgb * DIFFUSE_POWER; // Lighting component.
         vec3 spec = pow(specTerm, SPECULAR_FOCUS) * SPECULAR_POWER * lightColor.rgb * normalDotLight;
 
-		lighting += diffuse + spec;
+		lighting += (diffuse + spec) * BRIGHTNESS_MULT;
     }
 
     outColor = vec4(color.rgb * lighting, 1.0f); // Multiply color by lighting level as output.

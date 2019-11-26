@@ -396,6 +396,19 @@ void Mesh::LoadOBJ(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned 
 
 	int chunkCount = static_cast<int>(shapes.size());
 
+	int nTotalVertexCount = 0;
+	int nTotalIndexCount = 0;
+
+	// Determine size of whole mesh and allocate memory.
+	for (int i = 0; i < chunkCount; ++i)
+	{
+		nTotalVertexCount += shapes[i].mesh.positions.size();
+		nTotalIndexCount += shapes[i].mesh.indices.size();
+	}
+
+	vertices.SetSize(nTotalVertexCount);
+	indices.SetSize(nTotalIndexCount);
+
 	for (int i = 0; i < chunkCount; ++i)
 	{
 		tinyobj::shape_t& shape = shapes[i];
@@ -405,12 +418,20 @@ void Mesh::LoadOBJ(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned 
 		memcpy_s(chunkIndices.Data(), sizeof(unsigned int) * chunkIndices.GetSize(), shape.mesh.indices.data(), sizeof(unsigned int) * shape.mesh.indices.size());
 
 		// Append chunk indices to whole mesh indices...
-		indices.SetSize(indices.Count() + static_cast<unsigned int>(shape.mesh.indices.size()));
+		if(i == 0) // The indices can be copied for the first submesh, since they do not need to be offset by vertex count.
+		{
+			indices.SetSize(indices.Count() + static_cast<unsigned int>(shape.mesh.indices.size()));
 
-		int chunkIndicesSize = sizeof(unsigned int) * static_cast<unsigned int>(shape.mesh.indices.size());
-		memcpy_s(&indices.Data()[indices.Count()], chunkIndicesSize, shape.mesh.indices.data(), chunkIndicesSize);
+			int chunkIndicesSize = sizeof(unsigned int) * static_cast<unsigned int>(shape.mesh.indices.size());
+			memcpy_s(&indices.Data()[indices.Count()], chunkIndicesSize, shape.mesh.indices.data(), chunkIndicesSize);
 
-		indices.SetCount(indices.GetSize());
+			indices.SetCount(indices.GetSize());
+		}
+		else // Other wise they need to be pushed one by one with the vertex count offset.
+		{
+			for (int i = 0; i < shape.mesh.indices.size(); ++i)
+				indices.Push(shape.mesh.indices[i] + vertices.Count());
+		}
 
 		// Set up chunk vertices and add to whole mesh vertices.
 		DynamicArray<ComplexVertex> chunkVertices;

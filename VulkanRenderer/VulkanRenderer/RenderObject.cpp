@@ -349,7 +349,7 @@ void RenderObject::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertex
 	uint32_t nGBufferCount = m_subScene->GetGBufferCount();
 
 	DynamicArray<VkPipelineColorBlendAttachmentState> colorBlendAttachments(nGBufferCount, 1);
-	for (int i = 0; i < nGBufferCount; ++i)
+	for (uint32_t i = 0; i < nGBufferCount; ++i)
 		colorBlendAttachments.Push(colorBlendAttachment);
 
 	VkPipelineColorBlendStateCreateInfo colorBlending = {};

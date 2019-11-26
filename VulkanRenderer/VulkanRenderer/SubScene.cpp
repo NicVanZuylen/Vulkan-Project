@@ -311,7 +311,7 @@ SubScene::~SubScene()
 void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicArray<MiscGBufferDesc>& miscGAttachments)
 {
 	// Remove existing images.
-	for(int i = 0; i < m_allImages.Count(); ++i) 
+	for(uint32_t i = 0; i < m_allImages.Count(); ++i) 
 		delete m_allImages[i];
 
 	CreateOutputImage();
@@ -453,7 +453,7 @@ void SubScene::ResizeOutput(uint32_t nNewWidth, uint32_t nNewHeight)
 	UpdateAllDescriptorSets(); // Update descriptors in the sets.
 
 	// Re-create pipelines.
-	for (int i = 0; i < m_allPipelines.Count(); ++i)
+	for (uint32_t i = 0; i < m_allPipelines.Count(); ++i)
 		m_allPipelines[i]->m_renderObjects[0]->RecreatePipeline();
 
 	// Have modules re-create resources if necessary & give them the updated descriptor sets.
@@ -504,7 +504,7 @@ GBufferPass* SubScene::GetGBufferPass()
 	return m_gPass;
 }
 
-const uint32_t& SubScene::GetGBufferCount() 
+const uint32_t SubScene::GetGBufferCount() 
 {
 	return m_gBufferImages.Count();
 }

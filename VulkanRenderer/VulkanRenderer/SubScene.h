@@ -145,7 +145,7 @@ public:
 
 	GBufferPass* GetGBufferPass();
 
-	const uint32_t& GetGBufferCount();
+	const uint32_t GetGBufferCount();
 
 	LightingManager* GetLightingManager();
 

@@ -81,7 +81,8 @@ void Application::Run()
 	SubScene* subScene = scene->GetPrimarySubScene();
 
 	// Load shaders
-	Shader* modelShader = new Shader(m_renderer, "Shaders/SPIR-V/ModelIns_Vert.spv", "Shaders/SPIR-V/GModel_Frag.spv");
+	Shader* modelShader = new Shader(m_renderer, "Shaders/SPIR-V/vert_model_notex.spv", "Shaders/SPIR-V/frag_model_notex.spv");
+	Shader* floorShader = new Shader(m_renderer, "Shaders/SPIR-V/ModelIns_Vert.spv", "Shaders/SPIR-V/GModel_Frag.spv");
 
 	// Load textures.
 	Texture* testTexture = new Texture(m_renderer, "Assets/Objects/Metal/diffuse.tga");
@@ -91,17 +92,36 @@ void Application::Run()
 	//Texture* testTexture2 = new Texture(m_renderer, "Assets/Objects/Viking Tiles/Base_normal.tga");
 
 	// Construct materials
-	Material* testMat = new Material(m_renderer, modelShader, { testTexture, testTexture2, testTexture3 });
+	//Material* testMat = new Material
+	//(
+	//	m_renderer, 
+	//	modelShader, 
+	//	{ testTexture, testTexture2, testTexture3 },
+	//	{}
+	//);
+	Material* spinnerMat = new Material
+	(
+		m_renderer,
+		modelShader,
+		{},
+		{}
+	);
+	spinnerMat->SetFloat4("_ColorTint", glm::value_ptr(glm::vec4(0.5f, 0.5f, 0.5f, 1.0f)));
+
+	Material* floorMat = new Material(m_renderer, floorShader, { testTexture, testTexture2, testTexture3 }, {});
 
 	// Load meshes.
-	Mesh* bunnyMesh = new Mesh(m_renderer, "Assets/Objects/Stanford/Bunny.obj");
-	Mesh* sphereMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj");
 	Mesh* planeMesh = new Mesh(m_renderer, "Assets/Primitives/plane.obj");
+	Mesh* spinnerDetailsMesh = new Mesh(m_renderer, "Assets/Objects/Spinner/low_details.obj");
+	Mesh* spinnerGlassMesh = new Mesh(m_renderer, "Assets/Objects/Spinner/low_glass.obj");
+	Mesh* spinnerPaintMesh = new Mesh(m_renderer, "Assets/Objects/Spinner/low_paint.obj");
 
 	// Create render objects.
-	//RenderObject* bunnyObj = new RenderObject(scene, bunnyMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 100);
-	RenderObject* sphereObj = new RenderObject(scene, sphereMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 100);
-	RenderObject* floorObj = new RenderObject(scene, planeMesh, testMat, &RenderObject::m_defaultInstanceAttributes, 1);
+	RenderObject* floorObj = new RenderObject(scene, planeMesh, floorMat, &RenderObject::m_defaultInstanceAttributes, 1);
+
+	RenderObject* spinnerDetailsObj = new RenderObject(scene, spinnerDetailsMesh, spinnerMat, &RenderObject::m_defaultInstanceAttributes, 10);
+	RenderObject* spinnerGlassObj = new RenderObject(scene, spinnerGlassMesh, spinnerMat, &RenderObject::m_defaultInstanceAttributes, 10);
+	RenderObject* spinnerPaintObj = new RenderObject(scene, spinnerPaintMesh, spinnerMat, &RenderObject::m_defaultInstanceAttributes, 10);
 
 	// Time variables.
 	float fDeltaTime = 0.0f;	
@@ -110,19 +130,16 @@ void Application::Run()
 
 	Camera camera(glm::vec3(0.0f, 3.0f, 10.0f), glm::vec3(0.0f), 0.3f, 5.0f);
 	
-	Instance bunnyIns;
-
 	Instance ins;
 
-	// Set sphere positon.
-	ins.m_modelMat = glm::translate(glm::vec3(0.0f, 2.0f, 6.5f));
+	// Scale down spinner instances.
+	ins.m_modelMat = glm::scale(glm::mat4(), glm::vec3(0.01f, 0.01f, 0.01f));
 
-	sphereObj->SetInstance(0, ins);
+	spinnerDetailsObj->SetInstance(0, ins);
+	spinnerGlassObj->SetInstance(0, ins);
+	spinnerPaintObj->SetInstance(0, ins);
 
-	// Double floor object scale.
-	//ins.m_modelMat = glm::rotate(glm::mat4(), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	ins.m_modelMat = glm::scale(glm::mat4(), glm::vec3(5.0f, 5.0f, 5.0f));
-
+	ins.m_modelMat = glm::mat4();
 	floorObj->SetInstance(0, ins);
 
 	// Model matrix for new object instances.
@@ -131,7 +148,8 @@ void Application::Run()
 	LightingManager* lightManager = subScene->GetLightingManager();
 
 	// Update directional lights.
-	lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(1.0f, 0.8f, 0.5f, 1.0f) });
+	lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(1.0f) });
+	//lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(1.0f, 0.8f, 0.5f, 1.0f) });
 	//lightManager->AddDirLight({ glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
 	// Add point lights to the scene.
@@ -185,9 +203,12 @@ void Application::Run()
 			m_input->ResetStates();
 		}
 
-		// Rotate bunny model.
-		bunnyIns.m_modelMat = glm::rotate(glm::mat4(), fElapsedTime, glm::vec3(0.0f, 1.0f, 0.0f));
-		floorObj->SetInstance(0, bunnyIns);
+		// Rotate spinner model.
+		glm::mat4 spinnerScaleMat = glm::scale(glm::mat4(), glm::vec3(0.01f));
+		ins.m_modelMat = glm::rotate(spinnerScaleMat, -fElapsedTime, glm::vec3(0.0f, 1.0f, 0.0f));
+		spinnerDetailsObj->SetInstance(0, ins);
+		spinnerGlassObj->SetInstance(0, ins);
+		spinnerPaintObj->SetInstance(0, ins);
 
 		// Draw...
 		m_renderer->Begin();
@@ -197,10 +218,12 @@ void Application::Run()
 		{
 			std::cout << "Adding object!" << std::endl;
 
-			instanceModelMat = glm::translate(instanceModelMat, glm::vec3(0.0f, 0.0f, -3.0f));
+			instanceModelMat = glm::translate(instanceModelMat, glm::vec3(-3.0f, 0.0f, 0.0f));
 
-			//Instance newInstance = { instanceModelMat };
-			//bunnyObj->AddInstance(newInstance);
+			Instance newInstance = { instanceModelMat * glm::scale(glm::mat4(), glm::vec3(0.01f)) };
+			spinnerDetailsObj->AddInstance(newInstance);
+			spinnerGlassObj->AddInstance(newInstance);
+			spinnerPaintObj->AddInstance(newInstance);
 		}
 
 		glm::mat4 viewMat = camera.GetViewMatrix();
@@ -250,17 +273,23 @@ void Application::Run()
 	delete testTexture2;
 	delete testTexture;
 
-	//delete bunnyObj;
-	delete sphereObj;
 	delete floorObj;
 
-	delete bunnyMesh;
-	delete sphereMesh;
+	delete spinnerDetailsObj;
+	delete spinnerGlassObj;
+	delete spinnerPaintObj;
+
 	delete planeMesh;
 
-	delete testMat;
+	delete spinnerDetailsMesh;
+	delete spinnerGlassMesh;
+	delete spinnerPaintMesh;
+
+	delete spinnerMat;
+	delete floorMat;
 
 	delete modelShader;
+	delete floorShader;
 }
 
 void Application::CreateWindow(const unsigned int& nWidth, const unsigned int& nHeight, bool bFullScreen)

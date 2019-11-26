@@ -60,7 +60,7 @@ void GBufferPass::RecordCommandBuffer(const uint32_t& nPresentImageIndex, const 
 		// Bind pipelines...
 		vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, data.m_handle);
 
-		data.m_material->UseDescriptorSet(cmdBuf, data.m_layout, m_mvpUBODescSets[nFrameIndex], nFrameIndex);
+		data.m_material->UseDescriptorSet(cmdBuf, transferCmdBuf, data.m_layout, m_mvpUBODescSets[nFrameIndex], nFrameIndex);
 
 		for (uint32_t j = 0; j < data.m_renderObjects.Count(); ++j)
 		{

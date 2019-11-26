@@ -21,9 +21,9 @@ layout(location = 2) out mat3 f_tbn;
 void main() 
 {
     f_finalPos = model * position;
-    //finalNormal = model * normal; // Transform mesh normal and pass to the next shader stage.
     f_texCoords = texCoords;
 
+	// Calculate TBN matrix.
 	vec4 biTangent = vec4(cross(normal.xyz, tangent.xyz), 1.0f);
 
 	mat4 modelCpy = model;
@@ -35,5 +35,6 @@ void main()
 
 	f_tbn = mat3(t.xyz, b.xyz, n.xyz);
 
+	// Transform vertex.
     gl_Position = mvp.proj * mvp.view * model * position;
 }

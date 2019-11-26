@@ -13,12 +13,6 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="Shaders">
-      <UniqueIdentifier>{6be5955f-e2e7-4df6-9d25-b6fda5f0e56c}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Shaders\Lighting">
-      <UniqueIdentifier>{8add3d0f-1a78-42c7-ad17-fab6d4e3fec3}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -128,46 +122,5 @@
     <ClInclude Include="Scene.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="Shaders\Lighting\deferred_dir_light_frag.frag">
-      <Filter>Shaders\Lighting</Filter>
-    </None>
-    <None Include="Shaders\Lighting\deferred_point_light_frag.frag">
-      <Filter>Shaders\Lighting</Filter>
-    </None>
-    <None Include="Shaders\Lighting\deferred_point_light_vert.vert">
-      <Filter>Shaders\Lighting</Filter>
-    </None>
-    <None Include="Shaders\Lighting\fs_quad_vert.vert">
-      <Filter>Shaders\Lighting</Filter>
-    </None>
-    <None Include="Shaders\model.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\model.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\modelIns.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\rect.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\rect.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\triangle.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\triangle.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\triangleAlt.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\triangleAlt.vert">
-      <Filter>Shaders</Filter>
-    </None>
   </ItemGroup>
 </Project>
