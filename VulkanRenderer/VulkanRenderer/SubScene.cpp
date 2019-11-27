@@ -1077,7 +1077,7 @@ inline void SubScene::UpdateMVPUBO(const uint32_t& nFrameIndex)
 	axisCorrection[3][3] = 1.0f;
 
 	// Update local projection matrix.
-	m_localMVPData.m_proj = axisCorrection * glm::perspective(45.0f, static_cast<float>(m_nWidth) / static_cast<float>(m_nHeight), 0.1f, 1000.0f);
+	m_localMVPData.m_proj = axisCorrection * glm::perspective(glm::radians(45.0f), static_cast<float>(m_nWidth) / static_cast<float>(m_nHeight), 0.1f, 1000.0f);
 
 	uint32_t nBufferSize = sizeof(MVPUniformBuffer);
 

@@ -82,17 +82,26 @@ void Application::Run()
 
 	// Load shaders
 	Shader* modelShader = new Shader(m_renderer, "Shaders/SPIR-V/model_pbr_vert.spv", "Shaders/SPIR-V/model_pbr_frag.spv");
+	Shader* texturelessShader = new Shader(m_renderer, "Shaders/SPIR-V/vert_model_notex.spv", "Shaders/SPIR-V/frag_model_notex.spv");
 
 	// Load textures.
-	Texture* spearDiffuse = new Texture(m_renderer, "Assets/Objects/Soulspear/soulspear_diffuse.tga");
-	Texture* spearNormal = new Texture(m_renderer, "Assets/Objects/Soulspear/soulspear_normal.tga");
-	Texture* spearSpecular = new Texture(m_renderer, "Assets/Objects/Soulspear/soulspear_specular.tga");
 
-	Texture* floorTex = new Texture(m_renderer, "Assets/Objects/Metal/diffuse.tga");
-	Texture* floorTex2 = new Texture(m_renderer, "Assets/Objects/Metal/normal.tga");
-	Texture* floorTex3 = new Texture(m_renderer, "Assets/Objects/Metal/glow.tga");
-	//Texture* testTexture = new Texture(m_renderer, "Assets/Objects/Viking Tiles/Base_basecolor.tga");
-	//Texture* testTexture2 = new Texture(m_renderer, "Assets/Objects/Viking Tiles/Base_normal.tga");
+	Texture* spinnerPaintDiffuse = new Texture(m_renderer, "Assets/Objects/Spinner/paint2048/m_spinner_paint_diffuse.tga");
+	Texture* spinnerPaintNormal = new Texture(m_renderer, "Assets/Objects/Spinner/paint2048/m_spinner_paint_normal.tga");
+	Texture* spinnerPaintSpecular = new Texture(m_renderer, "Assets/Objects/Spinner/paint2048/m_spinner_paint_specular.tga");
+	Texture* spinnerPaintRoughness = new Texture(m_renderer, "Assets/Objects/Spinner/paint2048/m_spinner_paint_roughness.tga");
+
+	Texture* spinnerGlassDiffuse = new Texture(m_renderer, "Assets/Objects/Spinner/glass2048/m_spinner_glass_diffuse.tga");
+	Texture* spinnerGlassNormal = new Texture(m_renderer, "Assets/Objects/Spinner/glass2048/m_spinner_glass_normal.tga");
+	Texture* spinnerGlassEmissive = new Texture(m_renderer, "Assets/Objects/Spinner/glass2048/m_spinner_glass_emissive.tga");
+	Texture* spinnerGlassRoughness = new Texture(m_renderer, "Assets/Objects/Spinner/glass2048/m_spinner_glass_roughness.tga");
+	Texture* spinnerGlassSpecular = new Texture(m_renderer, "Assets/Objects/Spinner/glass2048/m_spinner_glass_specular.tga");
+
+	Texture* spinnerDetailsDiffuse = new Texture(m_renderer, "Assets/Objects/Spinner/details2048/m_spinner_details_diffuse.tga");
+	Texture* spinnerDetailsNormal = new Texture(m_renderer, "Assets/Objects/Spinner/details2048/m_spinner_details_normal.tga");
+	Texture* spinnerDetailsEmissive = new Texture(m_renderer, "Assets/Objects/Spinner/details2048/m_spinner_details_emissive.tga");
+	Texture* spinnerDetailsRoughness = new Texture(m_renderer, "Assets/Objects/Spinner/details2048/m_spinner_details_roughness.tga");
+	Texture* spinnerDetailsSpecular = new Texture(m_renderer, "Assets/Objects/Spinner/details2048/m_spinner_details_specular.tga");
 
 	// Construct materials
 	//Material* testMat = new Material
@@ -102,35 +111,53 @@ void Application::Run()
 	//	{ testTexture, testTexture2, testTexture3 },
 	//	{}
 	//);
-	Material* spearMat = new Material
+	Material* spinnerPaintMat = new Material
 	(
 		m_renderer,
 		modelShader,
-		{ spearDiffuse, spearNormal, spearSpecular },
-		{ { MATERIAL_PROPERTY_FLOAT, "_Roughness" } }
+		{ spinnerPaintDiffuse, spinnerPaintNormal, spinnerPaintRoughness, spinnerPaintRoughness, spinnerPaintSpecular },
+		{ { MATERIAL_PROPERTY_FLOAT, "_Roughness" }, { MATERIAL_PROPERTY_FLOAT, "_EmissionPower" } }
 	);
-	spearMat->SetFloat4("_ColorTint", glm::value_ptr(glm::vec4(1.0f)));
-	spearMat->SetFloat("_Roughness", 1.0f);
+	spinnerPaintMat->SetFloat("_Roughness", 1.0f);
+	spinnerPaintMat->SetFloat("_EmissionPower", 0.0f);
 
-	std::cout << spearMat->GetFloat("_Roughness") << "\n";
+	Material* spinnerGlassMat = new Material
+	(
+		m_renderer,
+		modelShader,
+		{ spinnerGlassDiffuse, spinnerGlassNormal, spinnerGlassEmissive, spinnerGlassRoughness, spinnerGlassSpecular },
+		{ { MATERIAL_PROPERTY_FLOAT, "_Roughness" }, { MATERIAL_PROPERTY_FLOAT, "_EmissionPower" } }
+	);
+	spinnerGlassMat->SetFloat("_Roughness", 1.0f);
+	spinnerGlassMat->SetFloat("_EmissionPower", 1.0f);
 
-	Material* floorMat = new Material(m_renderer, modelShader, { floorTex, floorTex2, floorTex3 }, {});
+	Material* spinnerDetailsMat = new Material
+	(
+		m_renderer,
+		modelShader,
+		{ spinnerDetailsDiffuse, spinnerDetailsNormal, spinnerDetailsEmissive, spinnerDetailsRoughness, spinnerDetailsSpecular },
+		{ { MATERIAL_PROPERTY_FLOAT, "_Roughness" }, { MATERIAL_PROPERTY_FLOAT, "_EmissionPower" } }
+	);
+	spinnerDetailsMat->SetFloat("_Roughness", 1.0f);
+	spinnerDetailsMat->SetFloat("_EmissionPower", 1.0f);
+
+	Material* floorMat = new Material(m_renderer, texturelessShader, {}, {});
 
 	// Load meshes.
 	Mesh* planeMesh = new Mesh(m_renderer, "Assets/Primitives/plane.obj");
-	Mesh* spearMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
-	//Mesh* spinnerDetailsMesh = new Mesh(m_renderer, "Assets/Objects/Spinner/low_details.obj");
-	//Mesh* spinnerGlassMesh = new Mesh(m_renderer, "Assets/Objects/Spinner/low_glass.obj");
-	//Mesh* spinnerPaintMesh = new Mesh(m_renderer, "Assets/Objects/Spinner/low_paint.obj");
+	//Mesh* spearMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
+	Mesh* spinnerDetailsMesh = new Mesh(m_renderer, "Assets/Objects/Spinner/low_details.obj");
+	Mesh* spinnerGlassMesh = new Mesh(m_renderer, "Assets/Objects/Spinner/low_glass.obj");
+	Mesh* spinnerPaintMesh = new Mesh(m_renderer, "Assets/Objects/Spinner/low_paint.obj");
 
 	// Create render objects.
 	RenderObject* floorObj = new RenderObject(scene, planeMesh, floorMat, &RenderObject::m_defaultInstanceAttributes, 1);
 
-	//RenderObject* spinnerDetailsObj = new RenderObject(scene, spinnerDetailsMesh, spearMat, &RenderObject::m_defaultInstanceAttributes, 10);
-	//RenderObject* spinnerGlassObj = new RenderObject(scene, spinnerGlassMesh, spearMat, &RenderObject::m_defaultInstanceAttributes, 10);
-	//RenderObject* spinnerPaintObj = new RenderObject(scene, spinnerPaintMesh, spearMat, &RenderObject::m_defaultInstanceAttributes, 10);
+	RenderObject* spinnerDetailsObj = new RenderObject(scene, spinnerDetailsMesh, spinnerDetailsMat, &RenderObject::m_defaultInstanceAttributes, 10);
+	RenderObject* spinnerGlassObj = new RenderObject(scene, spinnerGlassMesh, spinnerGlassMat, &RenderObject::m_defaultInstanceAttributes, 10);
+	RenderObject* spinnerPaintObj = new RenderObject(scene, spinnerPaintMesh, spinnerPaintMat, &RenderObject::m_defaultInstanceAttributes, 10);
 	
-	RenderObject* spearObj = new RenderObject(scene, spearMesh, spearMat, &RenderObject::m_defaultInstanceAttributes, 10U);
+	//RenderObject* spearObj = new RenderObject(scene, spearMesh, spearMat, &RenderObject::m_defaultInstanceAttributes, 10U);
 
 	// Time variables.
 	float fDeltaTime = 0.0f;	
@@ -157,8 +184,8 @@ void Application::Run()
 	LightingManager* lightManager = subScene->GetLightingManager();
 
 	// Update directional lights.
-	lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(1.0f) });
-	//lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(1.0f, 0.8f, 0.5f, 1.0f) });
+	//lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(1.0f) });
+	lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(1.0f, 0.8f, 0.5f, 1.0f) });
 	//lightManager->AddDirLight({ glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
 	// Add point lights to the scene.
@@ -213,12 +240,12 @@ void Application::Run()
 		}
 
 		// Rotate spinner model.
-		glm::mat4 spinnerScaleMat = glm::scale(glm::mat4(), glm::vec3(1.0f));
-		ins.m_modelMat = glm::rotate(spinnerScaleMat, -fElapsedTime, glm::vec3(0.0f, 1.0f, 0.0f));
-		spearObj->SetInstance(0, ins);
-		//spinnerDetailsObj->SetInstance(0, ins);
-		//spinnerGlassObj->SetInstance(0, ins);
-		//spinnerPaintObj->SetInstance(0, ins);
+		glm::mat4 spinnerScaleMat = glm::scale(glm::mat4(), glm::vec3(0.01f));
+		ins.m_modelMat = glm::rotate(spinnerScaleMat, -fElapsedTime * 0.1f, glm::vec3(0.0f, 1.0f, 0.0f));
+		//spearObj->SetInstance(0, ins);
+		spinnerDetailsObj->SetInstance(0, ins);
+		spinnerGlassObj->SetInstance(0, ins);
+		spinnerPaintObj->SetInstance(0, ins);
 
 		// Draw...
 		m_renderer->Begin();
@@ -231,10 +258,10 @@ void Application::Run()
 			instanceModelMat = glm::translate(instanceModelMat, glm::vec3(-3.0f, 0.0f, 0.0f));
 
 			Instance newInstance = { instanceModelMat * glm::scale(glm::mat4(), glm::vec3(0.01f)) };
-			spearObj->AddInstance(newInstance);
-			//spinnerDetailsObj->AddInstance(newInstance);
-			//spinnerGlassObj->AddInstance(newInstance);
-			//spinnerPaintObj->AddInstance(newInstance);
+			//spearObj->AddInstance(newInstance);
+			spinnerDetailsObj->AddInstance(newInstance);
+			spinnerGlassObj->AddInstance(newInstance);
+			spinnerPaintObj->AddInstance(newInstance);
 		}
 
 		glm::mat4 viewMat = camera.GetViewMatrix();
@@ -280,32 +307,45 @@ void Application::Run()
 		}
 	}
 
-	delete floorTex3;
-	delete floorTex2;
-	delete floorTex;
+	delete  spinnerPaintDiffuse;
+	delete	spinnerPaintNormal;
+	delete	spinnerPaintSpecular;
+	delete	spinnerPaintRoughness;
 
-	delete spearDiffuse;
-	delete spearNormal;
-	delete spearSpecular;
+	delete	spinnerGlassDiffuse;
+	delete	spinnerGlassNormal;
+	delete	spinnerGlassEmissive;
+	delete	spinnerGlassRoughness;
+	delete	spinnerGlassSpecular;
+
+	delete	spinnerDetailsDiffuse;
+	delete	spinnerDetailsNormal;
+	delete	spinnerDetailsEmissive;
+	delete	spinnerDetailsRoughness;
+	delete	spinnerDetailsSpecular;
 
 	delete floorObj;
 
-	//delete spinnerDetailsObj;
-	//delete spinnerGlassObj;
-	//delete spinnerPaintObj;
-	delete spearObj;
+	delete spinnerDetailsObj;
+	delete spinnerGlassObj;
+	delete spinnerPaintObj;
+	//delete spearObj;
 
 	delete planeMesh;
-	delete spearMesh;
+	//delete spearMesh;
 
-	//delete spinnerDetailsMesh;
-	//delete spinnerGlassMesh;
-	//delete spinnerPaintMesh;
+	delete spinnerDetailsMesh;
+	delete spinnerGlassMesh;
+	delete spinnerPaintMesh;
 
-	delete spearMat;
+	delete spinnerPaintMat;
+	delete spinnerGlassMat;
+	delete spinnerDetailsMat;
+
 	delete floorMat;
 
 	delete modelShader;
+	delete texturelessShader;
 }
 
 void Application::CreateWindow(const unsigned int& nWidth, const unsigned int& nHeight, bool bFullScreen)

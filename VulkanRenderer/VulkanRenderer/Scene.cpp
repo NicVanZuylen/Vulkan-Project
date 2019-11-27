@@ -28,7 +28,8 @@ Scene::Scene(Renderer* renderer, uint32_t nWindowWidth, uint32_t nWindowHeight, 
 	params.m_miscGAttachments = 
 	{ 
 		{ GBUFFER_MISC_8_BIT, { 0.0f, 0.0f, 0.0f, 1.0f } }, // Emission
-	    { GBUFFER_MISC_8_BIT, { 0.0f, 0.0f, 0.0f, 1.0f } } // Roughness
+	    { GBUFFER_MISC_8_BIT, { 0.0f, 0.0f, 0.0f, 1.0f } }, // Roughness
+		{ GBUFFER_MISC_8_BIT, { 0.0f, 0.0f, 0.0f, 1.0f } } // Metalness
 	};
 	params.m_bOutputHDR = false;
 	params.m_bPrimary = true;

@@ -7,14 +7,16 @@ layout(location = 1) out vec4 outPos;
 layout(location = 2) out vec4 outNormal;
 layout(location = 3) out vec4 outEmission;
 layout(location = 4) out vec4 outRoughness;
+layout(location = 5) out vec4 outMetalness;
 
 layout(set = 1, binding = 0) uniform Properties 
 {
     vec4 colorTint;
 	float roughness;
+	float emissionPower;
 } properties;
 
-layout(set = 1, binding = 1) uniform sampler2D textures[3];
+layout(set = 1, binding = 1) uniform sampler2D textures[5]; // Albedo, Normal, Emission, Roughness, Specular
 
 layout(location = 0) in vec4 f_finalPos;
 layout(location = 1) in vec2 f_texCoords;
@@ -32,9 +34,12 @@ void main()
     outNormal = vec4(normalize(f_tbn * (texture(textures[1], f_texCoords).xyz * 2.0f - 1.0f)), 1.0f);
 
 	// Emissive output.
-	outEmission = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+	outEmission = vec4(texture(textures[2], f_texCoords).xyz * properties.emissionPower, 1.0f);
 
 	// Roughness output.
-	outRoughness = vec4(properties.roughness, 0.0f, 0.0f, 1.0f);
+	outRoughness = vec4(texture(textures[3], f_texCoords).xyz * properties.roughness, 1.0f);
+
+	// Metalness output
+	outMetalness = vec4(texture(textures[4], f_texCoords).xyz, 1.0f);
 }
 

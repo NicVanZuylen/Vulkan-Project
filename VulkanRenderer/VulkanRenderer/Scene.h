@@ -18,8 +18,8 @@ struct Shader;
 #define POINT_LIGHT_VERTEX_SHADER "Shaders/SPIR-V/deferred_point_light_vert.spv"
 
 // Lighting shaders
-#define DEFERRED_DIR_LIGHT_SHADER "Shaders/SPIR-V/deferred_dir_light_frag.spv"
-#define DEFERRED_POINT_LIGHT_SHADER "Shaders/SPIR-V/deferred_point_light_frag.spv"
+#define DEFERRED_DIR_LIGHT_SHADER "Shaders/SPIR-V/deferred_dir_light_frag_pbr.spv"
+#define DEFERRED_POINT_LIGHT_SHADER "Shaders/SPIR-V/deferred_point_light_frag_pbr.spv"
 
 // ---------------------------------------------------------------------------------
 
