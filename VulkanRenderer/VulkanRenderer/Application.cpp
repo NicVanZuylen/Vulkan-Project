@@ -85,7 +85,6 @@ void Application::Run()
 	Shader* texturelessShader = new Shader(m_renderer, "Shaders/SPIR-V/vert_model_notex.spv", "Shaders/SPIR-V/frag_model_notex.spv");
 
 	// Load textures.
-
 	Texture* spinnerPaintDiffuse = new Texture(m_renderer, "Assets/Objects/Spinner/paint2048/m_spinner_paint_diffuse.tga");
 	Texture* spinnerPaintNormal = new Texture(m_renderer, "Assets/Objects/Spinner/paint2048/m_spinner_paint_normal.tga");
 	Texture* spinnerPaintSpecular = new Texture(m_renderer, "Assets/Objects/Spinner/paint2048/m_spinner_paint_specular.tga");
@@ -104,13 +103,6 @@ void Application::Run()
 	Texture* spinnerDetailsSpecular = new Texture(m_renderer, "Assets/Objects/Spinner/details2048/m_spinner_details_specular.tga");
 
 	// Construct materials
-	//Material* testMat = new Material
-	//(
-	//	m_renderer, 
-	//	modelShader, 
-	//	{ testTexture, testTexture2, testTexture3 },
-	//	{}
-	//);
 	Material* spinnerPaintMat = new Material
 	(
 		m_renderer,
@@ -145,7 +137,6 @@ void Application::Run()
 
 	// Load meshes.
 	Mesh* planeMesh = new Mesh(m_renderer, "Assets/Primitives/plane.obj");
-	//Mesh* spearMesh = new Mesh(m_renderer, "Assets/Objects/Soulspear/soulspear.obj");
 	Mesh* spinnerDetailsMesh = new Mesh(m_renderer, "Assets/Objects/Spinner/low_details.obj");
 	Mesh* spinnerGlassMesh = new Mesh(m_renderer, "Assets/Objects/Spinner/low_glass.obj");
 	Mesh* spinnerPaintMesh = new Mesh(m_renderer, "Assets/Objects/Spinner/low_paint.obj");
@@ -157,8 +148,6 @@ void Application::Run()
 	RenderObject* spinnerGlassObj = new RenderObject(scene, spinnerGlassMesh, spinnerGlassMat, &RenderObject::m_defaultInstanceAttributes, 10);
 	RenderObject* spinnerPaintObj = new RenderObject(scene, spinnerPaintMesh, spinnerPaintMat, &RenderObject::m_defaultInstanceAttributes, 10);
 	
-	//RenderObject* spearObj = new RenderObject(scene, spearMesh, spearMat, &RenderObject::m_defaultInstanceAttributes, 10U);
-
 	// Time variables.
 	float fDeltaTime = 0.0f;	
 	float fDebugDisplayTime = DEBUG_DISPLAY_TIME;
@@ -171,10 +160,6 @@ void Application::Run()
 	// Scale down spinner instances.
 	ins.m_modelMat = glm::scale(glm::mat4(), glm::vec3(0.01f, 0.01f, 0.01f));
 
-	//spinnerDetailsObj->SetInstance(0, ins);
-	//spinnerGlassObj->SetInstance(0, ins);
-	//spinnerPaintObj->SetInstance(0, ins);
-
 	ins.m_modelMat = glm::mat4();
 	floorObj->SetInstance(0, ins);
 
@@ -185,12 +170,13 @@ void Application::Run()
 
 	// Update directional lights.
 	//lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(1.0f) });
-	lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(1.0f, 0.8f, 0.5f, 1.0f) });
+	lightManager->AddDirLight({ glm::normalize(glm::vec4(1.0f, 0.0f, 0.0f, 0.0f)), glm::vec4(1.0f, 0.8f, 0.5f, 1.0f) });
 	//lightManager->AddDirLight({ glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
 	// Add point lights to the scene.
 	//lightManager->AddPointLight({ glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(1.0f), 10.0f });
-	//lightManager->AddPointLight({ glm::vec4(-3.0f, 3.5f, 3.5f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 3.0f });
+	//lightManager->AddPointLight({ glm::vec4(1.0f, 3.0f, 0.0f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 5.0f });
+	//lightManager->AddPointLight({ glm::vec4(-1.0f, 3.0f, 0.0f, 1.0f), glm::vec3(1.0f, 0.0f, 0.0f), 5.0f });
 	//lightManager->AddPointLight({ glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f });
 
 	while(!glfwWindowShouldClose(m_window)) 
@@ -242,7 +228,6 @@ void Application::Run()
 		// Rotate spinner model.
 		glm::mat4 spinnerScaleMat = glm::scale(glm::mat4(), glm::vec3(0.01f));
 		ins.m_modelMat = glm::rotate(spinnerScaleMat, -fElapsedTime * 0.1f, glm::vec3(0.0f, 1.0f, 0.0f));
-		//spearObj->SetInstance(0, ins);
 		spinnerDetailsObj->SetInstance(0, ins);
 		spinnerGlassObj->SetInstance(0, ins);
 		spinnerPaintObj->SetInstance(0, ins);
@@ -258,7 +243,6 @@ void Application::Run()
 			instanceModelMat = glm::translate(instanceModelMat, glm::vec3(-3.0f, 0.0f, 0.0f));
 
 			Instance newInstance = { instanceModelMat * glm::scale(glm::mat4(), glm::vec3(0.01f)) };
-			//spearObj->AddInstance(newInstance);
 			spinnerDetailsObj->AddInstance(newInstance);
 			spinnerGlassObj->AddInstance(newInstance);
 			spinnerPaintObj->AddInstance(newInstance);
@@ -269,6 +253,7 @@ void Application::Run()
 
 		// Set rendering view matrix.
 		//m_renderer->SetViewMatrix(viewMat, v4ViewPos);
+		//subScene->UpdateCameraView(viewMat, glm::vec4(v4ViewPos, 1.0f));
 		subScene->UpdateCameraView(viewMat, glm::vec4(v4ViewPos, 1.0f));
 
 		// End frame.
@@ -307,32 +292,30 @@ void Application::Run()
 		}
 	}
 
-	delete  spinnerPaintDiffuse;
-	delete	spinnerPaintNormal;
-	delete	spinnerPaintSpecular;
-	delete	spinnerPaintRoughness;
-
-	delete	spinnerGlassDiffuse;
-	delete	spinnerGlassNormal;
-	delete	spinnerGlassEmissive;
-	delete	spinnerGlassRoughness;
-	delete	spinnerGlassSpecular;
-
-	delete	spinnerDetailsDiffuse;
-	delete	spinnerDetailsNormal;
-	delete	spinnerDetailsEmissive;
-	delete	spinnerDetailsRoughness;
-	delete	spinnerDetailsSpecular;
+	delete spinnerPaintDiffuse;
+	delete spinnerPaintNormal;
+	delete spinnerPaintSpecular;
+	delete spinnerPaintRoughness;
+		   
+	delete spinnerGlassDiffuse;
+	delete spinnerGlassNormal;
+	delete spinnerGlassEmissive;
+	delete spinnerGlassRoughness;
+	delete spinnerGlassSpecular;
+		   
+	delete spinnerDetailsDiffuse;
+	delete spinnerDetailsNormal;
+	delete spinnerDetailsEmissive;
+	delete spinnerDetailsRoughness;
+	delete spinnerDetailsSpecular;
 
 	delete floorObj;
 
 	delete spinnerDetailsObj;
 	delete spinnerGlassObj;
 	delete spinnerPaintObj;
-	//delete spearObj;
 
 	delete planeMesh;
-	//delete spearMesh;
 
 	delete spinnerDetailsMesh;
 	delete spinnerGlassMesh;

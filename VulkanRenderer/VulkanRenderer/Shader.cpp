@@ -20,8 +20,8 @@ Shader::Shader(Renderer* renderer, const char* vertPath, const char* fragPath)
 {
 	m_renderer = renderer;
 
-	m_vertModule = nullptr;
-	m_fragModule = nullptr;
+	m_vertModule = VK_NULL_HANDLE;
+	m_fragModule = VK_NULL_HANDLE;
 
 	m_registered = false;
 
@@ -221,15 +221,22 @@ void Shader::CreateModules(DynamicArray<char>& vertContents, DynamicArray<char>&
 	// Create shader modules for the vertex and fragment shaders.
 	VkShaderModuleCreateInfo modCreateInfo = {};
 	modCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	modCreateInfo.codeSize = vertContents.GetSize();
-	modCreateInfo.pCode = reinterpret_cast<const uint32_t*>(vertContents.Data());
 
-	RENDERER_SAFECALL(vkCreateShaderModule(m_renderer->GetDevice(), &modCreateInfo, nullptr, &m_vertModule), "Shader Error: Failed to create vertex shader module.");
+	if (vertContents.GetSize() > 4) 
+	{
+		modCreateInfo.codeSize = vertContents.GetSize();
+		modCreateInfo.pCode = reinterpret_cast<const uint32_t*>(vertContents.Data());
 
-	modCreateInfo.codeSize = fragContents.GetSize();
-	modCreateInfo.pCode = reinterpret_cast<const uint32_t*>(fragContents.Data());
+	    RENDERER_SAFECALL(vkCreateShaderModule(m_renderer->GetDevice(), &modCreateInfo, nullptr, &m_vertModule), "Shader Error: Failed to create vertex shader module.");
+	}
 
-	RENDERER_SAFECALL(vkCreateShaderModule(m_renderer->GetDevice(), &modCreateInfo, nullptr, &m_fragModule), "Shader Error: Failed to create fragment shader module.");
+	if(fragContents.GetSize() >= 4) 
+	{
+		modCreateInfo.codeSize = fragContents.GetSize();
+		modCreateInfo.pCode = reinterpret_cast<const uint32_t*>(fragContents.Data());
+
+		RENDERER_SAFECALL(vkCreateShaderModule(m_renderer->GetDevice(), &modCreateInfo, nullptr, &m_fragModule), "Shader Error: Failed to create fragment shader module.");
+	}
 }
 
 /*

@@ -69,6 +69,9 @@
     <ClCompile Include="Scene.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ShadowMap.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Application.h">
@@ -122,5 +125,23 @@
     <ClInclude Include="Scene.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ShadowMap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\Lighting\deferred_dir_light_frag.frag" />
+    <None Include="Shaders\Lighting\deferred_point_light_frag.frag" />
+    <None Include="Shaders\Lighting\deferred_point_light_vert.vert" />
+    <None Include="Shaders\Lighting\fs_quad_vert.vert" />
+    <None Include="Shaders\model.frag" />
+    <None Include="Shaders\model.vert" />
+    <None Include="Shaders\modelIns.vert" />
+    <None Include="Shaders\rect.frag" />
+    <None Include="Shaders\rect.vert" />
+    <None Include="Shaders\triangle.frag" />
+    <None Include="Shaders\triangle.vert" />
+    <None Include="Shaders\triangleAlt.frag" />
+    <None Include="Shaders\triangleAlt.vert" />
   </ItemGroup>
 </Project>

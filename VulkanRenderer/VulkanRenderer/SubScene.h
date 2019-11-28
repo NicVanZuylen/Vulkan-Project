@@ -12,13 +12,14 @@ Author: Nic Van Zuylen
 class RenderModule;
 class GBufferPass;
 class LightingManager;
+class ShadowMap;
 class Texture;
 class Material;
 
 struct Shader;
 
-#define SUB_PASS_COUNT 2
-#define POST_SUBPASS_INDEX 2
+#define SUB_PASS_COUNT 3
+#define POST_SUBPASS_INDEX ~0
 
 enum EGBufferAttachmentTypeBit
 {
@@ -257,6 +258,7 @@ private:
 	static VkAttachmentDescription m_colorHDRAttachmentDescription;
 	static VkAttachmentDescription m_vectorAttachmentDescription;
 
+	static VkSubpassDependency m_shadowMapDependency; // Subpass dependency for the shadow mapping pass.
 	static VkSubpassDependency m_gBufferDependency; // Subpass dependency for g-buffer subpass.
 	static VkSubpassDependency m_lightingDependency; // Subpass dependency for lighting subpass.
 	static VkSubpassDependency m_postDependency; // Subpass dependency for all post effects.
@@ -290,6 +292,7 @@ private:
 	// ---------------------------------------------------------------------------------
 	// Modules
 
+	ShadowMap* m_shadowMapModule;
 	GBufferPass* m_gPass;
 	LightingManager* m_lightManager;
 
@@ -299,6 +302,7 @@ private:
 	EGBufferAttachmentTypeBit m_eGBufferImageBits;
 	DynamicArray<MiscGBufferDesc> m_miscGAttachments;
 
+	Texture* m_shadowMapImage;
 	Texture* m_colorImage;
 	Texture* m_depthImage;
 	Texture* m_posImage;

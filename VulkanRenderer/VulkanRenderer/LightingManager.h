@@ -7,6 +7,7 @@
 
 class Renderer;
 class Mesh;
+class ShadowMap;
 
 struct Shader;
 
@@ -37,7 +38,7 @@ class LightingManager : public RenderModule
 public:
 
 	LightingManager(Renderer* renderer, Shader* dirLightShader, Shader* pointLightShader, VkDescriptorSet* mvpUBOSets, VkDescriptorSet gBufferInputSet,
-		const unsigned int& nWindowWidth, const unsigned int& nWindowHeight, 
+		const unsigned int& nWindowWidth, const unsigned int& nWindowHeight, ShadowMap* shadowMap,
 		VkCommandPool cmdPool, VkRenderPass pass, VkDescriptorSetLayout uboLayout, VkDescriptorSetLayout gBufferLayout, unsigned int nQueueFamilyIndex);
 
 	~LightingManager();
@@ -183,6 +184,11 @@ private:
 	unsigned int m_nChangePLightStart; // Starting point of point light changes in the buffer.
 	unsigned int m_nChangePLightEnd; // Ending point of the point light changes in the buffer.
 	bool m_bPointLightChange;
+
+	// ---------------------------------------------------------------------------------
+	// Shadows
+
+	ShadowMap* m_shadowMapModule;
 
 	// ---------------------------------------------------------------------------------
 	// Buffers

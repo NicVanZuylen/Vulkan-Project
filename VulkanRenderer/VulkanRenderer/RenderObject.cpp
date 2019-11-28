@@ -409,7 +409,7 @@ void RenderObject::CreateGraphicsPipeline(DynamicArray<EVertexAttribute>* vertex
 	pipelineInfo.pDynamicState = nullptr;
 	pipelineInfo.layout = m_pipelineData->m_layout;
 	pipelineInfo.renderPass = m_subScene->GetRenderPass();
-	pipelineInfo.subpass = 0;
+	pipelineInfo.subpass = G_BUFFER_SUBPASS_INDEX;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 	pipelineInfo.basePipelineIndex = -1;
 

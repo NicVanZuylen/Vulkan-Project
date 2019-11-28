@@ -3,6 +3,7 @@
 #include "VertexInfo.h"
 #include "Mesh.h"
 #include "Shader.h"
+#include "ShadowMap.h"
 
 VkCommandBufferInheritanceInfo LightingManager::m_inheritanceInfo =
 {
@@ -25,7 +26,7 @@ VkCommandBufferBeginInfo LightingManager::m_beginInfo =
 };
 
 LightingManager::LightingManager(Renderer* renderer, Shader* dirLightShader, Shader* pointLightShader, VkDescriptorSet* mvpUBOSets, VkDescriptorSet gBufferInputSet,
-	const unsigned int& nWindowWidth, const unsigned int& nWindowHeight,
+	const unsigned int& nWindowWidth, const unsigned int& nWindowHeight, ShadowMap* shadowMap,
 	VkCommandPool cmdPool, VkRenderPass pass, VkDescriptorSetLayout uboLayout, VkDescriptorSetLayout gBufferLayout, unsigned int nQueueFamilyIndex) : RenderModule(renderer, cmdPool, pass, nQueueFamilyIndex, false)
 {
 	// Copy descriptor set handles...
@@ -50,6 +51,8 @@ LightingManager::LightingManager(Renderer* renderer, Shader* dirLightShader, Sha
 	m_renderer->CreateBuffer(sizeof(GlobalDirLightData) + (sizeof(DirectionalLight) * MAX_DIRECTIONAL_LIGHTS), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_dirLightUBO, m_dirLightUBOMemory);
 
 	m_pointLightVolMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj", &Mesh::defaultFormat);
+
+	m_shadowMapModule = shadowMap;
 
 	m_nChangePLightStart = 0U;
 	m_nChangePLightEnd = 1U;
@@ -139,6 +142,10 @@ void LightingManager::AddDirLight(DirectionalLight data)
 
 	// Flag changes.
 	m_bDirLightChange = true;
+
+	// Update shadow map if this is the first directional light.
+	if (m_globalDirData.m_nCount == 1 && m_shadowMapModule)
+		m_shadowMapModule->UpdateCamera(data.m_v4Direction);
 }
 
 void LightingManager::UpdateDirLight(const DirectionalLight& data, const unsigned int& nIndex) 
@@ -151,6 +158,10 @@ void LightingManager::UpdateDirLight(const DirectionalLight& data, const unsigne
 
 	// Flag changes.
 	m_bDirLightChange = true;
+
+	// Update shadow map if this is the first directional light.
+	if (nIndex == 0 && m_shadowMapModule)
+		m_shadowMapModule->UpdateCamera(data.m_v4Direction);
 }
 
 void LightingManager::AddPointLight(PointLight data) 

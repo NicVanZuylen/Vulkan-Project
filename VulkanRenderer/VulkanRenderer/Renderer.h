@@ -20,8 +20,9 @@
 #define MAX_FRAMES_IN_FLIGHT 2
 #define MAX_CONCURRENT_COPIES MAX_FRAMES_IN_FLIGHT
 
-#define DYNAMIC_SUBPASS_INDEX 0
-#define LIGHTING_SUBPASS_INDEX 1
+#define SHADOW_MAPPING_SUBPASS_INDEX 0 
+#define G_BUFFER_SUBPASS_INDEX 1
+#define LIGHTING_SUBPASS_INDEX 2
 
 class Scene;
 class LightingManager;
@@ -56,9 +57,6 @@ public:
 
 	// Begin the main render pass.
 	void Begin();
-
-	// Submit a copy operation to the GPU.
-	void SubmitCopyOperation(VkCommandBuffer commandBuffer);
 
 	// End the main render pass.
 	void End();
@@ -239,6 +237,7 @@ private:
 
 	// -------------------------------------------------------------------------------------------------
 	// Misc
+
 	bool m_bMinimized;
 
 	// Extensions.

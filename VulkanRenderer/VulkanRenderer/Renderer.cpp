@@ -613,23 +613,6 @@ void Renderer::Begin()
 		"Renderer Error: Failed to aquire next swap chain image.");
 }
 
-void Renderer::SubmitCopyOperation(VkCommandBuffer commandBuffer) 
-{
-	VkSubmitInfo submitInfo = {};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.waitSemaphoreCount = 0;
-	submitInfo.pWaitSemaphores = nullptr;
-	submitInfo.signalSemaphoreCount = 0;
-	submitInfo.pSignalSemaphores = nullptr;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffer;
-
-	RENDERER_SAFECALL(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE), "Renderer Error: Failed to submit copy operation to the GPU.");
-
-	// Ensures the copy operation is complete before returning.
-	vkQueueWaitIdle(m_graphicsQueue);
-}
-
 void Renderer::End()
 {
 	// Do not attempt to render to a zero sized window.

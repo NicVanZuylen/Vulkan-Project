@@ -2,6 +2,7 @@
 #include "Renderer.h"
 #include "GBufferPass.h"
 #include "LightingManager.h"
+#include "ShadowMap.h"
 #include "Material.h"
 #include "Texture.h"
 #include "RenderObject.h"
@@ -139,10 +140,20 @@ VkAttachmentDescription SubScene::m_vectorAttachmentDescription =
 	VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
 };
 
-VkSubpassDependency SubScene::m_gBufferDependency =
+VkSubpassDependency SubScene::m_shadowMapDependency =
 {
 	VK_SUBPASS_EXTERNAL,
-	DYNAMIC_SUBPASS_INDEX,
+	SHADOW_MAPPING_SUBPASS_INDEX,
+	VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+	VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+	0,
+    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+};
+
+VkSubpassDependency SubScene::m_gBufferDependency =
+{
+	SHADOW_MAPPING_SUBPASS_INDEX,
+	G_BUFFER_SUBPASS_INDEX,
 	VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
 	VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
 	0,
@@ -152,7 +163,7 @@ VkSubpassDependency SubScene::m_gBufferDependency =
 
 VkSubpassDependency SubScene::m_lightingDependency =
 {
-	DYNAMIC_SUBPASS_INDEX,
+	G_BUFFER_SUBPASS_INDEX,
 	LIGHTING_SUBPASS_INDEX,
 	VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
 	VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -230,6 +241,7 @@ SubScene::SubScene(SubSceneParams& params)
 
 	// Modules
 
+	m_shadowMapModule = new ShadowMap(m_renderer, m_shadowMapImage, params.m_nFrameBufferWidth, params.m_nFrameBufferHeight, &m_allPipelines, m_commandPool, m_pass, m_nQueueFamilyIndex);
 	m_gPass = new GBufferPass(m_renderer, &m_allPipelines, m_commandPool, m_pass, m_mvpUBODescSets, m_nQueueFamilyIndex);
 	m_lightManager = new LightingManager
 	(
@@ -240,6 +252,7 @@ SubScene::SubScene(SubSceneParams& params)
 		m_gBufferDescSet,
 		params.m_nFrameBufferWidth,
 		params.m_nFrameBufferHeight,
+		m_shadowMapModule,
 		m_commandPool,
 		m_pass,
 		m_mvpUBOSetLayout,
@@ -290,17 +303,22 @@ SubScene::~SubScene()
 	// ---------------------------------------------------------------------------------
 	// Destroy G Buffer images.
 
+	if(m_shadowMapImage)
+	    delete m_shadowMapImage;
+
 	for (uint32_t i = 0; i < m_gBufferImages.Count(); ++i)
 		delete m_gBufferImages[i];
 
 	if (m_depthImage)
 		delete m_depthImage;
 
+	m_shadowMapImage = nullptr;
 	m_colorImage = nullptr;
 	m_depthImage = nullptr;
 	m_posImage = nullptr;
 	m_normalImage = nullptr;
 
+	delete m_shadowMapModule;
 	delete m_gPass;
 	delete m_lightManager;
 
@@ -324,6 +342,17 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 
 	// Push output clear value.
 	m_clearValues.Push({ 0.0f, 0.0f, 0.0f, 1.0f });
+
+	// Specify pool of depth formats and find the best available format.
+	DynamicArray<VkFormat> depthFormats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
+	VkFormat depthFormat = RendererHelper::FindBestDepthFormat(m_renderer->GetPhysDevice(), depthFormats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+
+	// Create shadow map image.
+	m_shadowMapImage = new Texture(m_renderer, 1920, 1080, ATTACHMENT_DEPTH_STENCIL, depthFormat);
+
+	// Shadow map clear value.
+	VkClearValue shadowClearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+	m_clearValues.Push(shadowClearVal);
 
 	// Create images the bit field contains...
 	if (eImageBits & GBUFFER_COLOR_BIT)
@@ -402,10 +431,6 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 
 	if (eImageBits & GBUFFER_DEPTH_BIT)
 	{
-		// Specify pool of depth formats and find the best available format.
-		DynamicArray<VkFormat> depthFormats = { VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT };
-		VkFormat depthFormat = RendererHelper::FindBestDepthFormat(m_renderer->GetPhysDevice(), depthFormats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-
 		m_depthImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_DEPTH_STENCIL, depthFormat);
 
 		// Clear value
@@ -419,6 +444,8 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 
 	if(!m_bPrimary)
 	    m_allImages.Push(m_outImage);
+
+	m_allImages.Push(m_shadowMapImage);
 
 	m_allImages += m_gBufferImages;
 
@@ -839,6 +866,7 @@ inline void SubScene::CreateRenderPass()
 	// Descriptions
 
 	DynamicArray<Texture*> targetImages = { m_outImage };
+	DynamicArray<Texture*> shadowMapImages = { m_shadowMapImage };
 
 	DynamicArray<VkAttachmentDescription> targetDescriptions;
 
@@ -848,6 +876,9 @@ inline void SubScene::CreateRenderPass()
 	else
 		CreateSwapChainAttachmentDesc(targetDescriptions);
 
+	DynamicArray<VkAttachmentDescription> shadowMapDescriptions;
+	CreateAttachmentDescriptions(shadowMapImages, shadowMapDescriptions);
+
 	DynamicArray<VkAttachmentDescription> gDescriptions;
 	CreateAttachmentDescriptions(m_gBufferImages, gDescriptions);
 
@@ -856,7 +887,7 @@ inline void SubScene::CreateRenderPass()
 	DynamicArray<VkAttachmentDescription> depthDescriptions;
 	CreateAttachmentDescriptions(depthImages, depthDescriptions);
 
-	DynamicArray<VkAttachmentDescription> allDescriptions = targetDescriptions + gDescriptions + depthDescriptions;
+	DynamicArray<VkAttachmentDescription> allDescriptions = targetDescriptions + shadowMapDescriptions + gDescriptions + depthDescriptions;
 
 	// ---------------------------------------------------------------------------------
 	// References
@@ -875,20 +906,28 @@ inline void SubScene::CreateRenderPass()
 		CreateSwapChainAttachRef(targetRefs);
 	}
 
+	DynamicArray<VkAttachmentReference> shadowMapRefs;
+	CreateAttachmentReferences(targetImages.Count(), shadowMapImages, shadowMapRefs);
+
 	DynamicArray<VkAttachmentReference> gBufferRefs;
-	CreateAttachmentReferences(targetImages.Count(), m_gBufferImages, gBufferRefs);
+	CreateAttachmentReferences(targetImages.Count() + shadowMapImages.Count(), m_gBufferImages, gBufferRefs);
 
 	DynamicArray<VkAttachmentReference> gBufferInputRefs;
-	CreateInputAttachmentReferences(targetImages.Count(), m_gBufferImages, gBufferInputRefs);
+	CreateInputAttachmentReferences(targetImages.Count() + shadowMapImages.Count(), m_gBufferImages, gBufferInputRefs);
 
 	DynamicArray<VkAttachmentReference> depthRefs;
-	CreateAttachmentReferences(targetImages.Count() + m_gBufferImages.Count(), depthImages, depthRefs);
+	CreateAttachmentReferences(targetImages.Count() + m_gBufferImages.Count() + shadowMapImages.Count(), depthImages, depthRefs);
 
 	DynamicArray<VkAttachmentReference> depthInputRefs;
-	CreateInputAttachmentReferences(targetImages.Count() + m_gBufferImages.Count(), depthImages, depthInputRefs);
+	CreateInputAttachmentReferences(targetImages.Count() + m_gBufferImages.Count() + shadowMapImages.Count(), depthImages, depthInputRefs);
 
 	// ---------------------------------------------------------------------------------
 	// Subpasses
+
+	VkSubpassDescription shadowMapSubpass = {};
+	shadowMapSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	shadowMapSubpass.colorAttachmentCount = 0;
+	shadowMapSubpass.pDepthStencilAttachment = shadowMapRefs.Data();
 
 	VkSubpassDescription gBufferSubpass = {};
 	gBufferSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -904,7 +943,7 @@ inline void SubScene::CreateRenderPass()
 	lightingSubpass.pInputAttachments = gBufferInputRefs.Data();
 	lightingSubpass.pDepthStencilAttachment = VK_NULL_HANDLE; // No depth needed for lighting.
 
-	VkSubpassDescription subpasses[SUB_PASS_COUNT] = { gBufferSubpass, lightingSubpass };
+	VkSubpassDescription subpasses[SUB_PASS_COUNT] = { shadowMapSubpass, gBufferSubpass, lightingSubpass };
 
 	// ---------------------------------------------------------------------------------
 	// Create Info
@@ -919,8 +958,8 @@ inline void SubScene::CreateRenderPass()
 	// ---------------------------------------------------------------------------------
 	// Subpass Dependencies
 
-	const int nDependencyCount = 2;
-	VkSubpassDependency dependencies[nDependencyCount] = { m_gBufferDependency, m_lightingDependency };
+	const int nDependencyCount = 3;
+	VkSubpassDependency dependencies[nDependencyCount] = { m_shadowMapDependency, m_gBufferDependency, m_lightingDependency };
 
 	renderPassInfo.dependencyCount = nDependencyCount;
 	renderPassInfo.pDependencies = dependencies;
@@ -1050,6 +1089,13 @@ void SubScene::RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const 
 	// Begin render pass instance.
 	vkCmdBeginRenderPass(cmdBuf, &beginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
+	// Shadow mapping subpass.
+	m_shadowMapModule->RecordCommandBuffer(nPresentImageIndex, nFrameIndex, beginInfo.framebuffer, transferCmdBuf);
+	vkCmdExecuteCommands(cmdBuf, 1, m_shadowMapModule->GetCommandBuffer(nFrameIndex));
+
+	// Next subpass.
+	vkCmdNextSubpass(cmdBuf, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+
 	// G-Buffer Pass
 	m_gPass->RecordCommandBuffer(nPresentImageIndex, nFrameIndex, beginInfo.framebuffer, transferCmdBuf);
 	vkCmdExecuteCommands(cmdBuf, 1, m_gPass->GetCommandBuffer(nFrameIndex));
@@ -1078,6 +1124,9 @@ inline void SubScene::UpdateMVPUBO(const uint32_t& nFrameIndex)
 
 	// Update local projection matrix.
 	m_localMVPData.m_proj = axisCorrection * glm::perspective(glm::radians(45.0f), static_cast<float>(m_nWidth) / static_cast<float>(m_nHeight), 0.1f, 1000.0f);
+
+	const float w = 10.0f;
+	m_localMVPData.m_proj = axisCorrection * glm::ortho(-w, w, -w, w, -100.0f, 100.0f);
 
 	uint32_t nBufferSize = sizeof(MVPUniformBuffer);
 
