@@ -233,9 +233,9 @@ void LightingManager::RecordCommandBuffer(const uint32_t& nPresentImageIndex, co
 	vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dirLightPipeline);
 
 	// Use MVP UBO and Lighting input attachment descriptor sets.
-	VkDescriptorSet lightingSets[] = { m_mvpUBOSets[nFrameIndex], m_gBufferInputSet, m_dirLightUBOSet };
+	VkDescriptorSet lightingSets[] = { m_mvpUBOSets[nFrameIndex], m_gBufferInputSet, m_dirLightUBOSet, m_shadowMapModule->GetShadowMapCamSet(nFrameIndex) };
 
-	vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dirLightPipelineLayout, 0, 3, lightingSets, 0, 0);
+	vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_dirLightPipelineLayout, 0, 3 + (m_shadowMapModule != nullptr), lightingSets, 0, 0);
 
 	// Run deferred directional lighting post pass.
 	vkCmdDraw(cmdBuf, 6, 1, 0, 0);
@@ -530,14 +530,20 @@ void LightingManager::CreateDirLightingPipeline(const unsigned int& nWindowWidth
 	colorBlending.blendConstants[2] = 0.0f;
 	colorBlending.blendConstants[3] = 0.0f;
 
-	VkDescriptorSetLayout setLayouts[] = { m_mvpUBOSetLayout, m_gBufferSetLayout, m_dirLightUBOLayout };
+	// Get shadow map camera set layout if shadow mapping is used.
+	VkDescriptorSetLayout shadowMapCamSetLayout = VK_NULL_HANDLE;
+
+	if (m_shadowMapModule)
+		shadowMapCamSetLayout = m_shadowMapModule->GetShadowMapCamSetLayout();
+
+	VkDescriptorSetLayout setLayouts[] = { m_mvpUBOSetLayout, m_gBufferSetLayout, m_dirLightUBOLayout, shadowMapCamSetLayout };
 
 	// Only create layout if allowed.
 	if (bCreateLayout)
 	{
 		VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 		pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInfo.setLayoutCount = 3;
+		pipelineLayoutInfo.setLayoutCount = 3 + (m_shadowMapModule != nullptr);
 		pipelineLayoutInfo.pSetLayouts = setLayouts; // Lighting pass descriptor sets...
 		pipelineLayoutInfo.pushConstantRangeCount = 0;
 		pipelineLayoutInfo.pPushConstantRanges = nullptr;

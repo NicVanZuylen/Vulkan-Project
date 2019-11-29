@@ -41,7 +41,7 @@ Texture::Texture(Renderer* renderer, const char* szFilePath)
 	}
 }
 
-Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachmentType type, VkFormat format, bool bInputAttachment)
+Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachmentType type, VkFormat format, bool bInputAttachment, VkImageUsageFlags additionalUsageFlags)
 {
 	m_renderer = renderer;
 	m_nWidth = nWidth;
@@ -66,7 +66,7 @@ Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachm
 		m_name = "COLOR_ATTACHMENT-" + std::to_string(m_nChannels) + "ch\n";
 
 		aspect = VK_IMAGE_ASPECT_COLOR_BIT;
-		usageFlags = static_cast<VkImageUsageFlagBits>(usageFlags | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT); // Append color attachment flag.
+		usageFlags = static_cast<VkImageUsageFlagBits>(usageFlags | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | additionalUsageFlags); // Append color attachment flag.
 
 	    CreateImage(m_imageHandle, m_imageMemory, m_nWidth, m_nHeight, m_format, VK_IMAGE_TILING_OPTIMAL, usageFlags);
 		CreateImageView(m_imageHandle, m_imageView, m_format, aspect);
@@ -81,7 +81,7 @@ Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachm
 		m_name = "DEPTH_STENCIL_ATTACHMENT-" + std::to_string(m_nChannels) + "ch\n";
 
 		aspect = VK_IMAGE_ASPECT_DEPTH_BIT;
-		usageFlags = static_cast<VkImageUsageFlagBits>(usageFlags | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT); // Append depth/stencil attachment flag.
+		usageFlags = static_cast<VkImageUsageFlagBits>(usageFlags | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | additionalUsageFlags); // Append depth/stencil attachment flag.
 
 		CreateImage(m_imageHandle, m_imageMemory, m_nWidth, m_nHeight, m_format, VK_IMAGE_TILING_OPTIMAL, usageFlags);
 
@@ -130,6 +130,11 @@ int Texture::GetWidth() const
 int Texture::GetHeight() const
 {
 	return m_nHeight;
+}
+
+const VkImage& Texture::ImageHandle() const
+{
+	return m_imageHandle;
 }
 
 const VkImageView& Texture::ImageView() const

@@ -1,6 +1,7 @@
 #include "ShadowMap.h"
 #include "Shader.h"
 #include "Texture.h"
+#include "Sampler.h"
 #include "Mesh.h"
 #include "SubScene.h"
 #include "RenderObject.h"
@@ -30,6 +31,7 @@ VkCommandBufferBeginInfo ShadowMap::m_beginInfo =
 ShadowMap::ShadowMap(Renderer* renderer, Texture* shadowMap, uint32_t nWidth, uint32_t nHeight, DynamicArray<PipelineData*>* pipelines, VkCommandPool cmdPool, VkRenderPass pass, uint32_t nQueueFamilyIndex) : RenderModule(renderer, cmdPool, pass, nQueueFamilyIndex, false)
 {
 	m_shadowMap = shadowMap;
+	m_shadowMapSampler = new Sampler(renderer, FILTER_MODE_BILINEAR, REPEAT_MODE_CLAMP_TO_EDGE, 0.0f);
 
 	m_nShadowMapWidth = nWidth;
 	m_nShadowMapHeight = nHeight;
@@ -79,6 +81,7 @@ ShadowMap::~ShadowMap()
 	}
 
 	delete m_vertShader;
+	delete m_shadowMapSampler;
 }
 
 void ShadowMap::RecordCommandBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, const VkFramebuffer& framebuffer, const VkCommandBuffer transferCmdBuf)
@@ -134,13 +137,18 @@ void ShadowMap::RecordCommandBuffer(const uint32_t& nPresentImageIndex, const ui
 	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuf), "GBufferPass Error: Failed to end recording of draw commands.");
 }
 
+void ShadowMap::OnOutputResize(const RenderModuleResizeData& resizeData) 
+{
+	// Update render pass handle.
+	m_renderPass = resizeData.m_renderPass;
+}
+
 void ShadowMap::UpdateCamera(glm::vec4 v4LookDirection)
 {
 	glm::vec3 shadowCamPos = -v4LookDirection * 100.0f;
 
 	// Set shadow map camera view matrix to the inverse of a matrix looking at the world origin, from where the look direction is coming from.
-	m_camera.m_viewMat = glm::inverse(glm::lookAt(shadowCamPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)));
-	//m_camera.m_viewMat = glm::inverse(glm::mat4());
+	m_camera.m_viewMat = glm::lookAt(shadowCamPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
 	// Change coordinate system using this matrix.
 	glm::mat4 axisCorrection; // Inverts the Y axis to match the OpenGL coordinate system.
@@ -149,11 +157,8 @@ void ShadowMap::UpdateCamera(glm::vec4 v4LookDirection)
 	axisCorrection[3][3] = 1.0f;
 
 	// Set camera projection matrix.
-	//m_camera.m_projMat = glm::ortho(0.0f, static_cast<float>(m_nShadowMapWidth), 0.0f, static_cast<float>(m_nShadowMapHeight), 1.0f, 1000.0f);
-
 	// Numbers define the bounding box of the scene visible in the shadow map.
-	m_camera.m_projMat = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, -10.0f, 10.0f);
-	//m_camera.m_projMat = glm::perspective(glm::radians(45.0f), static_cast<float>(m_nShadowMapWidth / m_nShadowMapHeight), 0.01f, 1000.0f);
+	m_camera.m_projMat = axisCorrection * glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, -100.0f, 100.0f);
 
 	m_nTransferCamera = MAX_FRAMES_IN_FLIGHT;
 }
@@ -161,6 +166,16 @@ void ShadowMap::UpdateCamera(glm::vec4 v4LookDirection)
 Texture* ShadowMap::GetShadowMapImage()
 {
 	return m_shadowMap;
+}
+
+VkDescriptorSetLayout ShadowMap::GetShadowMapCamSetLayout()
+{
+	return m_camSetLayout;
+}
+
+VkDescriptorSet ShadowMap::GetShadowMapCamSet(const uint32_t& nFrameIndex)
+{
+	return m_camDescSets[nFrameIndex];
 }
 
 inline void ShadowMap::CreateShadowMapCamera()
@@ -181,11 +196,17 @@ inline void ShadowMap::CreateDescriptorPool()
 	camUBOPoolsize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	camUBOPoolsize.descriptorCount = MAX_FRAMES_IN_FLIGHT;
 
+	VkDescriptorPoolSize mapImagePoolSize = {};
+	mapImagePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	mapImagePoolSize.descriptorCount = MAX_FRAMES_IN_FLIGHT;
+
+	VkDescriptorPoolSize poolSizes[] = { camUBOPoolsize, mapImagePoolSize };
+
 	VkDescriptorPoolCreateInfo descPoolCreateInfo = {};
 	descPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	descPoolCreateInfo.pNext = nullptr;
-	descPoolCreateInfo.poolSizeCount = 1;
-	descPoolCreateInfo.pPoolSizes = &camUBOPoolsize;
+	descPoolCreateInfo.poolSizeCount = 2;
+	descPoolCreateInfo.pPoolSizes = poolSizes;
 	descPoolCreateInfo.flags = 0;
 	descPoolCreateInfo.maxSets = MAX_FRAMES_IN_FLIGHT;
 
@@ -199,13 +220,22 @@ inline void ShadowMap::CreateDescriptorSetLayouts()
 	camBinding.descriptorCount = 1;
 	camBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	camBinding.pImmutableSamplers = nullptr;
-	camBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // Only needs to be used for transforming vertices for rendering the shadow map.
+	camBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	VkDescriptorSetLayoutBinding mapBinding = {};
+	mapBinding.binding = 1;
+	mapBinding.descriptorCount = 1;
+	mapBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	mapBinding.pImmutableSamplers = nullptr;
+	mapBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	VkDescriptorSetLayoutBinding bindings[] = { camBinding, mapBinding };
 
 	VkDescriptorSetLayoutCreateInfo camSetLayoutInfo = {};
 	camSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	camSetLayoutInfo.pNext = nullptr;
-	camSetLayoutInfo.bindingCount = 1;
-	camSetLayoutInfo.pBindings = &camBinding;
+	camSetLayoutInfo.bindingCount = 2;
+	camSetLayoutInfo.pBindings = bindings;
 	camSetLayoutInfo.flags = 0;
 
 	RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_renderer->GetDevice(), &camSetLayoutInfo, nullptr, &m_camSetLayout), "Shadow Map Error: Failed to create shadow map camera descriptor set layout.");
@@ -230,7 +260,14 @@ inline void ShadowMap::CreateDescriptorSets()
 inline void ShadowMap::UpdateDescriptorSets()
 {
 	VkDescriptorBufferInfo camBufferInfos[MAX_FRAMES_IN_FLIGHT];
-	VkWriteDescriptorSet writes[MAX_FRAMES_IN_FLIGHT];
+	VkWriteDescriptorSet camWrites[MAX_FRAMES_IN_FLIGHT];
+	VkWriteDescriptorSet mapWrites[MAX_FRAMES_IN_FLIGHT];
+
+	// Shadow map image info.
+	VkDescriptorImageInfo mapInfo;
+	mapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	mapInfo.imageView = m_shadowMap->ImageView();
+	mapInfo.sampler = m_shadowMapSampler->GetHandle();
 
 	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
 	{
@@ -239,19 +276,30 @@ inline void ShadowMap::UpdateDescriptorSets()
 		camBufferInfos[i].offset = 0;
 		camBufferInfos[i].range = VK_WHOLE_SIZE;
 
-		// Set write structure data.
-		writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		writes[i].pNext = nullptr;
-		writes[i].dstSet = m_camDescSets[i];
-		writes[i].dstBinding = 0;
-		writes[i].dstArrayElement = 0;
-		writes[i].descriptorCount = 1; // 1 per set.
-		writes[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		writes[i].pBufferInfo = &camBufferInfos[i];
+		// Set camera write structure data.
+		camWrites[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		camWrites[i].pNext = nullptr;
+		camWrites[i].dstSet = m_camDescSets[i];
+		camWrites[i].dstBinding = 0;
+		camWrites[i].dstArrayElement = 0;
+		camWrites[i].descriptorCount = 1; // 1 per set.
+		camWrites[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		camWrites[i].pBufferInfo = &camBufferInfos[i];
+
+		// Set shadow map image write data.
+		mapWrites[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		mapWrites[i].pNext = nullptr;
+		mapWrites[i].dstSet = m_camDescSets[i];
+		mapWrites[i].dstBinding = 1;
+		mapWrites[i].dstArrayElement = 0;
+		mapWrites[i].descriptorCount = 1; // 1 per set.
+		mapWrites[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		mapWrites[i].pImageInfo = &mapInfo;
 	}
 
 	// Update descriptors.
-	vkUpdateDescriptorSets(m_renderer->GetDevice(), MAX_FRAMES_IN_FLIGHT, writes, 0, nullptr);
+	vkUpdateDescriptorSets(m_renderer->GetDevice(), MAX_FRAMES_IN_FLIGHT, camWrites, 0, nullptr);
+	vkUpdateDescriptorSets(m_renderer->GetDevice(), MAX_FRAMES_IN_FLIGHT, mapWrites, 0, nullptr);
 }
 
 inline void ShadowMap::CreateRenderPipeline()
@@ -322,7 +370,7 @@ inline void ShadowMap::CreateRenderPipeline()
 	rasterizer.polygonMode = VK_POLYGON_MODE_FILL; // Fragment shader will be run on all rasterized fragments within each triangle.
 	rasterizer.lineWidth = 1.0f;
 	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; // Face culling
-	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
 	// Used for shadow mapping...
 	rasterizer.depthBiasEnable = VK_FALSE;
@@ -333,7 +381,7 @@ inline void ShadowMap::CreateRenderPipeline()
 	// Depth / Stencil state
 	VkPipelineDepthStencilStateCreateInfo depthStencilState = {};
 	depthStencilState.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencilState.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+	depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 	depthStencilState.depthTestEnable = VK_TRUE;
 	depthStencilState.depthWriteEnable = VK_TRUE;
 	depthStencilState.stencilTestEnable = VK_FALSE; // Not needed.

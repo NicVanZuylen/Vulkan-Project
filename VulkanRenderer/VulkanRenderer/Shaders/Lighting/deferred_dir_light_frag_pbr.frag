@@ -10,6 +10,13 @@ layout (set = 0, binding = 0) uniform UniformBuffer
 
 layout(input_attachment_index = 0, set = 1, binding = 0) uniform subpassInput inputs[6];
 
+layout(set = 3, binding = 0) uniform ShadowMapCamera
+{
+    mat4 lightSpaceMatrix;
+} shadowMapCamera;
+
+//layout(set = 3, binding = 1) uniform sampler2D shadowMap;
+
 #define DIRECTIONAL_LIGHT_COUNT 4
 
 struct GlobalDirLightData 

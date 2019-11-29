@@ -170,13 +170,14 @@ void Application::Run()
 
 	// Update directional lights.
 	//lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(1.0f) });
-	lightManager->AddDirLight({ glm::normalize(glm::vec4(1.0f, 0.0f, 0.0f, 0.0f)), glm::vec4(1.0f, 0.8f, 0.5f, 1.0f) });
+	//lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(1.0f, 0.8f, 0.5f, 1.0f) });
+	lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(0.2f, 0.2f, 0.4f, 1.0f) });
 	//lightManager->AddDirLight({ glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 
 	// Add point lights to the scene.
 	//lightManager->AddPointLight({ glm::vec4(0.0f, 3.0f, 5.0f, 1.0f), glm::vec3(1.0f), 10.0f });
-	//lightManager->AddPointLight({ glm::vec4(1.0f, 3.0f, 0.0f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 5.0f });
-	//lightManager->AddPointLight({ glm::vec4(-1.0f, 3.0f, 0.0f, 1.0f), glm::vec3(1.0f, 0.0f, 0.0f), 5.0f });
+	lightManager->AddPointLight({ glm::vec4(1.0f, 3.0f, 0.0f, 1.0f), glm::vec3(0.0f, 1.0f, 1.0f), 5.0f });
+	lightManager->AddPointLight({ glm::vec4(-1.0f, 3.0f, 0.0f, 1.0f), glm::vec3(1.0f, 0.0f, 1.0f), 5.0f });
 	//lightManager->AddPointLight({ glm::vec4(-5.0f, 2.0f, 5.0f, 1.0f), glm::vec3(1.0f), 5.0f });
 
 	while(!glfwWindowShouldClose(m_window)) 

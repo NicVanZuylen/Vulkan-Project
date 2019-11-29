@@ -6,6 +6,8 @@ layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outPos;
 layout(location = 2) out vec4 outNormal;
 layout(location = 3) out vec4 outEmission;
+layout(location = 4) out vec4 outRoughness;
+layout(location = 5) out vec4 outMetalness;
 
 layout(set = 1, binding = 0) uniform Properties 
 {
@@ -29,5 +31,8 @@ void main()
 
 	// Emissive output.
 	outEmission = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+
+	outRoughness = vec4(0.0f, 0.0f, 0.0f, 1.0f);
+	outMetalness = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 }
 

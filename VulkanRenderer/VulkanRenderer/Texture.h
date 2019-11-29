@@ -35,7 +35,7 @@ public:
 		VKFormat format: The image format to use for this attachment.
 		bool bInputAttachment: Whether or not this attachment may be used as a shader stage input.
 	*/
-	Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachmentType type = ATTACHMENT_COLOR, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM, bool bInputAttachment = false);
+	Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachmentType type = ATTACHMENT_COLOR, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM, bool bInputAttachment = false, VkImageUsageFlags additionalUsageFlags = 0);
 
 	~Texture();
 
@@ -55,6 +55,12 @@ public:
 	Return Type: int
 	*/
 	int GetHeight() const;
+
+	/*
+	Description: Get Vulkan image handle for this texture.
+	Return Type: const VkImage&
+	*/
+	const VkImage& ImageHandle() const;
 
 	/*
 	Description: Get Vulkan image view handle for this texture.

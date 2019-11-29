@@ -144,10 +144,10 @@ VkSubpassDependency SubScene::m_shadowMapDependency =
 {
 	VK_SUBPASS_EXTERNAL,
 	SHADOW_MAPPING_SUBPASS_INDEX,
-	VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-	VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+	VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+	VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 	0,
-    VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+    VK_ACCESS_SHADER_READ_BIT
 };
 
 VkSubpassDependency SubScene::m_gBufferDependency =
@@ -348,10 +348,10 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 	VkFormat depthFormat = RendererHelper::FindBestDepthFormat(m_renderer->GetPhysDevice(), depthFormats, VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
 
 	// Create shadow map image.
-	m_shadowMapImage = new Texture(m_renderer, 1920, 1080, ATTACHMENT_DEPTH_STENCIL, depthFormat);
+	m_shadowMapImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_DEPTH_STENCIL, depthFormat, false, VK_IMAGE_USAGE_SAMPLED_BIT);
 
 	// Shadow map clear value.
-	VkClearValue shadowClearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
+	VkClearValue shadowClearVal = { 1.0f, 1.0f, 1.0f, 1.0f };
 	m_clearValues.Push(shadowClearVal);
 
 	// Create images the bit field contains...
@@ -491,6 +491,9 @@ void SubScene::ResizeOutput(uint32_t nNewWidth, uint32_t nNewHeight)
 	resizeData.m_gBufferSets = &m_gBufferDescSet;
 	resizeData.m_renderPass = m_pass;
 
+	// Resize modules.
+	if(m_shadowMapModule)
+	    m_shadowMapModule->OnOutputResize(resizeData);
 	m_gPass->OnOutputResize(resizeData);
 	m_lightManager->OnOutputResize(resizeData);
 }
@@ -1090,8 +1093,11 @@ void SubScene::RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const 
 	vkCmdBeginRenderPass(cmdBuf, &beginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
 	// Shadow mapping subpass.
-	m_shadowMapModule->RecordCommandBuffer(nPresentImageIndex, nFrameIndex, beginInfo.framebuffer, transferCmdBuf);
-	vkCmdExecuteCommands(cmdBuf, 1, m_shadowMapModule->GetCommandBuffer(nFrameIndex));
+	if(m_shadowMapModule) 
+	{
+		m_shadowMapModule->RecordCommandBuffer(nPresentImageIndex, nFrameIndex, beginInfo.framebuffer, transferCmdBuf);
+		vkCmdExecuteCommands(cmdBuf, 1, m_shadowMapModule->GetCommandBuffer(nFrameIndex));
+	}
 
 	// Next subpass.
 	vkCmdNextSubpass(cmdBuf, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
@@ -1124,9 +1130,6 @@ inline void SubScene::UpdateMVPUBO(const uint32_t& nFrameIndex)
 
 	// Update local projection matrix.
 	m_localMVPData.m_proj = axisCorrection * glm::perspective(glm::radians(45.0f), static_cast<float>(m_nWidth) / static_cast<float>(m_nHeight), 0.1f, 1000.0f);
-
-	const float w = 10.0f;
-	m_localMVPData.m_proj = axisCorrection * glm::ortho(-w, w, -w, w, -100.0f, 100.0f);
 
 	uint32_t nBufferSize = sizeof(MVPUniformBuffer);
 
