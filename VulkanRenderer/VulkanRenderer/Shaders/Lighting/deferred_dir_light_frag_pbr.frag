@@ -71,7 +71,7 @@ float OrenNayarDiff(vec3 normal, vec3 lightDir, vec3 surfToCam, float roughness)
 
 #define PI 3.14159265359f
 
-float CookTorrenceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float roughness, float relectionCoefficient) 
+float CookTorrenceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float lambert, float roughness, float relectionCoefficient) 
 {
     float roughSqr = roughness * roughness;
 
@@ -87,13 +87,11 @@ float CookTorrenceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float roughness
 	float D = exp(exponent) / (roughSqr * normalDotHalfSqr * normalDotHalfSqr);
 
 	// Fresnel Term using Sclick's approximation.
-	float normalDotLight = max(dot(normal, lightDir), 0.0f);
-
 	float F = relectionCoefficient + (1.0f - relectionCoefficient) * pow(1.0f - normalDotView, 5);
 
 	// Geometric Attenuation Factor
 	float halfFrac = 2.0f * normalDotHalf / dot(viewDir, halfVec);
-	float G = min(1.0f, min(halfFrac * normalDotView, halfFrac * normalDotLight));
+	float G = min(1.0f, min(halfFrac * normalDotView, halfFrac * lambert));
 
 	float bottomHalf = PI * normalDotView;
 
@@ -105,7 +103,7 @@ void main()
     // Final color output.
     vec4 color = subpassLoad(inputs[0]).rgba;
     vec4 position = subpassLoad(inputs[1]).rgba;
-    vec4 normal = subpassLoad(inputs[2]).xyzw;
+    vec4 normal = subpassLoad(inputs[2]);
 	vec3 emission = subpassLoad(inputs[3]).rgb;
 	vec4 roughness = subpassLoad(inputs[4]);
 	vec4 specular = subpassLoad(inputs[5]);
@@ -120,18 +118,17 @@ void main()
 
         // Get camera view direction and reflect the light direction upon the normal.
         vec3 viewDir = normalize(mvp.viewPos.xyz - position.xyz);
-        vec3 lightReflected = reflect(lightDir.xyz, normal.xyz);
         
         // Calculate lambertian term.
         float lambert = max(-dot(lightDir, normal), 0.0f);
 
 		// Calculate Oren Nayar Diffuse & Cook Torrence Specular values.
 		float orenNayar = OrenNayarDiff(normal.xyz, -lightDir.xyz, viewDir, roughness.r);
-		float cookTorrence = CookTorrenceSpec(normal.xyz, -lightDir.xyz, viewDir, roughness.r, 1.0f);
+		float cookTorrence = CookTorrenceSpec(normal.xyz, -lightDir.xyz, viewDir, lambert, roughness.r, 1.0f);
 
         // Add to final lighting.
 		vec3 diffuse = orenNayar * lightColor.rgb * DIFFUSE_POWER;
-		vec3 spec = cookTorrence * SPECULAR_POWER * lightColor.rgb;
+		vec3 spec = cookTorrence * SPECULAR_POWER * lightColor.rgb * lambert;
 
 		lighting += (diffuse + spec) * BRIGHTNESS_MULT;
     }

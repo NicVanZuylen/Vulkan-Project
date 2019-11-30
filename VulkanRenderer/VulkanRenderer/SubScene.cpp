@@ -296,6 +296,9 @@ SubScene::~SubScene()
 
 	for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
 	{
+		vkDestroyBuffer(device, m_mvpUBOStagingBuffers[i], nullptr);
+		vkFreeMemory(device, m_mvpUBOStagingMemories[i], nullptr);
+
 		vkDestroyBuffer(device, m_mvpUBOBuffers[i], nullptr);
 		vkFreeMemory(device, m_mvpUBOMemories[i], nullptr);
 	}
@@ -401,7 +404,7 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 		switch (m_miscGAttachments[i].m_eType)
 		{
 		case EMiscGBufferType::GBUFFER_MISC_8_BIT:
-			miscTex = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_UNORM, true);
+			miscTex = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_SRGB, true);
 			break;
 
 		case EMiscGBufferType::GBUFFER_MISC_16_BIT_FLOAT:
@@ -739,9 +742,14 @@ inline void SubScene::UpdateAllDescriptorSets()
 
 inline void SubScene::CreateMVPUBOBuffers()
 {
-	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i)
-		m_renderer->CreateBuffer(sizeof(MVPUniformBuffer), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
-			m_mvpUBOBuffers[i], m_mvpUBOMemories[i]);
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
+	{
+		// Create staging buffer...
+		m_renderer->CreateBuffer(sizeof(MVPUniformBuffer), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_mvpUBOStagingBuffers[i], m_mvpUBOStagingMemories[i]);
+
+		// Create device local buffer...
+		m_renderer->CreateBuffer(sizeof(MVPUniformBuffer), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_mvpUBOBuffers[i], m_mvpUBOMemories[i]);
+	}
 }
 
 inline void SubScene::CreateSwapChainAttachmentDesc(DynamicArray<VkAttachmentDescription>& attachments)
@@ -1087,17 +1095,17 @@ void SubScene::RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const 
 		beginInfo.framebuffer = m_framebuffers[0]; // There will be only one framebuffer if this is not a primary subscene.
 
 	// Update MVP UBO
-	UpdateMVPUBO(nFrameIndex);
+	UpdateMVPUBO(transferCmdBuf, nFrameIndex);
 
 	// Begin render pass instance.
 	vkCmdBeginRenderPass(cmdBuf, &beginInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
 	// Shadow mapping subpass.
-	if(m_shadowMapModule) 
-	{
-		m_shadowMapModule->RecordCommandBuffer(nPresentImageIndex, nFrameIndex, beginInfo.framebuffer, transferCmdBuf);
-		vkCmdExecuteCommands(cmdBuf, 1, m_shadowMapModule->GetCommandBuffer(nFrameIndex));
-	}
+	//if(m_shadowMapModule) 
+	//{
+	//	m_shadowMapModule->RecordCommandBuffer(nPresentImageIndex, nFrameIndex, beginInfo.framebuffer, transferCmdBuf);
+	//	vkCmdExecuteCommands(cmdBuf, 1, m_shadowMapModule->GetCommandBuffer(nFrameIndex));
+	//}
 
 	// Next subpass.
 	vkCmdNextSubpass(cmdBuf, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
@@ -1120,7 +1128,7 @@ void SubScene::RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const 
 	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuf), "SubScene Error: Failed to end recording of dynamic object command buffer.");
 }
 
-inline void SubScene::UpdateMVPUBO(const uint32_t& nFrameIndex)
+inline void SubScene::UpdateMVPUBO(const VkCommandBuffer& cmdBuffer, const uint32_t& nFrameIndex)
 {
 	// Change coordinate system using this matrix.
 	glm::mat4 axisCorrection; // Inverts the Y axis to match the OpenGL coordinate system.
@@ -1135,10 +1143,14 @@ inline void SubScene::UpdateMVPUBO(const uint32_t& nFrameIndex)
 
 	// Map & Update buffer contents...
 	void* buffer = nullptr;
-	vkMapMemory(m_renderer->GetDevice(), m_mvpUBOMemories[nFrameIndex], 0, nBufferSize, 0, &buffer);
+	vkMapMemory(m_renderer->GetDevice(), m_mvpUBOStagingMemories[nFrameIndex], 0, nBufferSize, 0, &buffer);
 
 	// Copy...
 	std::memcpy(buffer, &m_localMVPData, nBufferSize);
 
-	vkUnmapMemory(m_renderer->GetDevice(), m_mvpUBOMemories[nFrameIndex]);
+	vkUnmapMemory(m_renderer->GetDevice(), m_mvpUBOStagingMemories[nFrameIndex]);
+
+	// Issue staging buffer to device local buffer copy command.
+	VkBufferCopy copyRegion = { 0, 0, nBufferSize };
+	vkCmdCopyBuffer(cmdBuffer, m_mvpUBOStagingBuffers[nFrameIndex], m_mvpUBOBuffers[nFrameIndex], 1, &copyRegion);
 }

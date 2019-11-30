@@ -235,7 +235,7 @@ private:
 	// ---------------------------------------------------------------------------------
 	// Private runtime functions
 
-	inline void UpdateMVPUBO(const uint32_t& nFrameIndex);
+	inline void UpdateMVPUBO(const VkCommandBuffer& cmdBuffer, const uint32_t& nFrameIndex);
 
 	// ---------------------------------------------------------------------------------
 	// Vulkan structure templates
@@ -282,7 +282,11 @@ private:
 
 	MVPUniformBuffer m_localMVPData;
 
-	VkBuffer m_mvpUBOBuffers[MAX_FRAMES_IN_FLIGHT]; // Uniform buffer for the subscene camera.
+	// Camera UBOs
+	VkBuffer m_mvpUBOStagingBuffers[MAX_FRAMES_IN_FLIGHT];
+	VkDeviceMemory m_mvpUBOStagingMemories[MAX_FRAMES_IN_FLIGHT];
+
+	VkBuffer m_mvpUBOBuffers[MAX_FRAMES_IN_FLIGHT];
 	VkDeviceMemory m_mvpUBOMemories[MAX_FRAMES_IN_FLIGHT];
 
 	// UBO descriptors.

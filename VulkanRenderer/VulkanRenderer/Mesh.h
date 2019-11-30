@@ -123,13 +123,6 @@ private:
 	*/
 	void LoadOBJ(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned int>& indices, const char* path);
 
-	struct Instance
-	{
-		glm::vec4 m_color;
-		float m_modelMat[16];
-		float m_normalMat[9];
-	};
-
 	// Vulkan handles
 
 	VkBuffer m_vertexBuffer;

@@ -36,23 +36,11 @@ LightingManager::LightingManager(Renderer* renderer, Shader* dirLightShader, Sha
 	m_mvpUBOSetLayout = uboLayout;
 	m_gBufferSetLayout = gBufferLayout;
 
-	m_globalDirData = { 0, { 0, 0, 0 } };
-
-	m_dirLights.SetSize(MAX_DIRECTIONAL_LIGHTS);
-	m_dirLights.SetCount(MAX_DIRECTIONAL_LIGHTS);
-
-	for(int i = 0; i < MAX_DIRECTIONAL_LIGHTS; ++i) 
-	{
-		m_dirLights[i].m_v4Direction = glm::vec4(0.0f, -1.0f, 0.0f, 1.0f); // Point directly down.
-		m_dirLights[i].m_v4Color = glm::vec4(1.0f); // White
-	}
-
-	// One UBO for all direction lights, to avoid memory fragmentation.
-	m_renderer->CreateBuffer(sizeof(GlobalDirLightData) + (sizeof(DirectionalLight) * MAX_DIRECTIONAL_LIGHTS), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_dirLightUBO, m_dirLightUBOMemory);
-
 	m_pointLightVolMesh = new Mesh(m_renderer, "Assets/Primitives/sphere.obj", &Mesh::defaultFormat);
 
 	m_shadowMapModule = shadowMap;
+
+	m_bDirLightChange = false;
 
 	m_nChangePLightStart = 0U;
 	m_nChangePLightEnd = 1U;
@@ -61,41 +49,43 @@ LightingManager::LightingManager(Renderer* renderer, Shader* dirLightShader, Sha
 	m_dirLightShader = dirLightShader;
 	m_pointLightShader = pointLightShader;
 
+	CreateDirLightBuffers();
 	CreatePointLightBuffers();
 	CreateDescriptorPool();
 	CreateSetLayouts();
 	CreateDescriptorSets();
 	CreateDirLightingPipeline(nWindowWidth, nWindowHeight);
 	CreatePointLightingPipeline(nWindowWidth, nWindowHeight);
-
-	UpdateDirLights();
-
-	m_bDirLightChange = false;
 }
 
 LightingManager::~LightingManager()
 {
-	// Destroy pipelines.
-	vkDestroyPipeline(m_renderer->GetDevice(), m_dirLightPipeline, nullptr);
-	vkDestroyPipelineLayout(m_renderer->GetDevice(), m_dirLightPipelineLayout, nullptr);
+	VkDevice device = m_renderer->GetDevice();
 
-	vkDestroyPipeline(m_renderer->GetDevice(), m_pointLightPipeline, nullptr);
-	vkDestroyPipelineLayout(m_renderer->GetDevice(), m_pointLightPipelineLayout, nullptr);
+	// Destroy pipelines.
+	vkDestroyPipeline(device, m_dirLightPipeline, nullptr);
+	vkDestroyPipelineLayout(device, m_dirLightPipelineLayout, nullptr);
+
+	vkDestroyPipeline(device, m_pointLightPipeline, nullptr);
+	vkDestroyPipelineLayout(device, m_pointLightPipelineLayout, nullptr);
 
 	// Destroy descriptors.
-	vkDestroyDescriptorPool(m_renderer->GetDevice(), m_descriptorPool, nullptr);
-	vkDestroyDescriptorSetLayout(m_renderer->GetDevice(), m_dirLightUBOLayout, nullptr);
+	vkDestroyDescriptorPool(device, m_descriptorPool, nullptr);
+	vkDestroyDescriptorSetLayout(device, m_dirLightUBOLayout, nullptr);
 
 	// Destroy UBOs
-	vkDestroyBuffer(m_renderer->GetDevice(), m_dirLightUBO, nullptr);
-	vkFreeMemory(m_renderer->GetDevice(), m_dirLightUBOMemory, nullptr);
+	vkDestroyBuffer(device, m_dirLightStageBuffer, nullptr);
+	vkFreeMemory(device, m_dirLightStageMemory, nullptr);
+
+	vkDestroyBuffer(device, m_dirLightUBO, nullptr);
+	vkFreeMemory(device, m_dirLightUBOMemory, nullptr);
 
 	// Destroy vertex buffers.
-	vkDestroyBuffer(m_renderer->GetDevice(), m_pointLightStageInsBuffer, nullptr);
-	vkFreeMemory(m_renderer->GetDevice(), m_pointLightStageInsMemory, nullptr);
+	vkDestroyBuffer(device, m_pointLightStageInsBuffer, nullptr);
+	vkFreeMemory(device, m_pointLightStageInsMemory, nullptr);
 
-	vkDestroyBuffer(m_renderer->GetDevice(), m_pointLightInsBuffer, nullptr);
-	vkFreeMemory(m_renderer->GetDevice(), m_pointLightInsMemory, nullptr);
+	vkDestroyBuffer(device, m_pointLightInsBuffer, nullptr);
+	vkFreeMemory(device, m_pointLightInsMemory, nullptr);
 
 	// Delete point light volume mesh.
 	delete m_pointLightVolMesh;
@@ -218,7 +208,7 @@ void LightingManager::RecordCommandBuffer(const uint32_t& nPresentImageIndex, co
 
 	// Update lighting
 	if (m_bDirLightChange)
-		UpdateDirLights();
+		UpdateDirLights(transferCmdBuf);
 
 	if (m_bPointLightChange)
 		UpdatePointLights(transferCmdBuf);
@@ -270,28 +260,31 @@ const bool& LightingManager::PointLightingChanged()
 	return m_bPointLightChange;
 }
 
-void LightingManager::UpdateDirLights()
+void LightingManager::UpdateDirLights(const VkCommandBuffer& cmdBuffer)
 {
 	int nGlobalSize = sizeof(GlobalDirLightData);
 	int nBufferSize = sizeof(DirectionalLight) * MAX_DIRECTIONAL_LIGHTS;
 
 	// Map directional light UBO memory...
 	void* mappedPtr = nullptr;
-	RENDERER_SAFECALL(vkMapMemory(m_renderer->GetDevice(), m_dirLightUBOMemory, 0, nBufferSize, 0, &mappedPtr), "Lighting Manager Error: Failed to map directional light data for update.");
+	RENDERER_SAFECALL(vkMapMemory(m_renderer->GetDevice(), m_dirLightStageMemory, 0, nBufferSize, 0, &mappedPtr), "Lighting Manager Error: Failed to map directional light data for update.");
 
 	char* charPtr = static_cast<char*>(mappedPtr);
 
-	memcpy_s(charPtr, nBufferSize, m_dirLights.Data(), nBufferSize);
-	memcpy_s(&charPtr[nBufferSize], nGlobalSize, &m_globalDirData, nGlobalSize);
-	//memcpy_s(charPtr, nBufferSize, m_dirLights.Data(), nBufferSize);
+	std::memcpy(charPtr, m_dirLights.Data(), nBufferSize);
+	std::memcpy(&charPtr[nBufferSize], &m_globalDirData, nGlobalSize);
 
 	// Unmap buffer memory.
-	vkUnmapMemory(m_renderer->GetDevice(), m_dirLightUBOMemory);
+	vkUnmapMemory(m_renderer->GetDevice(), m_dirLightStageMemory);
+
+	// Issue copy command to copy staging buffer to the device local buffer.
+	VkBufferCopy copyRegion = { 0, 0, nBufferSize + nGlobalSize };
+	vkCmdCopyBuffer(cmdBuffer, m_dirLightStageBuffer, m_dirLightUBO, 1, &copyRegion);
 
 	m_bDirLightChange = false;
 }
 
-void LightingManager::UpdatePointLights(VkCommandBuffer cmdBuffer) 
+void LightingManager::UpdatePointLights(const VkCommandBuffer& cmdBuffer) 
 {
 	int nCopySize = sizeof(PointLight) * (m_nChangePLightEnd - m_nChangePLightStart);
 
@@ -333,7 +326,30 @@ void LightingManager::OnOutputResize(const RenderModuleResizeData& resizeData)
 	RecreatePipelines(m_dirLightShader, m_pointLightShader, resizeData.m_nWidth, resizeData.m_nHeight);
 }
 
-void LightingManager::CreatePointLightBuffers() 
+inline void LightingManager::CreateDirLightBuffers()
+{
+	m_globalDirData = { 0, { 0, 0, 0 } };
+
+	m_dirLights.SetSize(MAX_DIRECTIONAL_LIGHTS);
+	m_dirLights.SetCount(MAX_DIRECTIONAL_LIGHTS);
+
+	for (int i = 0; i < MAX_DIRECTIONAL_LIGHTS; ++i)
+	{
+		m_dirLights[i].m_v4Direction = glm::vec4(0.0f, -1.0f, 0.0f, 1.0f); // Point directly down.
+		m_dirLights[i].m_v4Color = glm::vec4(1.0f); // White
+	}
+
+	uint32_t nSize = sizeof(GlobalDirLightData) + (sizeof(DirectionalLight) * MAX_DIRECTIONAL_LIGHTS);
+
+	// Create staging buffer...
+	m_renderer->CreateBuffer(nSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, m_dirLightStageBuffer, m_dirLightStageMemory);
+
+	// One UBO for all directional lights, to avoid memory fragmentation.
+	m_renderer->CreateBuffer(nSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_dirLightUBO, m_dirLightUBOMemory);
+
+}
+
+void LightingManager::CreatePointLightBuffers()
 {
 	// Create point light staging buffer, with enough memory for MAX_POINT_LIGHT_COUNT lights.
 	m_renderer->CreateBuffer(sizeof(PointLight) * MAX_POINT_LIGHT_COUNT, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, m_pointLightStageInsBuffer, m_pointLightStageInsMemory);

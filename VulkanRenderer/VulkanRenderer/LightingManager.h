@@ -124,14 +124,14 @@ public:
 	/*
 	Description: Update directional lighting data on the GPU.
 	*/
-	inline void UpdateDirLights();
+	inline void UpdateDirLights(const VkCommandBuffer& cmdBuffer);
 
 	/*
 	Description: Update point lighting data on the GPU.
 	Param:
 	    VkCommandBuffer cmdBuffer: The transfer command buffer to record to.
 	*/
-	void UpdatePointLights(VkCommandBuffer cmdBuffer);
+	void UpdatePointLights(const VkCommandBuffer& cmdBuffer);
 
 	/*
 	Description: Run when the subscene output resolution is modified.
@@ -149,6 +149,8 @@ public:
 	void RecordCommandBuffer(const uint32_t& nPresentImageIndex, const uint32_t& nFrameIndex, const VkFramebuffer& framebuffer, const VkCommandBuffer transferCmdBuf) override;
 
 private:
+
+	inline void CreateDirLightBuffers();
 
 	inline void CreatePointLightBuffers();
 
@@ -192,6 +194,9 @@ private:
 
 	// ---------------------------------------------------------------------------------
 	// Buffers
+
+	VkBuffer m_dirLightStageBuffer;
+	VkDeviceMemory m_dirLightStageMemory;
 
 	VkBuffer m_dirLightUBO;
 	VkDeviceMemory m_dirLightUBOMemory;
