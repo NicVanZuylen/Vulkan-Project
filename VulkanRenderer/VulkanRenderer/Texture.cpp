@@ -41,7 +41,7 @@ Texture::Texture(Renderer* renderer, const char* szFilePath)
 	}
 }
 
-Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachmentType type, VkFormat format, bool bInputAttachment, VkImageUsageFlags additionalUsageFlags)
+Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachmentType type, VkFormat format, uint32_t properties, VkImageUsageFlags additionalUsageFlags)
 {
 	m_renderer = renderer;
 	m_nWidth = nWidth;
@@ -56,8 +56,11 @@ Texture::Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachm
 	VkImageUsageFlagBits usageFlags = static_cast<VkImageUsageFlagBits>(0);
 
 	// Begin with input attachment usage flag if it will be used as such.
-	if (bInputAttachment)
+	if (properties & TEXTURE_PROPERTIES_INPUT_ATTACHMENT)
 		usageFlags = VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+
+	if (properties & TEXTURE_PROPERTIES_TRANSFER_SRC)
+		usageFlags = static_cast<VkImageUsageFlagBits>(usageFlags | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 
 	switch (type)
 	{
@@ -282,6 +285,9 @@ void Texture::RecordImageMemBarrierCmdBuffer(VkCommandBuffer cmdBuffer, VkImageL
 	memBarrier.subresourceRange.levelCount = 1;
 	memBarrier.subresourceRange.baseArrayLayer = 0;
 	memBarrier.subresourceRange.layerCount = 1;
+
+	sourceStage = 0;
+	destStage = 0;
 
 	if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
 	{

@@ -5,7 +5,11 @@ layout (set = 0, binding = 0) uniform UniformBuffer
 {
 	mat4 view;
 	mat4 proj;
+	mat4 invView;
+	mat4 invProj;
 	vec4 viewPos;
+	float nearPlane;
+	float farPlane;
 } mvp;
 
 layout(input_attachment_index = 0, set = 1, binding = 0) uniform subpassInput inputs[6];
@@ -19,7 +23,8 @@ layout(location = 0) out vec4 outColor;
 
 layout(location = 0) in vec4 finalLightPosition;
 layout(location = 1) in vec3 finalLightColor;
-layout(location = 2) in float finalLightRadius;
+layout(location = 2) in vec2 finalLightTexCoords;
+layout(location = 3) in float finalLightRadius;
 
 float OrenNayarDiff(vec3 normal, vec3 lightDir, vec3 surfToCam, float roughness) 
 {

@@ -31,7 +31,7 @@ class Scene
 {
 public:
 
-	Scene(Renderer* renderer, uint32_t nWindowWidth, uint32_t nWindowHeight, uint32_t nQueueFamilyIndex);
+	Scene(Renderer* renderer, uint32_t nQueueFamilyIndex);
 
 	~Scene();
 

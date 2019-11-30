@@ -4,6 +4,13 @@
 #ifndef ATTACHMENT_E
 #define ATTACHMENT_E
 
+enum ETextureProperties 
+{
+	TEXTURE_PROPERTIES_NONE = 0,
+	TEXTURE_PROPERTIES_INPUT_ATTACHMENT = 1,
+	TEXTURE_PROPERTIES_TRANSFER_SRC = 2
+};
+
 enum EAttachmentType 
 {
 	ATTACHMENT_COLOR,
@@ -35,7 +42,7 @@ public:
 		VKFormat format: The image format to use for this attachment.
 		bool bInputAttachment: Whether or not this attachment may be used as a shader stage input.
 	*/
-	Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachmentType type = ATTACHMENT_COLOR, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM, bool bInputAttachment = false, VkImageUsageFlags additionalUsageFlags = 0);
+	Texture(Renderer* renderer, uint32_t nWidth, uint32_t nHeight, EAttachmentType type = ATTACHMENT_COLOR, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM, uint32_t properties = 0, VkImageUsageFlags additionalUsageFlags = 0);
 
 	~Texture();
 

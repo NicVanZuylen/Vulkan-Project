@@ -166,20 +166,20 @@ int RendererHelper::DeviceSuitable(VkSurfaceKHR windowSurface, VkPhysicalDevice 
 	vkGetPhysicalDeviceFeatures(device, &features);
 
 	// Check if the provided extensions are supported.
-	bool extensionsSupported = CheckDeviceExtensionSupport(extensionNames, device);
+	bool bExtensionsSupported = CheckDeviceExtensionSupport(extensionNames, device);
 
-	if (!extensionsSupported)
+	if (!bExtensionsSupported)
 		return 0;
 
 	// Get swap chain information.
 	SwapChainDetails* swapChainDetails = GetSwapChainSupportDetails(windowSurface, device);
 
 	// Check if swap chain support is suitable.
-	bool suitableSwapChain = swapChainDetails->m_formats.Count() > 0 && swapChainDetails->m_presentModes.Count() > 0;
+	bool bSuitableSwapChain = swapChainDetails->m_formats.Count() > 0 && swapChainDetails->m_presentModes.Count() > 0;
 
 	delete swapChainDetails;
 
-	if (!suitableSwapChain)
+	if (!bSuitableSwapChain)
 		return 0;
 
 	int score = properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU && features.geometryShader;

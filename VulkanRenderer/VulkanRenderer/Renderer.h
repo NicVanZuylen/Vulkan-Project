@@ -17,6 +17,8 @@
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 
+#define SUPERSAMPLE_LEVEL 2
+
 #define MAX_FRAMES_IN_FLIGHT 2
 #define MAX_CONCURRENT_COPIES MAX_FRAMES_IN_FLIGHT
 
@@ -98,15 +100,21 @@ public:
 
 	VkCommandPool GetCommandPool();
 
-	const unsigned int& FrameWidth() const;
+	uint32_t FrameWidth() const;
 
-	const unsigned int& FrameHeight() const;
+	uint32_t FrameHeight() const;
+
+	uint32_t SuperSampleLevel() const;
 
 	const unsigned int SwapChainImageCount() const;
 
 	VkFormat SwapChainImageFormat();
 
 	DynamicArray<VkImageView>& SwapChainImageViews();
+
+	DynamicArray<VkImage>& SwapChainImages();
+
+	VkExtent3D SwapChainImageExtents();
 
 private:
 
@@ -170,6 +178,8 @@ private:
 
 	unsigned int m_nWindowWidth;
 	unsigned int m_nWindowHeight;
+
+	uint32_t m_nSuperSampleLevel;
 
 	// -----------------------------------------------------------------------------------------------------
 	// Validation layers

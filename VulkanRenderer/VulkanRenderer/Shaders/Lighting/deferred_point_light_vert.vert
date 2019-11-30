@@ -5,6 +5,8 @@ layout (set = 0, binding = 0) uniform UniformBuffer
 {
 	mat4 view;
 	mat4 proj;
+	mat4 invView;
+	mat4 invProj;
 	vec4 viewPos;
 } mvp;
 
@@ -20,7 +22,8 @@ layout(location = 5) in vec4 lightColorRadius;
 
 layout(location = 0) out vec4 finalLightPosition;
 layout(location = 1) out vec3 finalLightColor;
-layout(location = 2) out float finalLightRadius;
+layout(location = 2) out vec2 finalLightTexCoords;
+layout(location = 3) out float finalLightRadius;
 
 void main() 
 {
@@ -31,4 +34,5 @@ void main()
     finalLightRadius = lightColorRadius.w;
 
     gl_Position = mvp.proj * mvp.view * vec4(finalPos, 1.0f);
+	finalLightTexCoords = gl_Position.xy;
 }

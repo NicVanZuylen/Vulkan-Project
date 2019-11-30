@@ -5,7 +5,11 @@ layout (set = 0, binding = 0) uniform UniformBuffer
 {
 	mat4 view;
 	mat4 proj;
+	mat4 invView;
+	mat4 invProj;
 	vec4 viewPos;
+	float nearPlane;
+	float farPlane;
 } mvp;
 
 layout(input_attachment_index = 0, set = 1, binding = 0) uniform subpassInput inputs[6];
@@ -96,6 +100,21 @@ float CookTorrenceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float lambert, 
 	float bottomHalf = PI * normalDotView;
 
 	return max((D * F * G) / bottomHalf, 0.0f);
+}
+
+vec3 WorldPosFromDepth(float depth) 
+{
+    float z = (depth * mvp.farPlane) + mvp.nearPlane;
+
+	vec4 clipSpacePos = vec4(finalTexCoords.xy * 2.0f - 1.0f, z, 1.0f);
+	vec4 viewSpacepos = mvp.invProj * clipSpacePos;
+
+	// Persp divide
+	viewSpacepos /= viewSpacepos.w;
+
+	vec4 worldPos = mvp.invView * viewSpacepos;
+
+	return worldPos.xyz;
 }
 
 void main() 

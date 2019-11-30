@@ -88,6 +88,19 @@ VkAttachmentDescription SubScene::m_swapChainAttachmentDescription =
 	VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
 };
 
+VkAttachmentDescription SubScene::m_outputAttachmentDescription =
+{
+	0,
+	VK_FORMAT_R8G8B8A8_UNORM,
+	VK_SAMPLE_COUNT_1_BIT,
+	VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+	VK_ATTACHMENT_STORE_OP_STORE,
+	VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+	VK_ATTACHMENT_STORE_OP_DONT_CARE,
+	VK_IMAGE_LAYOUT_UNDEFINED,
+	VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL // This layout is for blitting to the swap chain image.
+};
+
 VkAttachmentDescription SubScene::m_depthAttachmentDescription =
 {
 	0,
@@ -209,14 +222,10 @@ SubScene::SubScene(SubSceneParams& params)
 	m_pass = VK_NULL_HANDLE;
 	m_nQueueFamilyIndex = params.m_nQueueFamilyIndex;
 
-	// Output image clear value.
-	VkClearValue clearVal = { 0.0f, 0.0f, 0.0f, 1.0f };
-	m_clearValues.Push(clearVal);
-
 	m_nWidth = params.m_nFrameBufferWidth;
 	m_nHeight = params.m_nFrameBufferHeight;
 	m_bPrimary = params.m_bPrimary;
-	m_bOutputHDR = params.m_bOutputHDR;
+
 
 	// Create images that will be rendered to.
 	CreateImages(params.eAttachmentBits, params.m_miscGAttachments);
@@ -282,10 +291,9 @@ SubScene::~SubScene()
 	vkDestroyCommandPool(device, m_commandPool, nullptr);
 
 	// ---------------------------------------------------------------------------------
-	// Destroy framebuffers.
+	// Destroy framebuffer.
 
-	for(uint32_t i = 0; i < m_framebuffers.Count(); ++i)
-	    vkDestroyFramebuffer(device, m_framebuffers[i], nullptr);
+	vkDestroyFramebuffer(device, m_framebuffer, nullptr);
 
 	// ---------------------------------------------------------------------------------
 	// Destroy subscene render pass.
@@ -325,8 +333,7 @@ SubScene::~SubScene()
 	delete m_gPass;
 	delete m_lightManager;
 
-	if(m_bPrimary)
-	    delete m_outImage;
+	delete m_outImage;
 }
 
 void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicArray<MiscGBufferDesc>& miscGAttachments)
@@ -338,7 +345,7 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 	CreateOutputImage();
 
 	m_gBufferImages.Clear();
-	m_gBufferImages.SetSize(3 + miscGAttachments.Count());
+	m_gBufferImages.SetSize(4 + miscGAttachments.Count());
 	m_depthImage = nullptr;
 
 	m_clearValues.Clear();
@@ -362,9 +369,9 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 	{
 		// Create HDR image if correct bit is found.
 		if (eImageBits & GBUFFER_COLOR_HDR_BIT)
-			m_colorImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true);
+			m_colorImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, TEXTURE_PROPERTIES_INPUT_ATTACHMENT);
 		else
-			m_colorImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_UNORM, true);
+			m_colorImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_UNORM, TEXTURE_PROPERTIES_INPUT_ATTACHMENT);
 
 		m_gBufferImages.Push(m_colorImage);
 
@@ -375,7 +382,7 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 
 	if (eImageBits & GBUFFER_POSITION_BIT)
 	{
-		m_posImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true);
+		m_posImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, TEXTURE_PROPERTIES_INPUT_ATTACHMENT);
 		m_gBufferImages.Push(m_posImage);
 
 		// Clear value
@@ -385,7 +392,7 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 
 	if (eImageBits & GBUFFER_NORMAL_BIT)
 	{
-		m_normalImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true);
+		m_normalImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, TEXTURE_PROPERTIES_INPUT_ATTACHMENT);
 		m_gBufferImages.Push(m_normalImage);
 
 		// Clear value
@@ -404,15 +411,15 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 		switch (m_miscGAttachments[i].m_eType)
 		{
 		case EMiscGBufferType::GBUFFER_MISC_8_BIT:
-			miscTex = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_SRGB, true);
+			miscTex = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_SRGB, TEXTURE_PROPERTIES_INPUT_ATTACHMENT);
 			break;
 
 		case EMiscGBufferType::GBUFFER_MISC_16_BIT_FLOAT:
-			miscTex = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true);
+			miscTex = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, TEXTURE_PROPERTIES_INPUT_ATTACHMENT);
 			break;
 
 		case EMiscGBufferType::GBUFFER_MISC_32_BIT_FLOAT:
-			miscTex = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R32G32B32_SFLOAT, true);
+			miscTex = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R32G32B32_SFLOAT, TEXTURE_PROPERTIES_INPUT_ATTACHMENT);
 			break;
 
 		default:
@@ -445,8 +452,7 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 	m_allImages.Clear();
 	m_allImages.SetSize(2 + m_gBufferImages.Count());
 
-	if(!m_bPrimary)
-	    m_allImages.Push(m_outImage);
+	m_allImages.Push(m_outImage);
 
 	m_allImages.Push(m_shadowMapImage);
 
@@ -474,7 +480,6 @@ void SubScene::ResizeOutput(uint32_t nNewWidth, uint32_t nNewHeight)
 	// ---------------------------------------------------------------------------------
 	// Re-creation
 
-	CreateOutputImage();
 	CreateImages(m_eGBufferImageBits, m_miscGAttachments); // Re-create subscene image.
 	CreateRenderPass(); // Re-create render pass.
 	CreateFramebuffers(); // Re-create framebuffers.
@@ -554,16 +559,13 @@ Renderer* SubScene::GetRenderer()
 
 inline void SubScene::CreateOutputImage()
 {
+	m_outImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_UNORM, TEXTURE_PROPERTIES_INPUT_ATTACHMENT | TEXTURE_PROPERTIES_TRANSFER_SRC, VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+
 	if (m_bPrimary) 
 	{
+		m_swapChainImages = m_renderer->SwapChainImages();
 		m_swapchainImageViews = m_renderer->SwapChainImageViews(); // Set swap chain image view references.
-		return;
 	}
-
-	if (m_bOutputHDR) // Create a HDR image if specified.
-		m_outImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R8G8B8A8_UNORM, true);
-	else // Otherwise create a standard output image.
-		m_outImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_COLOR, VK_FORMAT_R16G16B16A16_SFLOAT, true);
 }
 
 inline void SubScene::CreateDescriptorPool()
@@ -577,13 +579,11 @@ inline void SubScene::CreateDescriptorPool()
 	// Pool size for G Buffer input attachment set
 	VkDescriptorPoolSize gBufferPoolSize = { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, m_gBufferImages.Count() };
 
-	VkDescriptorPoolSize outputPoolSize = { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1 };
-
-	VkDescriptorPoolSize poolSizes[3] = { mvpUBOPoolSize, gBufferPoolSize, outputPoolSize };
+	VkDescriptorPoolSize poolSizes[] = { mvpUBOPoolSize, gBufferPoolSize };
 
 	// Set pool create info poolsizes.
-	m_poolCreateInfo.maxSets = MAX_FRAMES_IN_FLIGHT + m_gBufferImages.Count() + !m_bPrimary; // Sets for: MVP UBO Buffers, G Buffer Images, Output image
-	m_poolCreateInfo.poolSizeCount = 2 + !m_bPrimary;
+	m_poolCreateInfo.maxSets = MAX_FRAMES_IN_FLIGHT + m_gBufferImages.Count(); // Sets for: MVP UBO Buffers, G Buffer Images
+	m_poolCreateInfo.poolSizeCount = 2;
 	m_poolCreateInfo.pPoolSizes = poolSizes;
 
 	// Create descriptor pool.
@@ -626,10 +626,6 @@ inline void SubScene::CreateInputAttachmentDescriptors(bool bCreateLayout)
 		RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_renderer->GetDevice(), &m_inAttachSetLayoutInfo, nullptr, &m_gBufferSetLayout), "SubScene Error: Failed to create G Buffer descriptor set layout.");
 
 		m_inAttachLayoutBinding.descriptorCount = 1;
-
-		// Output set layout
-		if (!m_bPrimary)
-			RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_renderer->GetDevice(), &m_inAttachSetLayoutInfo, nullptr, &m_outputSetLayout), "SubScene Error: Failed to create G Buffer descriptor set layout.");
 	}
 
 	// ---------------------------------------------------------------------------------
@@ -639,20 +635,7 @@ inline void SubScene::CreateInputAttachmentDescriptors(bool bCreateLayout)
 	m_descAllocInfo.descriptorSetCount = 1;
 	m_descAllocInfo.pSetLayouts = &m_gBufferSetLayout;
 
-	// Set descriptor count for G buffer images.
-	//m_inAttachLayoutBinding.descriptorCount = m_gBufferImages.Count();
-
 	RENDERER_SAFECALL(vkAllocateDescriptorSets(m_renderer->GetDevice(), &m_descAllocInfo, &m_gBufferDescSet), "SubScene Error: Failed to allocate G Buffer descriptor sets.");
-
-	// One descriptor for output.
-	m_descAllocInfo.pSetLayouts = &m_outputSetLayout;
-
-	//m_inAttachLayoutBinding.descriptorCount = 1;
-
-	if(!m_bPrimary) 
-	{
-		RENDERER_SAFECALL(vkAllocateDescriptorSets(m_renderer->GetDevice(), &m_descAllocInfo, &m_outputDescSet), "SubScene Error: Failed to allocate G Buffer descriptor sets.");
-	}
 }
 
 inline void SubScene::UpdateAllDescriptorSets()
@@ -716,32 +699,17 @@ inline void SubScene::UpdateAllDescriptorSets()
 	writes[MAX_FRAMES_IN_FLIGHT] = gBufferWrite;
 
 	// ---------------------------------------------------------------------------------
-	// Output Updates
-
-	if(!m_bPrimary) 
-	{
-		currentImageInfo.imageView = m_outImage->ImageView();
-
-		VkWriteDescriptorSet outputWrite = {};
-		outputWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		outputWrite.dstSet = m_outputDescSet;
-		outputWrite.descriptorCount = 1;
-		outputWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-		outputWrite.dstArrayElement = 0;
-		outputWrite.pImageInfo = &currentImageInfo;
-		outputWrite.pNext = nullptr;
-
-		writes[MAX_FRAMES_IN_FLIGHT + 1] = outputWrite;
-	}
-
-	// ---------------------------------------------------------------------------------
 	// Update descriptors.
 
-	vkUpdateDescriptorSets(m_renderer->GetDevice(), MAX_FRAMES_IN_FLIGHT + 1 + !m_bPrimary, writes, 0, nullptr);
+	vkUpdateDescriptorSets(m_renderer->GetDevice(), MAX_FRAMES_IN_FLIGHT + 1, writes, 0, nullptr);
 }
 
 inline void SubScene::CreateMVPUBOBuffers()
 {
+	// Set local buffer near and far plane values.
+	m_localMVPData.m_fNearPlane = NEAR_PLANE;
+	m_localMVPData.m_fFarPlane = FAR_PLANE;
+
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) 
 	{
 		// Create staging buffer...
@@ -752,14 +720,10 @@ inline void SubScene::CreateMVPUBOBuffers()
 	}
 }
 
-inline void SubScene::CreateSwapChainAttachmentDesc(DynamicArray<VkAttachmentDescription>& attachments)
+inline void SubScene::CreateOutputAttachmentDescription(VkAttachmentDescription& desc)
 {
-	attachments.SetSize(1);
-	attachments.Clear();
-
-	m_swapChainAttachmentDescription.format = m_renderer->SwapChainImageFormat();
-
-	attachments.Push(m_swapChainAttachmentDescription);
+	desc = m_outputAttachmentDescription;
+	desc.format = m_outImage->Format();
 }
 
 inline void SubScene::CreateAttachmentDescriptions(const DynamicArray<Texture*>& targets, DynamicArray<VkAttachmentDescription>& attachments)
@@ -799,18 +763,6 @@ inline void SubScene::CreateAttachmentDescriptions(const DynamicArray<Texture*>&
 		// Set format if different from default.
 		attachments[i].format = targets[i]->Format();
 	}
-}
-
-inline void SubScene::CreateSwapChainAttachRef(DynamicArray<VkAttachmentReference>& references)
-{
-	references.SetSize(1);
-	references.Clear();
-
-	VkAttachmentReference swapChainRef = {};
-	swapChainRef.attachment = 0;
-	swapChainRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-	references.Push(swapChainRef);
 }
 
 inline void SubScene::CreateAttachmentReferences(const uint32_t& nIndexOffset, const DynamicArray<Texture*>& targets, DynamicArray<VkAttachmentReference>& references)
@@ -879,13 +831,10 @@ inline void SubScene::CreateRenderPass()
 	DynamicArray<Texture*> targetImages = { m_outImage };
 	DynamicArray<Texture*> shadowMapImages = { m_shadowMapImage };
 
-	DynamicArray<VkAttachmentDescription> targetDescriptions;
+	VkAttachmentDescription targetDescription;
 
-	// Create attachment descriptions for output images, or swap chain images if primary.
-	if (!m_bPrimary)
-		CreateAttachmentDescriptions(targetImages, targetDescriptions);
-	else
-		CreateSwapChainAttachmentDesc(targetDescriptions);
+	// Create attachment descriptions for output image.
+	CreateOutputAttachmentDescription(targetDescription);
 
 	DynamicArray<VkAttachmentDescription> shadowMapDescriptions;
 	CreateAttachmentDescriptions(shadowMapImages, shadowMapDescriptions);
@@ -898,7 +847,9 @@ inline void SubScene::CreateRenderPass()
 	DynamicArray<VkAttachmentDescription> depthDescriptions;
 	CreateAttachmentDescriptions(depthImages, depthDescriptions);
 
-	DynamicArray<VkAttachmentDescription> allDescriptions = targetDescriptions + shadowMapDescriptions + gDescriptions + depthDescriptions;
+	DynamicArray<VkAttachmentDescription> allDescriptions;
+	allDescriptions.Push(targetDescription);
+	allDescriptions += shadowMapDescriptions + gDescriptions + depthDescriptions;
 
 	// ---------------------------------------------------------------------------------
 	// References
@@ -906,16 +857,9 @@ inline void SubScene::CreateRenderPass()
 	DynamicArray<VkAttachmentReference> targetRefs;
 	DynamicArray<VkAttachmentReference> targetInputRefs;
 
-	// Create attachment references for output images. Or swap chain images if primary.
-	if(!m_bPrimary) 
-	{
-		CreateAttachmentReferences(0, targetImages, targetRefs);
-		CreateInputAttachmentReferences(0, targetImages, targetInputRefs);
-	}
-	else 
-	{
-		CreateSwapChainAttachRef(targetRefs);
-	}
+	// Create attachment references for output image.
+	CreateAttachmentReferences(0, targetImages, targetRefs);
+	CreateInputAttachmentReferences(0, targetImages, targetInputRefs);
 
 	DynamicArray<VkAttachmentReference> shadowMapRefs;
 	CreateAttachmentReferences(targetImages.Count(), shadowMapImages, shadowMapRefs);
@@ -983,57 +927,33 @@ inline void SubScene::CreateRenderPass()
 
 inline void SubScene::CreateFramebuffers()
 {
-	// Destroy previous framebuffers if they exist.
-	for (uint32_t i = 0; i < m_framebuffers.Count(); ++i) 
+	// Destroy previous framebuffer if it exists.
+	if (m_framebuffer) 
 	{
-		if (m_framebuffers[i]) 
-		{
-	        vkDestroyFramebuffer(m_renderer->GetDevice(), m_framebuffers[i], nullptr);
-			m_framebuffers[i] = nullptr;
-		}
+	    vkDestroyFramebuffer(m_renderer->GetDevice(), m_framebuffer, nullptr);
+		m_framebuffer = nullptr;
 	}
 
-	m_framebuffers.Clear();
+	// Gather all images and extract their image views into another array.
+	DynamicArray<VkImageView> views(m_allImages.Count());
 
-	uint32_t nFrameBufferCount = 1;
-
-	// If this is a primary subscene we need a framebuffer for each swap chain image.
-	if (m_bPrimary)
-		nFrameBufferCount = m_swapchainImageViews.Count();
-
-	// Make room for enough framebuffer handles.
-	m_framebuffers.SetSize(nFrameBufferCount);
-
-	for(uint32_t i = 0; i < nFrameBufferCount; ++i) 
+	for (uint32_t i = 0; i < m_allImages.Count(); ++i)
 	{
-		// Gather all images and extract their image views into another array.
-		DynamicArray<VkImageView> views(m_allImages.Count());
-
-		// Push swap chain image (if primary).
-		if (m_bPrimary)
-			views.Push(m_swapchainImageViews[i]);
-
-		// If primary, start at index 1 to skip the output image.
-		for (uint32_t i = 0; i < m_allImages.Count(); ++i)
-		{
-			views.Push(m_allImages[i]->ImageView());
-		}
-
-		VkFramebufferCreateInfo createInfo = {};
-		createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		createInfo.attachmentCount = views.Count();
-		createInfo.pAttachments = views.Data();
-		createInfo.renderPass = m_pass;
-		createInfo.layers = 1;
-		createInfo.width = m_nWidth;
-		createInfo.height = m_nHeight;
-		createInfo.flags = 0;
-		createInfo.pNext = nullptr;
-
-		RENDERER_SAFECALL(vkCreateFramebuffer(m_renderer->GetDevice(), &createInfo, nullptr, &m_framebuffers[i]), "SubScene Error: Failed to create framebuffer.");
-
-		m_framebuffers.Push(m_framebuffers[i]);
+		views.Push(m_allImages[i]->ImageView());
 	}
+
+	VkFramebufferCreateInfo createInfo = {};
+	createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	createInfo.attachmentCount = views.Count();
+	createInfo.pAttachments = views.Data();
+	createInfo.renderPass = m_pass;
+	createInfo.layers = 1;
+	createInfo.width = m_nWidth;
+	createInfo.height = m_nHeight;
+	createInfo.flags = 0;
+	createInfo.pNext = nullptr;
+
+	RENDERER_SAFECALL(vkCreateFramebuffer(m_renderer->GetDevice(), &createInfo, nullptr, &m_framebuffer), "SubScene Error: Failed to create framebuffer.");
 }
 
 inline void SubScene::CreateCmds()
@@ -1084,15 +1004,10 @@ void SubScene::RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const 
 	beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	beginInfo.clearValueCount = m_clearValues.Count();
 	beginInfo.pClearValues = m_clearValues.Data();
+	beginInfo.framebuffer = m_framebuffer;
 	beginInfo.renderArea = renderArea;
 	beginInfo.renderPass = m_pass;
 	beginInfo.pNext = nullptr;
-
-	// If this is a primary subscene we will render directly to a swap chain image. The correct one is in the framebuffer indexed with the present image index.
-	if (m_bPrimary)
-		beginInfo.framebuffer = m_framebuffers[nPresentImageIndex];
-	else
-		beginInfo.framebuffer = m_framebuffers[0]; // There will be only one framebuffer if this is not a primary subscene.
 
 	// Update MVP UBO
 	UpdateMVPUBO(transferCmdBuf, nFrameIndex);
@@ -1124,6 +1039,51 @@ void SubScene::RecordPrimaryCmdBuffer(const uint32_t& nPresentImageIndex, const 
 	// End render pass instance.
 	vkCmdEndRenderPass(cmdBuf);
 
+	// -------------------------------------------------------------------------------------
+	// Transition swap chain image layout to be optimal for transfer destination.
+
+	VkImageMemoryBarrier swapChainMembarrier = {};
+	swapChainMembarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	swapChainMembarrier.pNext = nullptr;
+	swapChainMembarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	swapChainMembarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	swapChainMembarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	swapChainMembarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	swapChainMembarrier.image = m_swapChainImages[nPresentImageIndex];
+	swapChainMembarrier.srcAccessMask = 0;
+	swapChainMembarrier.dstAccessMask = 0;
+	
+	VkImageSubresourceRange subresource = {};
+	subresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	subresource.baseArrayLayer = 0;
+	subresource.baseMipLevel = 0;
+	subresource.levelCount = 1;
+	subresource.layerCount = 1;
+
+	swapChainMembarrier.subresourceRange = subresource;
+
+	vkCmdPipelineBarrier(cmdBuf, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, 0, 0, 0, 1, &swapChainMembarrier);
+
+	// -------------------------------------------------------------------------------------
+	// Blit output image onto the swap chain image.
+
+	VkImageSubresourceLayers subresourceLayers = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+
+	VkOffset3D firstOffset = { 0, 0, 0 };
+	VkOffset3D secondOffset = { static_cast<int>(m_nWidth), static_cast<int>(m_nHeight), 1 };
+	VkOffset3D swapChainOffset = *((VkOffset3D*)&m_renderer->SwapChainImageExtents());
+	VkImageBlit blitRegion = { subresourceLayers, { firstOffset, secondOffset }, subresourceLayers, { firstOffset, swapChainOffset } };
+
+	// Blit the images with bilinear filtering, to downsample correctly.
+	vkCmdBlitImage(cmdBuf, m_outImage->ImageHandle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_swapChainImages[nPresentImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blitRegion, VK_FILTER_LINEAR);
+
+	// -------------------------------------------------------------------------------------
+	// Transition swap chain image layout back to present layout.
+
+	swapChainMembarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	vkCmdPipelineBarrier(cmdBuf, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, 0, 0, 0, 1, &swapChainMembarrier);
+
 	// Finish recording.
 	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuf), "SubScene Error: Failed to end recording of dynamic object command buffer.");
 }
@@ -1137,7 +1097,11 @@ inline void SubScene::UpdateMVPUBO(const VkCommandBuffer& cmdBuffer, const uint3
 	axisCorrection[3][3] = 1.0f;
 
 	// Update local projection matrix.
-	m_localMVPData.m_proj = axisCorrection * glm::perspective(glm::radians(45.0f), static_cast<float>(m_nWidth) / static_cast<float>(m_nHeight), 0.1f, 1000.0f);
+	m_localMVPData.m_proj = axisCorrection * glm::perspective(glm::radians(45.0f), static_cast<float>(m_nWidth) / static_cast<float>(m_nHeight), NEAR_PLANE, FAR_PLANE);
+
+	// Update inverse of view & projection matrix, which can be used to transform clip space to world space.
+	m_localMVPData.m_invView = glm::inverse(m_localMVPData.m_view);
+	m_localMVPData.m_invProj = glm::inverse(m_localMVPData.m_proj);
 
 	uint32_t nBufferSize = sizeof(MVPUniformBuffer);
 

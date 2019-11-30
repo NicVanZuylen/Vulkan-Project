@@ -69,6 +69,8 @@ Renderer::Renderer(GLFWwindow* window)
 	m_nWindowWidth = WINDOW_WIDTH;
 	m_nWindowHeight = WINDOW_HEIGHT;
 
+	m_nSuperSampleLevel = SUPERSAMPLE_LEVEL;
+
 	m_instance = VK_NULL_HANDLE;
 	m_physDevice = VK_NULL_HANDLE;
 
@@ -113,7 +115,7 @@ Renderer::Renderer(GLFWwindow* window)
 
 	EGBufferAttachmentTypeBit gBufferBits = (EGBufferAttachmentTypeBit)(GBUFFER_COLOR_BIT | GBUFFER_COLOR_HDR_BIT | GBUFFER_DEPTH_BIT | GBUFFER_POSITION_BIT | GBUFFER_NORMAL_BIT);
 
-	m_scene = new Scene(this, m_nWindowWidth, m_nWindowHeight, m_nGraphicsQueueFamilyIndex);
+	m_scene = new Scene(this, m_nGraphicsQueueFamilyIndex);
 
 	// Syncronization
 	CreateSyncObjects();
@@ -257,7 +259,7 @@ void Renderer::ResizeWindow(const unsigned int& nWidth, const unsigned int& nHei
 	m_nFrameIndex = 1;
 
 	// Re-create subscenes.
-	m_scene->ResizeOutput(m_nWindowWidth, m_nWindowHeight);
+	m_scene->ResizeOutput(m_nWindowWidth * m_nSuperSampleLevel, m_nWindowHeight * m_nSuperSampleLevel);
 }
 
 Scene* Renderer::GetScene()
@@ -487,7 +489,7 @@ void Renderer::CreateSwapChain()
 	createInfo.imageExtent = m_swapChainImageExtents;
 	createInfo.minImageCount = imageCount;
 	createInfo.imageArrayLayers = 1;
-	createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // Transfer dst for blits.
 	createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 	createInfo.preTransform = details->m_capabilities.currentTransform;
 	createInfo.clipped = VK_TRUE;
@@ -815,14 +817,19 @@ VkCommandPool Renderer::GetCommandPool()
 	return m_mainGraphicsCommandPool;
 }
 
-const unsigned int& Renderer::FrameWidth() const
+uint32_t Renderer::FrameWidth() const
 {
-	return m_swapChainImageExtents.width;
+	return m_swapChainImageExtents.width * m_nSuperSampleLevel;
 }
 
-const unsigned int& Renderer::FrameHeight() const
+uint32_t Renderer::FrameHeight() const
 {
-	return m_swapChainImageExtents.height;
+	return m_swapChainImageExtents.height * m_nSuperSampleLevel;
+}
+
+uint32_t Renderer::SuperSampleLevel() const
+{
+	return m_nSuperSampleLevel;
 }
 
 const unsigned int Renderer::SwapChainImageCount() const
@@ -838,6 +845,16 @@ VkFormat Renderer::SwapChainImageFormat()
 DynamicArray<VkImageView>& Renderer::SwapChainImageViews()
 {
 	return m_swapChainImageViews;
+}
+
+DynamicArray<VkImage>& Renderer::SwapChainImages()
+{
+	return m_swapChainImages;
+}
+
+VkExtent3D Renderer::SwapChainImageExtents()
+{
+	return { m_swapChainImageExtents.width, m_swapChainImageExtents.height, 1 };
 }
 
 VkSurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(DynamicArray<VkSurfaceFormatKHR>& availableFormats) 

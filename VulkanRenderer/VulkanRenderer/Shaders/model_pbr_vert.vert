@@ -5,7 +5,11 @@ layout (set = 0, binding = 0) uniform UniformBuffer
 {
 	mat4 view;
 	mat4 proj;
+	mat4 invView;
+	mat4 invProj;
 	vec4 viewPos;
+	float nearPlane;
+	float farPlane;
 } mvp;
 
 layout(location = 0) in vec4 position;

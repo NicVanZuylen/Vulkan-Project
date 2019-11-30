@@ -21,6 +21,9 @@ struct Shader;
 #define SUB_PASS_COUNT 3
 #define POST_SUBPASS_INDEX ~0
 
+#define NEAR_PLANE 0.1f
+#define FAR_PLANE 1000.0f
+
 enum EGBufferAttachmentTypeBit
 {
 	GBUFFER_COLOR_BIT = 1,
@@ -54,7 +57,6 @@ struct SubSceneParams
 	EGBufferAttachmentTypeBit eAttachmentBits;
 	DynamicArray<MiscGBufferDesc> m_miscGAttachments; // Misc G-Buffer attachments to add.
 	bool m_bPrimary;
-	bool m_bOutputHDR;
 };
 
 // Contains graphics pipeline handles and pointers to all renderobjects using the pipeline for the subscene it belongs to.
@@ -81,7 +83,11 @@ struct MVPUniformBuffer
 {
 	glm::mat4 m_view;
 	glm::mat4 m_proj;
+	glm::mat4 m_invView;
+	glm::mat4 m_invProj;
 	glm::vec4 m_v4ViewPos;
+	float m_fNearPlane;
+	float m_fFarPlane;
 };
 
 class SubScene
@@ -188,19 +194,14 @@ private:
 	inline void CreateMVPUBOBuffers();
 
 	/*
-	Description: Create a VkAttachmentDescription for swap chain images.
+	Description: Create VkAttachmentDescription structures for output images to aid in render pass creation.
 	*/
-	inline void CreateSwapChainAttachmentDesc(DynamicArray<VkAttachmentDescription>& attachments);
+	inline void CreateOutputAttachmentDescription(VkAttachmentDescription& desc);
 
 	/*
 	Description: Create VkAttachmentDescription structures to aid in render pass creation.
 	*/
 	inline void CreateAttachmentDescriptions(const DynamicArray<Texture*>& targets, DynamicArray<VkAttachmentDescription>& attachments);
-
-	/*
-	Description: Create a VkAttachmentReference for swap chain images.
-	*/
-	inline void CreateSwapChainAttachRef(DynamicArray<VkAttachmentReference>& references);
 
 	/*
 	Description: Create VkAttachmentReference structures to aid in render pass creation.
@@ -253,6 +254,7 @@ private:
 	static VkDescriptorSetAllocateInfo m_descAllocInfo; // Descriptor alloc info for descriptors for each frame in flight.
 
 	static VkAttachmentDescription m_swapChainAttachmentDescription;
+	static VkAttachmentDescription m_outputAttachmentDescription;
 	static VkAttachmentDescription m_depthAttachmentDescription;
 	static VkAttachmentDescription m_colorAttachmentDescription;
 	static VkAttachmentDescription m_colorHDRAttachmentDescription;
@@ -320,19 +322,16 @@ private:
 	// Render target image descriptors
 
 	VkDescriptorSetLayout m_gBufferSetLayout;
-	VkDescriptorSetLayout m_outputSetLayout;
 
 	// Descriptor set for the G Buffer input attachments, used primarily in the lighting pass.
 	VkDescriptorSet m_gBufferDescSet;
 
-	// Descriptor set for subscene output input attachment (if not rendering to swap chain image).
-	VkDescriptorSet m_outputDescSet;
-
 	// ---------------------------------------------------------------------------------
 	// Framebuffer
 
+	DynamicArray<VkImage> m_swapChainImages;
 	DynamicArray<VkImageView> m_swapchainImageViews;
-	DynamicArray<VkFramebuffer> m_framebuffers;
+	VkFramebuffer m_framebuffer;
 
 	// ---------------------------------------------------------------------------------
 	// Render pass
@@ -363,6 +362,5 @@ private:
 	Texture* m_outImage; // Output image of this scene.
 
 	bool m_bPrimary; // Whether or not this is a primary subscene (renders to swap chain image).
-	bool m_bOutputHDR; // Whether or not the output image is a HDR image.
 };
 

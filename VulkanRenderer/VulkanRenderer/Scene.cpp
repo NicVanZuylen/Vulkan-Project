@@ -6,12 +6,9 @@
 #include "SubScene.h"
 #include "Shader.h"
 
-Scene::Scene(Renderer* renderer, uint32_t nWindowWidth, uint32_t nWindowHeight, uint32_t nQueueFamilyIndex)
+Scene::Scene(Renderer* renderer, uint32_t nQueueFamilyIndex)
 {
 	m_renderer = renderer;
-
-	m_nWindowWidth = nWindowWidth;
-	m_nWindowHeight = nWindowHeight;
 
 	m_dirLightShader = new Shader(m_renderer, FS_QUAD_SHADER, DEFERRED_DIR_LIGHT_SHADER);
 	m_pointLightShader = new Shader(m_renderer, POINT_LIGHT_VERTEX_SHADER, DEFERRED_POINT_LIGHT_SHADER);
@@ -31,12 +28,11 @@ Scene::Scene(Renderer* renderer, uint32_t nWindowWidth, uint32_t nWindowHeight, 
 	    { GBUFFER_MISC_8_BIT, { 0.0f, 0.0f, 0.0f, 1.0f } }, // Roughness
 		{ GBUFFER_MISC_8_BIT, { 0.0f, 0.0f, 0.0f, 1.0f } } // Metalness
 	};
-	params.m_bOutputHDR = false;
 	params.m_bPrimary = true;
 	params.m_dirLightShader = m_dirLightShader;
 	params.m_pointLightShader = m_pointLightShader;
-	params.m_nFrameBufferWidth = m_nWindowWidth;
-	params.m_nFrameBufferHeight = m_nWindowHeight;
+	params.m_nFrameBufferWidth = m_renderer->FrameWidth();
+	params.m_nFrameBufferHeight = m_renderer->FrameHeight();
 	params.m_nQueueFamilyIndex = m_nQueueFamilyIndex;
 	params.m_renderer = m_renderer;
 
