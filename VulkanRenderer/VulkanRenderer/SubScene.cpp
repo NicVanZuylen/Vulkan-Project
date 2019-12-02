@@ -342,6 +342,9 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 	for(uint32_t i = 0; i < m_allImages.Count(); ++i) 
 		delete m_allImages[i];
 
+	// Update mvpUBO framebuffer dimensions.
+	m_localMVPData.m_v2FramebufferDim = glm::vec2(static_cast<float>(m_nWidth), static_cast<float>(m_nHeight));
+
 	CreateOutputImage();
 
 	m_gBufferImages.Clear();
@@ -441,7 +444,7 @@ void SubScene::CreateImages(EGBufferAttachmentTypeBit eImageBits, const DynamicA
 
 	if (eImageBits & GBUFFER_DEPTH_BIT)
 	{
-		m_depthImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_DEPTH_STENCIL, depthFormat);
+		m_depthImage = new Texture(m_renderer, m_nWidth, m_nHeight, ATTACHMENT_DEPTH_STENCIL, depthFormat, TEXTURE_PROPERTIES_INPUT_ATTACHMENT);
 
 		// Clear value
 		VkClearValue clearVal = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -577,7 +580,7 @@ inline void SubScene::CreateDescriptorPool()
 	VkDescriptorPoolSize mvpUBOPoolSize = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, MAX_FRAMES_IN_FLIGHT };
 
 	// Pool size for G Buffer input attachment set
-	VkDescriptorPoolSize gBufferPoolSize = { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, m_gBufferImages.Count() };
+	VkDescriptorPoolSize gBufferPoolSize = { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, m_gBufferImages.Count() + 1 }; // +1 for depth.
 
 	VkDescriptorPoolSize poolSizes[] = { mvpUBOPoolSize, gBufferPoolSize };
 
@@ -620,7 +623,7 @@ inline void SubScene::CreateInputAttachmentDescriptors(bool bCreateLayout)
 
 	if(bCreateLayout) 
 	{
-		m_inAttachLayoutBinding.descriptorCount = m_gBufferImages.Count();
+		m_inAttachLayoutBinding.descriptorCount = m_gBufferImages.Count() + 1; // +1 for depth image.
 
 		// G Buffer set layout
 		RENDERER_SAFECALL(vkCreateDescriptorSetLayout(m_renderer->GetDevice(), &m_inAttachSetLayoutInfo, nullptr, &m_gBufferSetLayout), "SubScene Error: Failed to create G Buffer descriptor set layout.");
@@ -675,12 +678,12 @@ inline void SubScene::UpdateAllDescriptorSets()
 	VkWriteDescriptorSet gBufferWrite = {};
 	gBufferWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	gBufferWrite.dstSet = m_gBufferDescSet;
-	gBufferWrite.descriptorCount = m_gBufferImages.Count();
+	gBufferWrite.descriptorCount = m_gBufferImages.Count() + 1; // +1 for depth
 	gBufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
 	gBufferWrite.dstArrayElement = 0;
 	gBufferWrite.pNext = nullptr;
 
-	DynamicArray<VkDescriptorImageInfo> allImageInfos(m_gBufferImages.Count(), 1);
+	DynamicArray<VkDescriptorImageInfo> allImageInfos(gBufferWrite.descriptorCount, 1);
 
 	VkDescriptorImageInfo currentImageInfo = {};
 	currentImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -692,6 +695,10 @@ inline void SubScene::UpdateAllDescriptorSets()
 		currentImageInfo.imageView = m_gBufferImages[i]->ImageView();
 		allImageInfos.Push(currentImageInfo);
 	}
+
+	// Depth image info.
+	currentImageInfo.imageView = m_depthImage->ImageView();
+	allImageInfos.Push(currentImageInfo);
 
 	// Set image infos.
 	gBufferWrite.pImageInfo = allImageInfos.Data();
@@ -890,13 +897,15 @@ inline void SubScene::CreateRenderPass()
 	gBufferSubpass.pColorAttachments = gBufferRefs.Data();
 	gBufferSubpass.pDepthStencilAttachment = depthRefs.Data();
 
+	DynamicArray<VkAttachmentReference> lightingRefs = gBufferInputRefs + depthInputRefs;
+
 	VkSubpassDescription lightingSubpass = {};
 	lightingSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	lightingSubpass.colorAttachmentCount = 1;
 	lightingSubpass.pColorAttachments = &targetRefs[0];
-	lightingSubpass.inputAttachmentCount = gBufferInputRefs.Count();
-	lightingSubpass.pInputAttachments = gBufferInputRefs.Data();
-	lightingSubpass.pDepthStencilAttachment = VK_NULL_HANDLE; // No depth needed for lighting.
+	lightingSubpass.inputAttachmentCount = lightingRefs.Count();
+	lightingSubpass.pInputAttachments = lightingRefs.Data();
+	lightingSubpass.pDepthStencilAttachment = VK_NULL_HANDLE; // No depth testing or writing needed for lighting.
 
 	VkSubpassDescription subpasses[SUB_PASS_COUNT] = { shadowMapSubpass, gBufferSubpass, lightingSubpass };
 

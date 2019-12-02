@@ -3,11 +3,9 @@
 //#extension GL_KHR_vulkan_glsl : enable
 
 layout(location = 0) out vec4 outColor;
-layout(location = 1) out vec4 outPos;
-layout(location = 2) out vec4 outNormal;
-layout(location = 3) out vec4 outEmission;
-layout(location = 4) out vec4 outRoughness;
-layout(location = 5) out vec4 outMetalness;
+layout(location = 1) out vec4 outNormal;
+layout(location = 2) out vec4 outEmission;
+layout(location = 3) out vec4 outMatProps; // Per-fragment material properties. (RGB = spec, A = roughness).
 
 layout(set = 1, binding = 0) uniform Properties 
 {
@@ -27,9 +25,6 @@ void main()
     // Color G Buffer output.
     outColor = texture(textures[0], f_texCoords) * properties.colorTint;
 
-    // Position G Buffer ouput.
-    outPos = f_finalPos;
-
     // Normal G Buffer output.
     outNormal = vec4(normalize(f_tbn * (texture(textures[1], f_texCoords).xyz * 2.0f - 1.0f)), 1.0f);
 
@@ -37,9 +32,14 @@ void main()
 	outEmission = vec4(texture(textures[2], f_texCoords).xyz * properties.emissionPower, 1.0f);
 
 	// Roughness output.
-	outRoughness = vec4(texture(textures[3], f_texCoords).xyz * properties.roughness, 1.0f);
+	//outRoughness = vec4(texture(textures[3], f_texCoords).xyz * properties.roughness, 1.0f);
 
 	// Metalness output
-	outMetalness = vec4(texture(textures[4], f_texCoords).xyz, 1.0f);
+	//outMetalness = vec4(texture(textures[4], f_texCoords).xyz, 1.0f);
+
+	float roughness = texture(textures[3], f_texCoords).r;
+
+	// Roughness & spec output.
+	outMatProps = vec4(texture(textures[4], f_texCoords).rgb, roughness);
 }
 

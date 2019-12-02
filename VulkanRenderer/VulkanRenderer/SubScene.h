@@ -86,6 +86,7 @@ struct MVPUniformBuffer
 	glm::mat4 m_invView;
 	glm::mat4 m_invProj;
 	glm::vec4 m_v4ViewPos;
+	glm::vec2 m_v2FramebufferDim;
 	float m_fNearPlane;
 	float m_fFarPlane;
 };

@@ -8,11 +8,12 @@ layout (set = 0, binding = 0) uniform UniformBuffer
 	mat4 invView;
 	mat4 invProj;
 	vec4 viewPos;
+	vec2 framebufferDimensions;
 	float nearPlane;
 	float farPlane;
 } mvp;
 
-layout(input_attachment_index = 0, set = 1, binding = 0) uniform subpassInput inputs[6];
+layout(input_attachment_index = 0, set = 1, binding = 0) uniform subpassInput inputs[5];
 
 layout(set = 3, binding = 0) uniform ShadowMapCamera
 {
@@ -102,16 +103,16 @@ float CookTorrenceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float lambert, 
 	return max((D * F * G) / bottomHalf, 0.0f);
 }
 
-vec3 WorldPosFromDepth(float depth) 
+vec3 WorldPosFromDepth(float depth, vec2 texCoords) 
 {
-    float z = (depth * mvp.farPlane) + mvp.nearPlane;
+	// Convert x & y to clip space and include z.
+	vec4 clipSpacePos = vec4(texCoords * 2.0f - 1.0f, depth, 1.0f);
+	vec4 viewSpacepos = mvp.invProj * clipSpacePos; // Transform clip space position to view space.
 
-	vec4 clipSpacePos = vec4(finalTexCoords.xy * 2.0f - 1.0f, z, 1.0f);
-	vec4 viewSpacepos = mvp.invProj * clipSpacePos;
-
-	// Persp divide
+	// Do perspective divide
 	viewSpacepos /= viewSpacepos.w;
 
+	// Transform to worldspace from viewspace.
 	vec4 worldPos = mvp.invView * viewSpacepos;
 
 	return worldPos.xyz;
@@ -121,13 +122,18 @@ void main()
 {
     // Final color output.
     vec4 color = subpassLoad(inputs[0]).rgba;
-    vec4 position = subpassLoad(inputs[1]).rgba;
-    vec4 normal = subpassLoad(inputs[2]);
-	vec3 emission = subpassLoad(inputs[3]).rgb;
-	vec4 roughness = subpassLoad(inputs[4]);
-	vec4 specular = subpassLoad(inputs[5]);
+    vec4 normal = subpassLoad(inputs[1]);
+	vec3 emission = subpassLoad(inputs[2]).rgb;
+	
+	vec4 specRoughness = subpassLoad(inputs[3]);
+	float roughness = specRoughness.a;
+
+	float depth = subpassLoad(inputs[4]).r;
 
     vec3 lighting = vec3(0.3f) + emission; // Ambient component plus emissive colors.
+
+	// Calculate world space position from depth.
+	vec3 position = WorldPosFromDepth(depth, finalTexCoords);
 
     for(int i = 0; i < dirLights.globalData.count; ++i) 
     {
@@ -136,14 +142,14 @@ void main()
         vec4 lightColor = dirLights.data[i].color;
 
         // Get camera view direction and reflect the light direction upon the normal.
-        vec3 viewDir = normalize(mvp.viewPos.xyz - position.xyz);
+        vec3 viewDir = normalize(mvp.viewPos.xyz - position);
         
         // Calculate lambertian term.
         float lambert = max(-dot(lightDir, normal), 0.0f);
 
 		// Calculate Oren Nayar Diffuse & Cook Torrence Specular values.
-		float orenNayar = OrenNayarDiff(normal.xyz, -lightDir.xyz, viewDir, roughness.r);
-		float cookTorrence = CookTorrenceSpec(normal.xyz, -lightDir.xyz, viewDir, lambert, roughness.r, 1.0f);
+		float orenNayar = OrenNayarDiff(normal.xyz, -lightDir.xyz, viewDir, roughness);
+		float cookTorrence = CookTorrenceSpec(normal.xyz, -lightDir.xyz, viewDir, lambert, roughness, 1.0f);
 
         // Add to final lighting.
 		vec3 diffuse = orenNayar * lightColor.rgb * DIFFUSE_POWER;
