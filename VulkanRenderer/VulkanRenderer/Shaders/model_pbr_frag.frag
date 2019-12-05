@@ -31,12 +31,6 @@ void main()
 	// Emissive output.
 	outEmission = vec4(texture(textures[2], f_texCoords).xyz * properties.emissionPower, 1.0f);
 
-	// Roughness output.
-	//outRoughness = vec4(texture(textures[3], f_texCoords).xyz * properties.roughness, 1.0f);
-
-	// Metalness output
-	//outMetalness = vec4(texture(textures[4], f_texCoords).xyz, 1.0f);
-
 	float roughness = texture(textures[3], f_texCoords).r;
 
 	// Roughness & spec output.

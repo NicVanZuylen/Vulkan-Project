@@ -28,15 +28,18 @@ void main()
     f_texCoords = texCoords;
 
 	// Calculate TBN matrix.
-	vec4 biTangent = vec4(cross(normal.xyz, tangent.xyz), 1.0f);
 
 	mat4 modelCpy = model;
 	modelCpy[3] = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
-	vec4 t = modelCpy * tangent;
+	vec4 tanCpy = tangent;
+	
+	vec4 biTangent = vec4(normalize(cross(normal.xyz, tanCpy.xyz)), 1.0f);
+
+	vec4 t = modelCpy * tanCpy;
 	vec4 b = modelCpy * biTangent;
 	vec4 n = modelCpy * normal;
-
+	
 	f_tbn = mat3(t.xyz, b.xyz, n.xyz);
 
 	// Transform vertex.

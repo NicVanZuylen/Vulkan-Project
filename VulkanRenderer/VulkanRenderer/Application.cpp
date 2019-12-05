@@ -170,7 +170,7 @@ void Application::Run()
 
 	// Update directional lights.
 	//lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, 1.0f, 0.0f, 0.0f)), glm::vec4(1.0f) });
-	//lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, -1.0f, 0.0f)), glm::vec4(1.0f, 0.8f, 0.5f, 1.0f) });
+	//lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)), glm::vec4(1.0f, 0.8f, 0.5f, 1.0f) });
 	lightManager->AddDirLight({ glm::normalize(glm::vec4(0.0f, -1.0f, 1.0f, 0.0f)), glm::vec4(0.2f, 0.2f, 0.4f, 1.0f) });
 	//lightManager->AddDirLight({ glm::vec4(0.0f, -1.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f) });
 

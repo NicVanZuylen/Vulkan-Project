@@ -312,71 +312,46 @@ void Mesh::RecordCopyCommandBuffer(Renderer* renderer, VkCommandBuffer cmdBuffer
 	RENDERER_SAFECALL(vkEndCommandBuffer(cmdBuffer), "Mesh Error: Failed to end copy command buffer recording.");
 }
 
-
 void Mesh::CalculateTangents(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned int>& indices) 
 {
-	// Lengyel, Eric. “Computing Tangent Space Basis Vectors for an Arbitrary Mesh”. Terathon Software, 2001. http://terathon.com/code/tangent.html
+	uint32_t nIndexCount = indices.GetSize();
 
-	unsigned int vertexCount = (unsigned int)vertices.Count();
-	glm::vec4* tan1 = new glm::vec4[vertexCount * 2];
-	glm::vec4* tan2 = tan1 + vertexCount;
-	memset(tan1, 0, vertexCount * sizeof(glm::vec4) * 2);
-
-	unsigned int indexCount = (unsigned int)indices.Count();
-	for (unsigned int a = 0; a < indexCount; a += 3) {
-		long i1 = indices[a];
-		long i2 = indices[a + 1];
-		long i3 = indices[a + 2];
-
-		const glm::vec4& v1 = vertices[i1].m_position;
-		const glm::vec4& v2 = vertices[i2].m_position;
-		const glm::vec4& v3 = vertices[i3].m_position;
-
-		const glm::vec2& w1 = vertices[i1].m_texCoords;
-		const glm::vec2& w2 = vertices[i2].m_texCoords;
-		const glm::vec2& w3 = vertices[i3].m_texCoords;
-
-		float x1 = v2.x - v1.x;
-		float x2 = v3.x - v1.x;
-		float y1 = v2.y - v1.y;
-		float y2 = v3.y - v1.y;
-		float z1 = v2.z - v1.z;
-		float z2 = v3.z - v1.z;
-
-		float s1 = w2.x - w1.x;
-		float s2 = w3.x - w1.x;
-		float t1 = w2.y - w1.y;
-		float t2 = w3.y - w1.y;
-
-		float r = 1.0F / (s1 * t2 - s2 * t1);
-		glm::vec4 sdir((t2 * x1 - t1 * x2) * r, (t2 * y1 - t1 * y2) * r,
-			(t2 * z1 - t1 * z2) * r, 0);
-		glm::vec4 tdir((s1 * x2 - s2 * x1) * r, (s1 * y2 - s2 * y1) * r,
-			(s1 * z2 - s2 * z1) * r, 0);
-
-		tan1[i1] += sdir;
-		tan1[i2] += sdir;
-		tan1[i3] += sdir;
-
-		tan2[i1] += tdir;
-		tan2[i2] += tdir;
-		tan2[i3] += tdir;
-	}
-
-	for (unsigned int a = 0; a < vertexCount; a++) 
+	for (uint32_t i = 0; i < nIndexCount; i += 3) // Step 3 indices, as this should run once per triangle
 	{
-		const glm::vec3& n = glm::vec3(vertices[a].m_normal.x, vertices[a].m_normal.y, vertices[a].m_normal.z);
-		const glm::vec3& t = glm::vec3(tan1[a]);
+		// Tangents must be calculated per triangle. We find the correct vertices per tri by using the indices.
 
-		// Gram-Schmidt orthogonalize
-		glm::vec4 orthTangent = glm::vec4(glm::normalize(t - n * glm::dot(n, t)), 0);
-		vertices[a].m_tangent = glm::vec4(orthTangent.x, orthTangent.y, orthTangent.z, orthTangent.w);
+		// Positions
+		glm::vec3 pos1 = vertices[indices[i]].m_position;
+		glm::vec3 pos2 = vertices[indices[i + 1]].m_position;
+		glm::vec3 pos3 = vertices[indices[i + 2]].m_position;
 
-		// Calculate handedness (direction of bitangent)
-		vertices[a].m_tangent.w = (glm::dot(glm::cross(glm::vec3(n), glm::vec3(t)), glm::vec3(tan2[a])) < 0.0F) ? 1.0F : -1.0F;
+		// Tex coords
+		glm::vec2 tex1 = vertices[indices[i]].m_texCoords;
+		glm::vec2 tex2 = vertices[indices[i + 1]].m_texCoords;
+		glm::vec2 tex3 = vertices[indices[i + 2]].m_texCoords;
+
+		// Delta positions
+		glm::vec3 dPos1 = pos2 - pos1;
+		glm::vec3 dPos2 = pos3 - pos1;
+
+		// Delta tex coords
+		glm::vec2 dTex1 = tex2 - tex1;
+		glm::vec2 dTex2 = tex3 - tex1;
+
+		float f = 1.0f / (dTex1.x * dTex2.y - dTex2.x * dTex1.y);
+
+		// Calculate tangent only. The bitangent will be calculated in the vertex shader.
+		glm::vec4 tangent;
+		tangent.x = f * (dTex2.y * dPos1.x - dTex1.y * dPos2.x);
+		tangent.y = f * (dTex2.y * dPos1.y - dTex1.y * dPos2.y);
+		tangent.z = f * (dTex2.y * dPos1.z - dTex1.y * dPos2.z);
+		tangent = glm::normalize(tangent);
+
+		// Assign tangents to vertices.
+		vertices[indices[i]].m_tangent = tangent;
+		vertices[indices[i + 1]].m_tangent = tangent;
+		vertices[indices[i + 2]].m_tangent = tangent;
 	}
-
-	delete[] tan1;
 }
 
 void Mesh::LoadOBJ(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned int>& indices, const char* path) 
@@ -451,7 +426,7 @@ void Mesh::LoadOBJ(DynamicArray<ComplexVertex>& vertices, DynamicArray<unsigned 
 
 			// Copy normals...
 			if (shape.mesh.normals.size())
-				chunkVertices[i].m_normal = glm::vec4(shape.mesh.normals[nIndex], shape.mesh.normals[nIndex + 1], shape.mesh.normals[nIndex + 2], 0.0f);
+				chunkVertices[i].m_normal = glm::vec4(shape.mesh.normals[nIndex], shape.mesh.normals[nIndex + 1], shape.mesh.normals[nIndex + 2], 1.0f);
 
 			// Copy texture coordinates.
 			if (shape.mesh.texcoords.size())

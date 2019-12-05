@@ -145,7 +145,7 @@ void main()
         vec3 viewDir = normalize(mvp.viewPos.xyz - position);
         
         // Calculate lambertian term.
-        float lambert = max(-dot(lightDir, normal), 0.0f);
+        float lambert = max(-dot(lightDir.xyz, normal.xyz), 0.0f);
 
 		// Calculate Oren Nayar Diffuse & Cook Torrence Specular values.
 		float orenNayar = OrenNayarDiff(normal.xyz, -lightDir.xyz, viewDir, roughness);
